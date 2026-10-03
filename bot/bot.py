@@ -44,7 +44,7 @@ load_dotenv(ENV_FILE, override=False)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "CHANGE_ME")
 BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "CHANGE_ME").lstrip("@")
-MINI_APP_SHORT_NAME = os.getenv("MINI_APP_SHORT_NAME", "game")
+MINI_APP_SHORT_NAME = os.getenv("MINI_APP_SHORT_NAME", "numora")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "CHANGE_ME")

@@ -138,7 +138,7 @@ All backend configuration lives in the project-root `.env` (see `.env.example`).
 | `AUTO_MIGRATE` / `AUTO_SEED` | Run Alembic + seeding on startup |
 | `BOT_TOKEN` | Telegram bot token |
 | `TELEGRAM_BOT_USERNAME` | Username without `@`, used to build deep links |
-| `MINI_APP_SHORT_NAME` | Short name of the Mini App (default `game`) |
+| `MINI_APP_SHORT_NAME` | Short name of the Mini App (default `numora`) |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret token for the payment webhook |
 | `SERVICE_TOKEN` | Internal token the bot uses to forward payment updates |
 | `FRONTEND_URL` / `BACKEND_URL` | Public URLs |

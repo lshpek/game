@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
     cors_origins: CsvList = ["http://localhost:5173"]
-    mini_app_short_name: str = "game"
+    mini_app_short_name: str = "numora"
 
     # --- Access control ------------------------------------------------
     admin_telegram_ids: CsvIntList = []
