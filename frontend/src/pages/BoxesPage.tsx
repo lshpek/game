@@ -1,0 +1,122 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApiError, makeIdempotencyKey } from '@/lib/api';
+import { haptic, hapticError, hapticSuccess } from '@/lib/telegram';
+import { compactCoins, formatCoins } from '@/lib/format';
+import { containers, game } from '@/services/api';
+import { useAuthStore } from '@/store/auth';
+import type { ContainerOpenResult } from '@/types';
+import { ContainerTile } from '@/components/ContainerTile';
+import { GameCard, Section } from '@/components/GameCard';
+import { ResultOverlay } from '@/components/ResultOverlay';
+import { ErrorState, LoadingSpinner } from '@/components/States';
+
+export function BoxesPage() {
+  const queryClient = useQueryClient();
+  const profile = useAuthStore((state) => state.profile);
+  const applyProfile = useAuthStore((state) => state.applyProfile);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [result, setResult] = useState<ContainerOpenResult | null>(null);
+
+  const list = useQuery({ queryKey: ['containers'], queryFn: containers.list });
+  const history = useQuery({ queryKey: ['containers-history'], queryFn: containers.history });
+
+  const open = useMutation({
+    mutationFn: ({ code, key }: { code: string; key: string }) => containers.open(code, key),
+    onSuccess: (data) => {
+      setResult(data);
+      if (profile) applyProfile({ ...profile, coins: data.balance });
+      for (const key of ['containers', 'containers-history', 'collection', 'user', 'user-top']) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+      hapticSuccess();
+    },
+    onSettled: () => setOpening(null),
+    onError: (error) => {
+      hapticError();
+      setOpening(null);
+      if (error instanceof ApiError) {
+        window.alert(error.message);
+        void queryClient.invalidateQueries({ queryKey: ['containers'] });
+      }
+    },
+  });
+
+  const handleOpen = (code: string) => {
+    haptic('medium');
+    setOpening(code);
+    open.mutate({ code, key: makeIdempotencyKey('container') });
+  };
+
+  const handleConvert = async () => {
+    if (!result) return;
+    try {
+      const conversion = await game.convertDuplicate(result.number.number);
+      if (profile) applyProfile({ ...profile, coins: conversion.balance });
+      setResult(null);
+      void queryClient.invalidateQueries({ queryKey: ['collection'] });
+    } catch (error) {
+      if (error instanceof ApiError) window.alert(error.message);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <header className="flex items-center justify-between">
+        <h1 className="font-display text-2xl font-bold">Boxes</h1>
+        <span className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-sm font-bold tabular-nums text-amber-200">
+          {compactCoins(profile?.coins ?? 0)} 🪙
+        </span>
+      </header>
+
+      {list.isLoading ? <LoadingSpinner label="Loading boxes…" /> : null}
+      {list.isError ? (
+        <ErrorState message="Could not load boxes." onRetry={() => void list.refetch()} />
+      ) : null}
+
+      <div className="space-y-3">
+        {(list.data ?? []).map((container) => (
+          <ContainerTile
+            key={container.code}
+            container={container}
+            busy={opening === container.code}
+            onOpen={handleOpen}
+          />
+        ))}
+      </div>
+
+      <Section title="Recent openings">
+        <GameCard className="divide-y divide-white/5">
+          {(history.data ?? []).slice(0, 8).map((row) => (
+            <div key={row.opening_id} className="flex items-center gap-3 py-2.5 text-sm">
+              <span className="number-display text-lg">{row.number}</span>
+              <span className="flex-1 text-xs text-white/45">{row.container}</span>
+              <span className="tabular-nums text-white/75">{formatCoins(row.value)}</span>
+            </div>
+          ))}
+          {!history.data?.length ? (
+            <p className="py-3 text-center text-sm text-white/45">No boxes opened yet.</p>
+          ) : null}
+        </GameCard>
+      </Section>
+
+      {result ? (
+        <ResultOverlay
+          open
+          number={result.number}
+          rarity={result.number.rarity}
+          isDuplicate={result.is_duplicate}
+          isFirstDiscovery={false}
+          conversionValue={result.conversion_value}
+          coinsAwarded={0}
+          achievements={result.unlocked_achievements}
+          onClose={() => setResult(null)}
+          onShare={() => {
+            setResult(null);
+          }}
+          onConvert={handleConvert}
+        />
+      ) : null}
+    </div>
+  );
+}

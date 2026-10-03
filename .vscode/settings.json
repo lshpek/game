@@ -1,0 +1,35 @@
+// Workspace-shared editor settings.
+//
+// NOTE: deliberately no "typescript.tsdk" and no
+// "python.defaultInterpreterPath" here. Both are resolved relative to the
+// workspace root, but node_modules/ lives in frontend/ and the virtualenv in
+// backend/ - pointing at them from the root breaks the TypeScript server and
+// Pylance entirely. Use the bundled TypeScript, and pick a Python interpreter
+// with "Python: Select Interpreter" (after creating backend/.venv).
+{
+  // Tailwind's `@tailwind` / `@apply` at-rules are valid PostCSS directives
+  // that the built-in CSS validator does not know about.
+  "css.validate": false,
+
+  // Tests are discovered through the root pytest.ini (testpaths = backend/tests).
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [],
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/*.db": true,
+    "**/*.db-wal": true,
+    "**/*.db-shm": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true
+  },
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true
+}

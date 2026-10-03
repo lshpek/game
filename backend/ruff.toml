@@ -1,0 +1,42 @@
+# Ruff configuration - single source of truth for Python linting.
+target-version = "py312"
+line-length = 120
+extend-exclude = ["alembic/versions"]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # warnings
+    "F",    # pyflakes (unused imports/variables, undefined names)
+    "I",    # import sorting
+    "UP",   # pyupgrade modernisation
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",  # ruff specific
+]
+ignore = [
+    # FastAPI's documented pattern: `def endpoint(db = Depends(get_db))`.
+    "B008",
+    # SQLAlchemy needs quoted forward refs for TYPE_CHECKING imports.
+    "UP037",
+    # Line length is handled by the formatter.
+    "E501",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "SIM105",
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402", "F401"]
+"scripts/*" = ["E402"]
+"alembic/env.py" = ["E402"]
+"app/schemas/__init__.py" = ["F401"]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
