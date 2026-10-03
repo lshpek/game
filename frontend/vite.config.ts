@@ -14,10 +14,14 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: false,
+    // Dev tunnels (trycloudflare/loca.lt/ngrok) arrive with dynamic Host
+    // headers; Vite must be told to accept them.
+    allowedHosts: true,
   },
   preview: {
     host: '0.0.0.0',
     port: 5173,
+    allowedHosts: true,
   },
   build: {
     target: 'es2020',
