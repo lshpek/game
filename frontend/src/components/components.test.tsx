@@ -1,10 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render as rtlRender, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { RarityBadge, TraitChip } from '@/components/RarityBadge';
 import { ResultOverlay } from '@/components/ResultOverlay';
 import { RollButton } from '@/components/RollButton';
 import { CollectionList } from '@/components/CollectionList';
 import type { NumberCard } from '@/types';
+import { I18nProvider } from '@/i18n';
+
+/** Every component now reads strings from context, so tests need the provider. */
+const wrap = (ui: ReactElement) => <I18nProvider>{ui}</I18nProvider>;
+
+const render = (ui: ReactElement) => rtlRender(wrap(ui));
 
 const baseNumber: NumberCard = {
   number: '7777',

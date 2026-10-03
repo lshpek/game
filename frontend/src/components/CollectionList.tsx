@@ -1,4 +1,5 @@
 import { formatCoins, rarityColor, traitLabel } from '@/lib/format';
+import { useI18n } from '@/i18n';
 import type { NumberCard } from '@/types';
 import { RarityBadge, TraitChip } from './RarityBadge';
 
@@ -17,6 +18,7 @@ export function CollectionList({
   converting,
   onConvert,
 }: CollectionListProps) {
+  const { lang, t } = useI18n();
   return (
     <ul className="space-y-2">
       {items.map((item) => {
@@ -30,7 +32,7 @@ export function CollectionList({
                 className="flex w-full items-center gap-3 text-left"
                 onClick={() => onToggle(item.number)}
                 aria-expanded={isOpen}
-                aria-label={`Number ${item.number}`}
+                aria-label={t('collection.ariaNumber', { number: item.number })}
               >
                 <span className="number-display w-[4.5rem] shrink-0 text-center text-2xl" style={{ color }}>
                   {item.number}
@@ -42,7 +44,9 @@ export function CollectionList({
                 <span className="shrink-0 text-right">
                   <span className="number-display block text-base">{formatCoins(item.value)}</span>
                   {item.duplicate_count > 0 ? (
-                    <span className="text-[10px] text-amber-300/80">×{item.duplicate_count} dup</span>
+                    <span className="text-[10px] text-amber-300/80">
+                      {t('collection.dup', { count: item.duplicate_count })}
+                    </span>
                   ) : null}
                 </span>
               </button>
@@ -52,12 +56,16 @@ export function CollectionList({
                   <p className="text-sm leading-relaxed text-white/70">{item.story}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {item.traits.map((code) => (
-                      <TraitChip key={code} code={code} label={traitLabel(code)} />
+                      <TraitChip key={code} code={code} label={traitLabel(code, lang)} />
                     ))}
                   </div>
                   <p className="text-[11px] text-white/40">
-                    Discovered {item.discovery_count}× · first found globally{' '}
-                    {item.first_discovered_at ? new Date(item.first_discovered_at).toLocaleDateString() : '—'}
+                    {t('collection.discovered', {
+                    count: item.discovery_count,
+                    date: item.first_discovered_at
+                      ? new Date(item.first_discovered_at).toLocaleDateString()
+                      : '—',
+                  })}
                   </p>
                   {item.duplicate_count > 0 ? (
                     <button
@@ -66,7 +74,7 @@ export function CollectionList({
                       disabled={converting}
                       onClick={() => onConvert(item.number)}
                     >
-                      CONVERT DUPLICATE TO COINS
+                      {t('collection.convert')}
                     </button>
                   ) : null}
                 </div>

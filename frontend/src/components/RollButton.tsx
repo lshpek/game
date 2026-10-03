@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { useI18n } from '@/i18n';
 
 interface RollButtonProps {
   disabled?: boolean;
@@ -9,6 +10,7 @@ interface RollButtonProps {
 }
 
 export function RollButton({ disabled = false, rolling = false, rollsLeft, onRoll }: RollButtonProps) {
+  const { t } = useI18n();
   const isDisabled = disabled || rolling || rollsLeft <= 0;
 
   return (
@@ -25,7 +27,7 @@ export function RollButton({ disabled = false, rolling = false, rollsLeft, onRol
         onClick={onRoll}
         disabled={isDisabled}
         whileTap={{ scale: 0.94 }}
-        aria-label={rolling ? 'Rolling' : 'Roll a number'}
+        aria-label={rolling ? t('roll.rolling') : t('roll.aria')}
         data-testid="roll-button"
         className={clsx(
           'relative flex h-28 w-28 select-none items-center justify-center rounded-full text-5xl',
@@ -46,9 +48,9 @@ export function RollButton({ disabled = false, rolling = false, rollsLeft, onRol
 
       <div className="mt-3 flex items-center gap-2 text-sm">
         <span className="rounded-full border border-white/12 bg-white/5 px-3 py-1 font-semibold tabular-nums">
-          {rollsLeft} {rollsLeft === 1 ? 'roll' : 'rolls'}
+          {rollsLeft} {t(rollsLeft === 1 ? 'roll.one' : 'roll.many')}
         </span>
-        {rolling ? <span className="text-white/55">Rolling…</span> : null}
+        {rolling ? <span className="text-white/55">{t('roll.rollingNow')}</span> : null}
       </div>
     </div>
   );

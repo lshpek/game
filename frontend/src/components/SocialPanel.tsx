@@ -6,8 +6,10 @@ import { formatCoins } from '@/lib/format';
 import { shop, social } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 import { GameCard, Section } from './GameCard';
+import { useI18n } from '@/i18n';
 
 export function SocialPanel() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);
   const refreshProfile = useAuthStore((state) => state.refreshProfile);
@@ -32,40 +34,52 @@ export function SocialPanel() {
 
   return (
     <>
-      <Section title="Invite friends">
+      <Section title={t('social.invite')}>
         <GameCard className="space-y-3">
           <p className="text-sm text-white/60">
-            Earn {formatCoins(referrals.data?.reward_coins ?? 0)} Coins and{' '}
-            {referrals.data?.reward_rolls ?? 0} rolls once they make their first roll.
+            {t('social.earnHint', {
+              coins: formatCoins(referrals.data?.reward_coins ?? 0),
+              rolls: referrals.data?.reward_rolls ?? 0,
+            })}
           </p>
           <div className="flex gap-2">
             <input
               readOnly
               value={referrals.data?.referral_link ?? ''}
-              aria-label="Referral link"
+              aria-label={t('social.referralAria')}
               className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/70"
             />
             <button
               type="button"
               className="btn-primary !px-4 !text-sm"
-              onClick={() => shareToChat(referrals.data?.referral_link ?? '', 'Collect numbers with me!')}
+              onClick={() =>
+                shareToChat(
+                  referrals.data?.referral_link ?? '',
+                  t('social.inviteText'),
+                )
+              }
             >
-              INVITE
+              {t('social.inviteBtn')}
             </button>
           </div>
           <p className="text-[11px] text-white/45">
-            Activated {referrals.data?.activated ?? 0} · pending {referrals.data?.pending ?? 0} · earned{' '}
-            {formatCoins(referrals.data?.coins_earned ?? 0)} 🪙
+            {t('social.stats', {
+              activated: referrals.data?.activated ?? 0,
+              pending: referrals.data?.pending ?? 0,
+              coins: formatCoins(referrals.data?.coins_earned ?? 0),
+            })}
           </p>
         </GameCard>
       </Section>
 
       {incoming ? (
-        <Section title="Challenge">
+        <Section title={t('social.challenge')}>
           <GameCard accent="#f472b6" className="space-y-3">
             <p className="text-sm">
-              @{incoming.challenger?.username ?? incoming.challenger?.display_name} wants a duel with #
-              {incoming.challenger_number}
+              {t('social.wantsDuel', {
+                name: incoming.challenger?.username ?? incoming.challenger?.display_name ?? '',
+                number: incoming.challenger_number ?? '',
+              })}
             </p>
             <button
               type="button"
@@ -83,16 +97,16 @@ export function SocialPanel() {
                 }
               }}
             >
-              ACCEPT
+              {t('social.accept')}
             </button>
           </GameCard>
         </Section>
       ) : null}
 
-      <Section title="Duel a friend">
+      <Section title={t('social.duel')}>
         <GameCard className="space-y-3">
           <p className="text-sm text-white/55">
-            Share a link with your best number. Friends answer with their latest roll.
+            {t('social.duelHint')}
           </p>
           <button
             type="button"
@@ -100,29 +114,29 @@ export function SocialPanel() {
             disabled={createChallenge.isPending}
             onClick={() => createChallenge.mutate()}
           >
-            CHALLENGE FRIEND
+            {t('social.challengeFriend')}
           </button>
           {link ? (
             <div className="flex gap-2">
               <input
                 readOnly
                 value={link}
-                aria-label="Challenge link"
+                aria-label={t('social.challengeAria')}
                 className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs text-white/70"
               />
               <button
                 type="button"
                 className="btn-primary !px-4 !text-sm"
-                onClick={() => shareToChat(link, 'Beat my number!')}
+                onClick={() => shareToChat(link, t('social.beatMine'))}
               >
-                SHARE
+                {t('social.share')}
               </button>
             </div>
           ) : null}
         </GameCard>
       </Section>
 
-      <Section title="Store">
+      <Section title={t('social.store')}>
         <PremiumShop onPurchased={refreshProfile} />
       </Section>
     </>
@@ -130,6 +144,7 @@ export function SocialPanel() {
 }
 
 function PremiumShop({ onPurchased }: { onPurchased: () => Promise<void> }) {
+  const { t } = useI18n();
   const products = useQuery({ queryKey: ['products'], queryFn: shop.products });
   const premium = useQuery({ queryKey: ['premium'], queryFn: shop.premium });
 
@@ -152,10 +167,12 @@ function PremiumShop({ onPurchased }: { onPurchased: () => Promise<void> }) {
     <GameCard className="space-y-3">
       {premium.data?.active ? (
         <p className="text-sm text-amber-200">
-          PRO active until {new Date(premium.data.expires_at ?? 0).toLocaleDateString()}
+          {t('social.proActive', {
+              date: new Date(premium.data.expires_at ?? 0).toLocaleDateString(),
+            })}
         </p>
       ) : (
-        <p className="text-sm text-white/55">More daily rolls, the Pro Box and bonus Coins.</p>
+        <p className="text-sm text-white/55">{t('social.storeHint')}</p>
       )}
       <div className="grid gap-2">
         {(products.data ?? []).map((product) => (

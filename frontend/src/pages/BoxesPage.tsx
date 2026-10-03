@@ -10,8 +10,10 @@ import { ContainerTile } from '@/components/ContainerTile';
 import { GameCard, Section } from '@/components/GameCard';
 import { ResultOverlay } from '@/components/ResultOverlay';
 import { ErrorState, LoadingSpinner } from '@/components/States';
+import { useI18n } from '@/i18n';
 
 export function BoxesPage() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);
   const applyProfile = useAuthStore((state) => state.applyProfile);
@@ -63,15 +65,15 @@ export function BoxesPage() {
   return (
     <div className="space-y-5">
       <header className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold">Boxes</h1>
+        <h1 className="font-display text-2xl font-bold">{t('boxes.title')}</h1>
         <span className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-sm font-bold tabular-nums text-amber-200">
           {compactCoins(profile?.coins ?? 0)} 🪙
         </span>
       </header>
 
-      {list.isLoading ? <LoadingSpinner label="Loading boxes…" /> : null}
+      {list.isLoading ? <LoadingSpinner label={t('boxes.loading')} /> : null}
       {list.isError ? (
-        <ErrorState message="Could not load boxes." onRetry={() => void list.refetch()} />
+        <ErrorState message={t('boxes.error')} onRetry={() => void list.refetch()} />
       ) : null}
 
       <div className="space-y-3">
@@ -85,7 +87,7 @@ export function BoxesPage() {
         ))}
       </div>
 
-      <Section title="Recent openings">
+      <Section title={t('boxes.recent')}>
         <GameCard className="divide-y divide-white/5">
           {(history.data ?? []).slice(0, 8).map((row) => (
             <div key={row.opening_id} className="flex items-center gap-3 py-2.5 text-sm">
@@ -95,7 +97,7 @@ export function BoxesPage() {
             </div>
           ))}
           {!history.data?.length ? (
-            <p className="py-3 text-center text-sm text-white/45">No boxes opened yet.</p>
+            <p className="py-3 text-center text-sm text-white/45">{t('boxes.none')}</p>
           ) : null}
         </GameCard>
       </Section>

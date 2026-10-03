@@ -1,4 +1,5 @@
 import { formatCoins, rarityColor } from '@/lib/format';
+import { useI18n } from '@/i18n';
 import type { NumberCard } from '@/types';
 import { RarityBadge } from './RarityBadge';
 
@@ -9,6 +10,7 @@ interface ShareCardProps {
 }
 
 export function ShareCard({ number, ownerName, ownerUsername }: ShareCardProps) {
+  const { t } = useI18n();
   const color = rarityColor(number.rarity);
 
   return (
@@ -36,10 +38,10 @@ export function ShareCard({ number, ownerName, ownerUsername }: ShareCardProps) 
           {formatCoins(number.value)} <span className="text-sm text-white/50">🪙</span>
         </p>
         <p className="mt-3 text-xs uppercase tracking-[0.18em] text-white/45">
-          {number.traits.length ? number.traits.slice(0, 2).join(' · ') : 'Common find'}
+          {number.traits.length ? number.traits.slice(0, 2).join(' · ') : t('share.commonFind')}
         </p>
         <div className="mt-4 border-t border-white/10 pt-3">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-white/40">Found by</p>
+          <p className="text-[10px] uppercase tracking-[0.24em] text-white/40">{t('share.foundBy')}</p>
           <p className="text-sm font-semibold text-white/90">
             {ownerUsername ? `@${ownerUsername}` : ownerName}
           </p>

@@ -1,5 +1,6 @@
 import clsx from 'clsx';
-import { RARITY_COLORS, RARITY_ICONS, RARITY_LABELS } from '@/lib/format';
+import { RARITY_COLORS, RARITY_ICONS, rarityLabel } from '@/lib/format';
+import { useI18n } from '@/i18n';
 import type { Rarity } from '@/types';
 
 interface RarityBadgeProps {
@@ -9,9 +10,10 @@ interface RarityBadgeProps {
 }
 
 export function RarityBadge({ rarity, size = 'md', className }: RarityBadgeProps) {
+  const { lang } = useI18n();
   const key = (rarity as Rarity) in RARITY_COLORS ? (rarity as Rarity) : 'COMMON';
   const color = RARITY_COLORS[key];
-  const label = RARITY_LABELS[key];
+  const label = rarityLabel(key, lang);
   const icon = RARITY_ICONS[key];
 
   const sizes = {

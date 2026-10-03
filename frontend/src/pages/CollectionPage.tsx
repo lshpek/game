@@ -9,12 +9,14 @@ import type { Rarity } from '@/types';
 import { ProgressBar } from '@/components/GameCard';
 import { CollectionList } from '@/components/CollectionList';
 import { EmptyState, ErrorState, SkeletonRow } from '@/components/States';
+import { useI18n } from '@/i18n';
 
-const SORTS = ['recent', 'value', 'number', 'duplicates'];
+const SORTS = ['recent', 'value', 'number', 'duplicates'] as const;
 const INPUT =
   'min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none placeholder:text-white/35 focus:border-accent/60';
 
 export function CollectionPage() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);
   const applyProfile = useAuthStore((state) => state.applyProfile);
@@ -51,16 +53,21 @@ export function CollectionPage() {
   return (
     <div className="space-y-4">
       <header>
-        <h1 className="font-display text-2xl font-bold">Collection</h1>
+        <h1 className="font-display text-2xl font-bold">{t('collection.title')}</h1>
         <p className="text-xs text-white/45">
-          {meta ? `${meta.total} unique of ${meta.target.toLocaleString()} numbers` : 'Loading…'}
+          {meta
+            ? t('collection.count', {
+                count: meta.total,
+                total: meta.target.toLocaleString(),
+              })
+            : t('common.loading')}
         </p>
       </header>
 
       <ProgressBar
         value={profile?.unique_numbers ?? 0}
         max={profile?.collection_target ?? 10_000}
-        label="Progress"
+        label={t('collection.progress')}
         trailing={`${((meta?.progress ?? 0) * 100).toFixed(2)}%`}
       />
 
@@ -76,8 +83,8 @@ export function CollectionPage() {
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search numbers or stories"
-            aria-label="Search collection"
+            placeholder={t('collection.search')}
+            aria-label={t('collection.searchAria')}
             className={INPUT}
           />
           <button type="submit" className="btn-ghost !px-4" aria-label="Search">
@@ -99,7 +106,7 @@ export function CollectionPage() {
               }`}
               style={rarity === code && code !== 'ALL' ? { color: rarityColor(code as Rarity) } : undefined}
             >
-              {code === 'ALL' ? 'All' : code}
+              {code === 'ALL' ? t('common.all') : code}
             </button>
           ))}
         </div>
@@ -116,7 +123,7 @@ export function CollectionPage() {
                   : 'border-white/10 bg-transparent text-white/45'
               }`}
             >
-              {option}
+              {t(`collection.sort.${option}`)}
             </button>
           ))}
         </div>
@@ -130,11 +137,11 @@ export function CollectionPage() {
       ) : null}
 
       {query.isError ? (
-        <ErrorState message="Could not load your collection." onRetry={() => void query.refetch()} />
+        <ErrorState message={t('collection.error')} onRetry={() => void query.refetch()} />
       ) : null}
 
       {!query.isLoading && items.length === 0 ? (
-        <EmptyState icon="📚" title="Nothing here yet" hint="Roll a few numbers to fill it." />
+        <EmptyState icon="📚" title={t('collection.empty')} hint={t('collection.emptyHint')} />
       ) : null}
 
       <CollectionList
@@ -155,7 +162,9 @@ export function CollectionPage() {
           >
             ←
           </button>
-          <span className="text-xs text-white/50">Page {page}</span>
+          <span className="text-xs text-white/50">
+            {t('common.page')} {page}
+          </span>
           <button
             type="button"
             className="btn-ghost !min-h-[42px] !px-4"

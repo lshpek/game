@@ -13,10 +13,12 @@ import { ResultOverlay } from '@/components/ResultOverlay';
 import { RollButton } from '@/components/RollButton';
 import { ShareCard } from '@/components/ShareCard';
 import { ErrorState } from '@/components/States';
+import { useI18n } from '@/i18n';
 
 export function HomePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { t } = useI18n();
   const profile = useAuthStore((state) => state.profile);
   const applyProfile = useAuthStore((state) => state.applyProfile);
 
@@ -79,14 +81,18 @@ export function HomePage() {
       setShowShare(true);
       shareToChat(
         share.mini_app_link,
-        `I rolled #${share.number} (${share.rarity}) - can you beat ${formatCoins(share.value)} Coins?`,
+        t('home.shareText', {
+          number: share.number,
+          rarity: share.rarity,
+          value: formatCoins(share.value),
+        }),
       );
     } catch (error) {
       if (error instanceof ApiError) window.alert(error.message);
     }
-  }, [result]);
+  }, [result, t]);
 
-  if (!profile) return <ErrorState message="Profile unavailable." />;
+  if (!profile) return <ErrorState message={t('app.profileUnavailable')} />;
 
   const rollsLeft = daily.data?.rolls_remaining ?? profile.rolls_remaining;
   const lastNumber = top.data?.rarest?.[0] as { number: string; rarity: string } | undefined;
@@ -105,7 +111,7 @@ export function HomePage() {
           )}
           <div className="leading-tight">
             <p className="text-sm font-semibold">{profile.display_name}</p>
-            <p className="text-xs text-white/45">Streak 🔥 {profile.current_streak}</p>
+            <p className="text-xs text-white/45">{t('home.streak')} 🔥 {profile.current_streak}</p>
           </div>
         </div>
         <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-sm font-bold tabular-nums text-amber-200">
@@ -116,13 +122,13 @@ export function HomePage() {
       {daily.data?.can_claim ? (
         <GameCard accent="#fbbf24" className="flex items-center justify-between gap-3 !py-3">
           <div>
-            <p className="text-sm font-semibold text-amber-200">Daily reward ready</p>
+            <p className="text-sm font-semibold text-amber-200">{t('home.dailyReady')}</p>
             <p className="text-xs text-white/55">
-              +{formatCoins(daily.data.claim_reward_coins)} Coins and a fresh roll stack
+              {t('home.dailyRewardHint', { coins: formatCoins(daily.data.claim_reward_coins) })}
             </p>
           </div>
           <button type="button" className="btn-ghost !min-h-[40px] !px-4 !text-sm" onClick={() => navigate('/profile')}>
-            CLAIM
+            {t('home.claim')}
           </button>
         </GameCard>
       ) : null}
@@ -138,14 +144,16 @@ export function HomePage() {
 
       {roll.isError ? (
         <ErrorState
-          message={roll.error instanceof ApiError ? roll.error.message : 'Roll failed. Try again.'}
+          message={
+              roll.error instanceof ApiError ? roll.error.message : t('home.rollFailed')
+            }
           onRetry={handleRoll}
         />
       ) : null}
 
       {rollsLeft <= 0 ? (
         <p className="text-center text-sm text-white/55">
-          No rolls left today. They refill at midnight UTC — or buy a Box.
+          {t('home.noRolls')}
         </p>
       ) : null}
 
@@ -165,18 +173,18 @@ export function HomePage() {
           <span className="text-xl" aria-hidden>
             📦
           </span>
-          <span className="text-xs">Boxes</span>
+          <span className="text-xs">{t('home.boxes')}</span>
         </button>
         <button type="button" className="btn-ghost flex-col !min-h-[64px]" onClick={() => navigate('/collection')}>
           <span className="text-xl" aria-hidden>
             📚
           </span>
-          <span className="text-xs">Collection</span>
+          <span className="text-xs">{t('home.collection')}</span>
         </button>
       </div>
 
       {lastNumber ? (
-        <Section title="Best find">
+        <Section title={t('home.bestFind')}>
           <GameCard className="flex items-center justify-between">
             <div>
               <p className="number-display text-3xl">{lastNumber.number}</p>
@@ -188,20 +196,25 @@ export function HomePage() {
       ) : null}
 
       {pendingChallenge ? (
-        <Section title="Open challenge">
+        <Section title={t('home.openChallenge')}>
           <GameCard accent="#f472b6" className="space-y-3">
             <p className="text-sm">
-              @{pendingChallenge.challenger?.username ?? pendingChallenge.challenger?.display_name} challenged you.
+              {t('home.challengedYou', {
+                name:
+                  pendingChallenge.challenger?.username ??
+                  pendingChallenge.challenger?.display_name ??
+                  '',
+              })}
             </p>
             <p className="number-display text-2xl">#{pendingChallenge.challenger_number}</p>
             <button type="button" className="btn-primary w-full" onClick={() => navigate('/profile')}>
-              ACCEPT CHALLENGE
+              {t('home.acceptChallenge')}
             </button>
           </GameCard>
         </Section>
       ) : null}
 
-      <Section title="Today's ranking">
+      <Section title={t('home.todayRanking')}>
         <GameCard className="divide-y divide-white/5">
           {(board.data?.entries ?? []).map((entry, index) => (
             <div key={entry.user_id} className="flex items-center gap-3 py-2.5">
@@ -213,24 +226,26 @@ export function HomePage() {
             </div>
           ))}
           {!board.data?.entries.length ? (
-            <p className="py-3 text-center text-sm text-white/45">No rolls yet today. Be the first.</p>
+            <p className="py-3 text-center text-sm text-white/45">{t('home.noRollsYet')}</p>
           ) : null}
         </GameCard>
       </Section>
 
       <Section
-        title="Invite friends"
+        title={t('home.inviteFriends')}
         action={
           <button type="button" className="text-xs text-accent-soft" onClick={() => navigate('/profile')}>
-            View
+            {t('home.view')}
           </button>
         }
       >
         <GameCard className="flex items-center justify-between text-sm">
           <span>
-            Activated: <span className="font-semibold">{referrals.data?.activated ?? 0}</span>
+            {t('home.activated')}: <span className="font-semibold">{referrals.data?.activated ?? 0}</span>
           </span>
-          <span className="text-white/50">+{formatCoins(referrals.data?.reward_coins ?? 0)} 🪙 each</span>
+          <span className="text-white/50">
+              {t('home.eachCoins', { coins: formatCoins(referrals.data?.reward_coins ?? 0) })}
+            </span>
         </GameCard>
       </Section>
 

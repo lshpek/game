@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import { useI18n } from '@/i18n';
 
-export function LoadingSpinner({ label = 'Loading…' }: { label?: string }) {
+export function LoadingSpinner({ label }: { label?: string }) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-12 text-white/60">
       <svg className="h-7 w-7 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -12,7 +14,7 @@ export function LoadingSpinner({ label = 'Loading…' }: { label?: string }) {
           strokeLinecap="round"
         />
       </svg>
-      <span className="text-sm">{label}</span>
+      <span className="text-sm">{label ?? t('common.loading')}</span>
     </div>
   );
 }
@@ -23,6 +25,7 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({ message, onRetry }: ErrorStateProps) {
+  const { t } = useI18n();
   return (
     <div className="glass flex flex-col items-center gap-3 p-6 text-center" role="alert">
       <span className="text-3xl" aria-hidden>
@@ -31,7 +34,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
       <p className="text-sm text-white/80">{message}</p>
       {onRetry ? (
         <button type="button" className="btn-ghost" onClick={onRetry}>
-          Try again
+          {t('common.tryAgain')}
         </button>
       ) : null}
     </div>

@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { formatCoins, rarityColor } from '@/lib/format';
 import type { ContainerCard } from '@/types';
+import { useI18n } from '@/i18n';
 
 interface ContainerTileProps {
   container: ContainerCard;
@@ -11,6 +12,7 @@ interface ContainerTileProps {
 }
 
 export function ContainerTile({ container, disabled = false, busy = false, onOpen }: ContainerTileProps) {
+  const { t } = useI18n();
   const accent = container.accent;
   const locked = container.locked;
 
@@ -64,7 +66,13 @@ export function ContainerTile({ container, disabled = false, busy = false, onOpe
         data-testid={`open-${container.code}`}
         style={{ background: `linear-gradient(135deg, ${accent}, #f472b6)` }}
       >
-        {locked ? '🔒 Pro only' : busy ? 'Opening…' : container.affordable ? 'OPEN' : 'NOT ENOUGH COINS'}
+        {locked
+          ? t('boxes.proOnly')
+          : busy
+            ? t('boxes.opening')
+            : container.affordable
+              ? t('boxes.open')
+              : t('boxes.notEnough')}
       </button>
     </motion.div>
   );

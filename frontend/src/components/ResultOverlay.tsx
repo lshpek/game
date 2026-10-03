@@ -3,6 +3,7 @@ import { RARITY_COLORS } from '@/lib/format';
 import { formatCoins, traitLabel } from '@/lib/format';
 import type { AchievementBadge, NumberCard, Rarity } from '@/types';
 import { RarityBadge, TraitChip } from './RarityBadge';
+import { useI18n } from '@/i18n';
 
 interface ResultOverlayProps {
   open: boolean;
@@ -31,6 +32,7 @@ export function ResultOverlay({
   onShare,
   onConvert,
 }: ResultOverlayProps) {
+  const { t } = useI18n();
   const color = rarity ? RARITY_COLORS[rarity] : '#7c5cff';
   const isSecret = rarity === 'SECRET' || rarity === 'MYTHIC';
 
@@ -45,7 +47,7 @@ export function ResultOverlay({
           onClick={onClose}
           role="dialog"
           aria-modal="true"
-          aria-label="Roll result"
+          aria-label={t('result.aria')}
           data-testid="result-overlay"
         >
           <motion.div
@@ -67,13 +69,13 @@ export function ResultOverlay({
                 animate={{ opacity: [0.6, 1, 0.6] }}
                 transition={{ duration: 1.8, repeat: Infinity }}
               >
-                {isFirstDiscovery ? '🚨 Secret Discovered' : '★ Secret Found'}
+                {isFirstDiscovery ? t('result.secretDiscovered') : t('result.secretFound')}
               </motion.p>
             ) : null}
 
             {isDuplicate ? (
               <p className="mb-1 text-xs font-bold uppercase tracking-[0.3em] text-amber-300/90">
-                Duplicate
+                {t('result.duplicate')}
               </p>
             ) : null}
 
@@ -110,7 +112,9 @@ export function ResultOverlay({
             ) : null}
 
             {coinsAwarded > 0 ? (
-              <p className="mt-3 text-sm font-semibold text-emerald-300">+{formatCoins(coinsAwarded)} Coins</p>
+              <p className="mt-3 text-sm font-semibold text-emerald-300">
+              {t('result.coinsAwarded', { coins: formatCoins(coinsAwarded) })}
+            </p>
             ) : null}
 
             {achievements.length ? (
@@ -129,15 +133,15 @@ export function ResultOverlay({
 
             <div className="mt-6 grid gap-2">
               <button type="button" className="btn-primary" onClick={onShare} data-testid="share-button">
-                SHARE
+                {t('result.share')}
               </button>
               {isDuplicate ? (
                 <button type="button" className="btn-ghost" onClick={onConvert}>
-                  Convert to Coins (+{formatCoins(conversionValue)})
+                  {t('result.convert', { coins: formatCoins(conversionValue) })}
                 </button>
               ) : null}
               <button type="button" className="btn-ghost" onClick={onClose}>
-                Continue
+                {t('result.continue')}
               </button>
             </div>
           </motion.div>

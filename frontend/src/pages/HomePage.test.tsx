@@ -8,6 +8,7 @@ import { HomePage } from '@/pages/HomePage';
 import { ApiError } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import type { Rarity, UserProfile } from '@/types';
+import { I18nProvider } from '@/i18n';
 
 const profile: UserProfile = {
   id: 1, telegram_id: 42, username: 'tester', first_name: 'Test', last_name: '',
@@ -63,9 +64,11 @@ function installFetch(overrides: Record<string, () => Response> = {}) {
 function renderWithQuery(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
-    </MemoryRouter>,
+    <I18nProvider>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+      </MemoryRouter>
+    </I18nProvider>,
   );
 }
 

@@ -1,4 +1,9 @@
 import type { Rarity } from '@/types';
+import { en } from '@/i18n/en';
+import { ru } from '@/i18n/ru';
+import type { Lang, DictKey, TranslateVars } from '@/i18n';
+
+type Translate = (key: DictKey, vars?: TranslateVars) => string;
 
 export const RARITY_COLORS: Record<Rarity, string> = {
   COMMON: '#8b93a7',
@@ -10,14 +15,28 @@ export const RARITY_COLORS: Record<Rarity, string> = {
   SECRET: '#22d3ee',
 };
 
+/**
+ * Rarity and trait names come from the API as stable codes; only their
+ * presentation is localised, so the maps are keyed by code, not by language.
+ */
 export const RARITY_LABELS: Record<Rarity, string> = {
-  COMMON: 'Common',
-  UNCOMMON: 'Uncommon',
-  RARE: 'Rare',
-  EPIC: 'Epic',
-  LEGENDARY: 'Legendary',
-  MYTHIC: 'Mythic',
-  SECRET: 'Secret',
+  COMMON: en['rarity.COMMON'],
+  UNCOMMON: en['rarity.UNCOMMON'],
+  RARE: en['rarity.RARE'],
+  EPIC: en['rarity.EPIC'],
+  LEGENDARY: en['rarity.LEGENDARY'],
+  MYTHIC: en['rarity.MYTHIC'],
+  SECRET: en['rarity.SECRET'],
+};
+
+export const RARITY_LABELS_RU: Record<Rarity, string> = {
+  COMMON: ru['rarity.COMMON'],
+  UNCOMMON: ru['rarity.UNCOMMON'],
+  RARE: ru['rarity.RARE'],
+  EPIC: ru['rarity.EPIC'],
+  LEGENDARY: ru['rarity.LEGENDARY'],
+  MYTHIC: ru['rarity.MYTHIC'],
+  SECRET: ru['rarity.SECRET'],
 };
 
 export const RARITY_ICONS: Record<Rarity, string> = {
@@ -52,6 +71,8 @@ export const TRAIT_LABELS: Record<string, string> = {
   sequence: 'Sequence',
 };
 
+const TRAIT_KEYS = Object.keys(TRAIT_LABELS);
+
 const numberFormatter = new Intl.NumberFormat('en-US');
 
 export function formatCoins(value: number | null | undefined): string {
@@ -71,23 +92,26 @@ export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(value < 0.01 ? 2 : 1)}%`;
 }
 
-export function formatRelativeTime(iso: string | null | undefined): string {
+export function formatRelativeTime(iso: string | null | undefined, t?: Translate): string {
   if (!iso) return '—';
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return '—';
+  const translate = t ?? ((key: DictKey) => en[key]);
   const diff = Date.now() - then;
   const minutes = Math.round(diff / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return translate('time.justNow');
+  if (minutes < 60) return translate('time.minutesAgo', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return translate('time.hoursAgo', { count: hours });
   const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
+  if (days < 30) return translate('time.daysAgo', { count: days });
   return new Date(iso).toLocaleDateString();
 }
 
-export function traitLabel(code: string): string {
-  return TRAIT_LABELS[code] ?? code.replace(/_/g, ' ');
+export function traitLabel(code: string, lang: Lang = 'en'): string {
+  if (!TRAIT_KEYS.includes(code)) return code.replace(/_/g, ' ');
+  const dict = lang === 'ru' ? ru : en;
+  return dict[`trait.${code}` as DictKey] ?? TRAIT_LABELS[code];
 }
 
 export function rarityColor(rarity: Rarity | string | null | undefined): string {
@@ -95,7 +119,8 @@ export function rarityColor(rarity: Rarity | string | null | undefined): string 
   return RARITY_COLORS[rarity as Rarity] ?? RARITY_COLORS.COMMON;
 }
 
-export function rarityLabel(rarity: Rarity | string | null | undefined): string {
-  if (!rarity) return RARITY_LABELS.COMMON;
-  return RARITY_LABELS[rarity as Rarity] ?? String(rarity);
+export function rarityLabel(rarity: Rarity | string | null | undefined, lang: Lang = 'en'): string {
+  const map = lang === 'ru' ? RARITY_LABELS_RU : RARITY_LABELS;
+  if (!rarity) return map.COMMON;
+  return map[rarity as Rarity] ?? String(rarity);
 }

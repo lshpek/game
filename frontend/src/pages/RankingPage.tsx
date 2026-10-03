@@ -4,21 +4,14 @@ import { compactCoins } from '@/lib/format';
 import { leaderboard } from '@/services/api';
 import { GameCard } from '@/components/GameCard';
 import { EmptyState, ErrorState, LoadingSpinner } from '@/components/States';
+import { useI18n } from '@/i18n';
 
-const PERIODS = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'alltime', label: 'All time' },
-];
+const PERIODS = ['daily', 'weekly', 'alltime'] as const;
 
-const CATEGORIES = [
-  { value: 'VALUE', label: '💎 Value' },
-  { value: 'RARITY', label: '✦ Rarest' },
-  { value: 'COLLECTION', label: '📚 Collection' },
-  { value: 'ROLLS', label: '🎲 Rolls' },
-];
+const CATEGORIES = ['VALUE', 'RARITY', 'COLLECTION', 'ROLLS'] as const;
 
 export function RankingPage() {
+  const { t } = useI18n();
   const [period, setPeriod] = useState('daily');
   const [category, setCategory] = useState('VALUE');
 
@@ -30,49 +23,55 @@ export function RankingPage() {
   return (
     <div className="space-y-4">
       <header>
-        <h1 className="font-display text-2xl font-bold">Ranking</h1>
+        <h1 className="font-display text-2xl font-bold">{t('ranking.title')}</h1>
         <p className="text-xs text-white/45">{board.data?.label ?? ''}</p>
       </header>
 
       <div className="grid grid-cols-3 gap-1.5">
-        {PERIODS.map((option) => (
+        {PERIODS.map((value) => (
           <button
-            key={option.value}
+            key={value}
             type="button"
-            onClick={() => setPeriod(option.value)}
+            onClick={() => setPeriod(value)}
             className={`rounded-xl border px-2 py-2 text-xs font-semibold ${
-              period === option.value
+              period === value
                 ? 'border-accent/60 bg-accent/20'
                 : 'border-white/10 bg-white/5 text-white/55'
             }`}
           >
-            {option.label}
+            {t(`ranking.period.${value}`)}
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-2 gap-1.5">
-        {CATEGORIES.map((option) => (
+        {CATEGORIES.map((value) => (
           <button
-            key={option.value}
+            key={value}
             type="button"
-            onClick={() => setCategory(option.value)}
+            onClick={() => setCategory(value)}
             className={`rounded-xl border px-2 py-2 text-xs font-semibold ${
-              category === option.value
+              category === value
                 ? 'border-white/25 bg-white/10'
                 : 'border-white/10 bg-white/5 text-white/55'
             }`}
           >
-            {option.label}
+            {t(`ranking.cat.${value}`)}
           </button>
         ))}
       </div>
 
-      {board.isLoading ? <LoadingSpinner label="Loading ranking…" /> : null}
-      {board.isError ? <ErrorState message="Could not load the ranking." onRetry={() => void board.refetch()} /> : null}
+      {board.isLoading ? <LoadingSpinner label={t('ranking.loading')} /> : null}
+      {board.isError ? (
+        <ErrorState message={t('ranking.error')} onRetry={() => void board.refetch()} />
+      ) : null}
 
       {board.data && board.data.entries.length === 0 ? (
-        <EmptyState icon="🏆" title="Nobody here yet" hint="Be the first to climb the board." />
+        <EmptyState
+          icon="🏆"
+          title={t('ranking.empty')}
+          hint={t('ranking.emptyHint')}
+        />
       ) : null}
 
       <GameCard className="divide-y divide-white/5 !p-2">
@@ -99,7 +98,9 @@ export function RankingPage() {
               )}
               <span className="min-w-0 flex-1 truncate text-sm">
                 {entry.username ? `@${entry.username}` : entry.display_name}
-                {isMe ? <span className="ml-1.5 text-[10px] text-accent-soft">YOU</span> : null}
+                {isMe ? (
+                  <span className="ml-1.5 text-[10px] text-accent-soft">{t('common.you')}</span>
+                ) : null}
               </span>
               <span className="text-sm font-semibold tabular-nums">{compactCoins(entry.score)}</span>
             </div>
@@ -108,7 +109,9 @@ export function RankingPage() {
       </GameCard>
 
       {board.data?.you ? (
-        <p className="text-center text-xs text-white/45">Your position: #{board.data.you}</p>
+        <p className="text-center text-xs text-white/45">
+          {t('ranking.position', { place: board.data.you })}
+        </p>
       ) : null}
     </div>
   );

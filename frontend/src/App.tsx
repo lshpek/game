@@ -9,11 +9,13 @@ import { HomePage } from '@/pages/HomePage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { RankingPage } from '@/pages/RankingPage';
 import { useAuthStore } from '@/store/auth';
+import { I18nProvider, useI18n } from '@/i18n';
 
 function AppShell() {
   const status = useAuthStore((state) => state.status);
   const error = useAuthStore((state) => state.error);
   const login = useAuthStore((state) => state.login);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (status === 'idle') void login();
@@ -22,7 +24,7 @@ function AppShell() {
   if (status === 'loading' || status === 'idle') {
     return (
       <div className="flex min-h-dvh items-center justify-center">
-        <LoadingSpinner label="Opening the game…" />
+        <LoadingSpinner label={t('common.loadingGame')} />
       </div>
     );
   }
@@ -30,10 +32,10 @@ function AppShell() {
   if (status === 'error') {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-lg font-semibold">Could not sign in</p>
+        <p className="text-lg font-semibold">{t('app.signInFailed')}</p>
         <p className="max-w-xs text-sm text-white/55">{error}</p>
         <button type="button" className="btn-primary" onClick={() => void login()}>
-          RETRY
+          {t('app.retry')}
         </button>
       </div>
     );
@@ -78,10 +80,12 @@ function ProfileSync() {
 
 export default function App() {
   return (
-    // Opt in to the React Router v7 behaviours to silence upgrade warnings.
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <ProfileSync />
-      <AppShell />
-    </HashRouter>
+    <I18nProvider>
+      // Opt in to the React Router v7 behaviours to silence upgrade warnings.
+      <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ProfileSync />
+        <AppShell />
+      </HashRouter>
+    </I18nProvider>
   );
 }
