@@ -17,11 +17,20 @@ Tokens
 
 Any other character is copied verbatim (spaces, dashes, dots, bullets). Templates
 are declarative data: adding a country never requires touching this module.
+Unicode
+-------
+
+``normalize_plate`` is Unicode-safe: Latin, Cyrillic, Georgian, Armenian and
+Japanese characters all survive. Only separator-ish characters (spaces, dashes,
+dots, bullets, slashes, brackets) are collapsed into single spaces; every other
+character is kept and case-folded. Lookup keys are therefore stable across
+alphabets and safe to index.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from app.core.errors import ValidationError
@@ -172,9 +181,23 @@ def parse_template(pattern: str) -> ParsedTemplate:
 
 
 def normalize_plate(text: str) -> str:
-    """Canonical lookup key: uppercase, separators collapsed to single spaces."""
-    cleaned = re.sub(r"[^A-Z0-9]+", " ", (text or "").upper()).strip()
-    return re.sub(r"\s+", " ", cleaned)
+    """Canonical lookup key: Unicode-safe, case-folded, separators collapsed.
+
+    Unlike a naive ``[^A-Z0-9]`` filter this never destroys non-Latin alphabets.
+    Separator-like characters (space, dash, dot, bullet, slash, brackets) become
+    a single space; every remaining character is preserved after NFKC folding so
+    visually identical inputs share one canonical key.
+    """
+    if not text:
+        return ""
+    folded = unicodedata.normalize("NFKC", text).strip().upper()
+    chars = []
+    for char in folded:
+        if char.isalnum():
+            chars.append(char)
+        else:
+            chars.append(" ")
+    return re.sub(r"\s+", " ", "".join(chars)).strip()
 
 
 __all__ = [

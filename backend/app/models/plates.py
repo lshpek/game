@@ -137,19 +137,32 @@ class Plate(Base, TimestampMixin):
     )
 
     plate_text: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
-    normalized_text: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    normalized_text: Mapped[str] = mapped_column(String(48), index=True, nullable=False)
+    display_segments: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     numeric_parts: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     letter_parts: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     plate_type: Mapped[str] = mapped_column(String(24), index=True, default="STANDARD", nullable=False)
     rarity: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
     rarity_score: Mapped[int] = mapped_column(Integer, index=True, default=0, nullable=False)
-    coin_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    # Fictional, country-local presentation value. NEVER a market price.
+    collector_value: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    # Authoritative game-economy value in NUMORA.
+    dealer_value: Mapped[int] = mapped_column(BigInteger, index=True, default=0, nullable=False)
+    # Kept for backwards compatibility with the legacy ``coin_value`` column.
+    coin_value: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
 
     story: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    story_ru: Mapped[str] = mapped_column(Text, default="", nullable=False)
     traits: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     visual_style: Mapped[str] = mapped_column(String(32), default="standard", nullable=False)
+
+    country_code: Mapped[str] = mapped_column(String(3), default="", nullable=False)
+    region_code: Mapped[str | None] = mapped_column(String(16), default=None)
+    currency_code: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
+    currency_symbol: Mapped[str] = mapped_column(String(8), default="$", nullable=False)
 
     season_code: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
@@ -165,8 +178,15 @@ class Plate(Base, TimestampMixin):
     template: Mapped[PlateTemplate] = relationship(lazy="joined")
 
     __table_args__ = (
+        # A textual plate may legitimately exist in more than one country, so the
+        # identity of a collectible is (country, normalized serial) - never the
+        # serial alone.
+        UniqueConstraint("country_id", "normalized_text", name="uq_plates_country_normalized"),
         Index("ix_plates_country_rarity", "country_id", "rarity"),
         Index("ix_plates_rarity_score", "rarity_score"),
+        Index("ix_plates_country_region", "country_id", "region_id"),
+        Index("ix_plates_season", "season_code"),
+        Index("ix_plates_discovery", "discovery_count"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -185,6 +205,8 @@ class UserPlate(Base, TimestampMixin):
     coins_earned: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
     is_new: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Number of copies sold to the DEALER; the final copy is protected by default.
+    copies_sold: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     first_acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
