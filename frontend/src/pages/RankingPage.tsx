@@ -22,10 +22,11 @@ export function RankingPage() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="font-display text-2xl font-bold">{t('ranking.title')}</h1>
-        <p className="text-xs text-white/45">{board.data?.label ?? ''}</p>
-      </header>
+      {/* The bottom-nav label already names the screen, so only the
+          server-provided board caption is shown here. */}
+      {board.data?.label ? (
+        <p className="text-xs text-white/45">{board.data.label}</p>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-1.5">
         {PERIODS.map((value) => (

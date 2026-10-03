@@ -64,8 +64,7 @@ export function BoxesPage() {
 
   return (
     <div className="space-y-5">
-      <header className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold">{t('boxes.title')}</h1>
+      <header className="flex justify-end">
         <span className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-sm font-bold tabular-nums text-amber-200">
           {compactCoins(profile?.coins ?? 0)} 🪙
         </span>
