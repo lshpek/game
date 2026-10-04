@@ -61,8 +61,8 @@ if str(BOT_PACKAGE_DIR) not in sys.path:
     sys.path.insert(0, str(BOT_PACKAGE_DIR))
 
 # ИЗМЕНЕНО: Убран префикс bot. у всех импортов из папки admin
+from admin import common as admin_common
 from admin.client import close_shared_clients
-from admin.common import config as ADMIN_CONFIG
 from admin.common import refresh_commands, verify_panel
 from admin.formatters import esc
 from admin.router import router as admin_router
@@ -181,10 +181,19 @@ http: httpx.AsyncClient | None = None
 # threading the Bot through every call.
 bot_instance: Bot | None = None
 
-# Admin panel readiness, evaluated once so ``--check`` can report it.
-ADMIN_PANEL_ENABLED = ADMIN_CONFIG.enabled
-ADMIN_ADMIN_IDS = frozenset(ADMIN_CONFIG.admin_ids)
-ADMIN_ADMIN_IDS_COUNT = len(ADMIN_ADMIN_IDS)
+# Admin panel readiness.
+#
+# Read through ``admin_common.config`` on every use instead of being snapshotted at
+# import time: ``load_dotenv`` and the environment can still change after this
+# module is imported, and a snapshot froze whatever happened to be in
+# ``ADMIN_TELEGRAM_IDS`` first - which made ``/admin`` refuse real operators whenever
+# the module was imported before the configuration was available.
+def admin_panel_enabled() -> bool:
+    return bool(admin_common.config.enabled)
+
+
+def admin_ids() -> frozenset[int]:
+    return frozenset(admin_common.config.admin_ids)
 
 
 # --------------------------------------------------------------------------
@@ -402,13 +411,14 @@ async def handle_panel_check(message: types.Message) -> None:
 
 async def _panel_check(message: types.Message) -> None:
     actor_id = message.from_user.id if message.from_user else None
-    if not ADMIN_PANEL_ENABLED:
+    if not admin_panel_enabled():
         await message.answer(
             "⚠️ <b>Панель выключена</b>\n\n"
             "Нужны <code>ADMIN_TELEGRAM_IDS</code> и настоящий <code>SERVICE_TOKEN</code>."
         )
         return
-    if actor_id not in ADMIN_ADMIN_IDS:
+    allowed = admin_ids()
+    if actor_id not in allowed:
         await message.answer("🔒 Нет доступа.")
         return
 
@@ -416,7 +426,7 @@ async def _panel_check(message: types.Message) -> None:
     lines = [
         "🩺 <b>Проверка панели</b>",
         f"ваш id: <code>{actor_id}</code>",
-        f"вы в списке админов: {'да' if actor_id in ADMIN_ADMIN_IDS else 'нет'}",
+        f"вы в списке админов: {'да' if actor_id in allowed else 'нет'}",
         f"bot token: {'задан' if BOT_TOKEN not in PLACEHOLDERS else 'НЕ ЗАДАН'}",
         f"service token: {'задан' if SERVICE_TOKEN not in PLACEHOLDERS else 'НЕ ЗАДАН'}",
         f"backend: <code>{esc(BACKEND_URL)}</code>",
@@ -528,7 +538,7 @@ async def on_startup(bot: Bot) -> None:
             ", ".join(unscoped),
         )
 
-    if not ADMIN_PANEL_ENABLED:
+    if not admin_panel_enabled():
         logger.warning(
             "Admin panel disabled: set ADMIN_TELEGRAM_IDS and a non-placeholder SERVICE_TOKEN to enable /admin."
         )
@@ -537,7 +547,7 @@ async def on_startup(bot: Bot) -> None:
     # Prove the panel can actually be served before an operator taps /admin. A
     # broken backend, a wrong token or a routing mismatch is a startup problem, not
     # something to discover from "the commands are there but nothing happens".
-    for telegram_id in sorted(ADMIN_ADMIN_IDS):
+    for telegram_id in sorted(admin_ids()):
         problem = await verify_panel(bot, telegram_id)
         if problem is None:
             logger.info("Admin panel verified for Telegram id %s", telegram_id)
@@ -620,8 +630,8 @@ def check() -> int:
     logger.info("  Mini App URL         : %s", mini_app_url("ref_12345"))
     logger.info("  BACKEND_URL          : %s", BACKEND_URL)
     logger.info("  SERVICE_TOKEN        : %s", "SET" if SERVICE_TOKEN not in PLACEHOLDERS else "MISSING")
-    logger.info("  ADMIN_TELEGRAM_IDS   : %s", ADMIN_ADMIN_IDS_COUNT or "MISSING")
-    logger.info("  Admin panel          : %s", "ENABLED" if ADMIN_PANEL_ENABLED else "DISABLED")
+    logger.info("  ADMIN_TELEGRAM_IDS   : %s", len(admin_ids()) or "MISSING")
+    logger.info("  Admin panel          : %s", "ENABLED" if admin_panel_enabled() else "DISABLED")
     logger.info("  Env file             : %s (%s)", ENV_FILE, "found" if ENV_FILE.is_file() else "missing")
     logger.info("  Mode                 : %s", "webhook" if WEBHOOK_URL else "polling")
     logger.info("  Allowed updates      : %s", ", ".join(ALLOWED_UPDATES))

@@ -21,7 +21,15 @@ from aiogram.types import CallbackQuery, Message
 
 from admin import keyboards as kb
 from admin import ops
-from admin.common import data_of, guard, render, render_error, require_user, toast
+from admin.common import (
+    data_of,
+    delete_quietly,
+    guard,
+    render,
+    render_error,
+    require_user,
+    toast,
+)
 from admin.formatters import (
     esc,
     num,
@@ -74,8 +82,6 @@ async def handle_start(message: Message, command: CommandObject) -> None:
     del command
     # Keep the operator's chat as clean as a player's: the command disappears and
     # only the panel message remains.
-    from bot import delete_quietly
-
     await delete_quietly(message)
     try:
         await open_panel(message, answer=True)

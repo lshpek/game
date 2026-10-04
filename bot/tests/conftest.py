@@ -113,7 +113,7 @@ def _offline_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     """No admin handler may reach the network, even by accident.
 
     Tests that need the panel to render something inject their own client by
-    patching ``bot.admin.common.get_client``; anything else would silently build a
+    patching ``admin.common.get_client``; anything else would silently build a
     real connection to ``BACKEND_URL``, which is why this is enforced globally.
     """
     from admin import client as admin_client

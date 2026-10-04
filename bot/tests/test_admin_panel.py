@@ -85,7 +85,7 @@ def _admin_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
     if it is ever run on its own.
     """
     monkeypatch.setattr(
-        "bot.admin.common.config",
+        "admin.common.config",
         AdminConfig(admin_ids=frozenset({ADMIN_ID}), service_token="test-token"),
     )
 

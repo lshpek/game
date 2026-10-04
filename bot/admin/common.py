@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -76,6 +77,48 @@ def get_client() -> AdminBotClient:
     """Build a client from the environment. Credentials never leave this object."""
     resolved = get_config()
     return AdminBotClient(resolved.backend_url, resolved.service_token, timeout=resolved.request_timeout)
+
+
+#: Modules that may own the chat-cleanup helpers, most specific first.
+#: ``bot.bot`` is the repository layout; ``__main__`` is the Railway image, where
+#: ``bot.py`` is copied to ``/app/bot.py`` and imported only as the entry script.
+_CLEANUP_MODULES = ("bot.bot", "__main__")
+
+
+def cleanup_helper(name: str) -> Callable[..., Any] | None:
+    """Look up a chat-hygiene helper on whichever module actually holds it.
+
+    The panel must not import ``bot.bot`` directly: ``bot.py`` imports *this*
+    package at module scope, so a hard import would be circular in the repo layout
+    and would not exist at all in the container, where ``bot.py`` is only ever
+    ``__main__``. Looking the helper up on the already-imported modules keeps both
+    layouts working and keeps monkeypatching effective in tests.
+    """
+    for module_name in _CLEANUP_MODULES:
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        helper = getattr(module, name, None)
+        if callable(helper):
+            return helper
+    return None
+
+
+async def delete_quietly(message: Message | None) -> bool:
+    """Best-effort message removal shared by the player and the admin flows.
+
+    Returns ``False`` instead of raising when cleanup is impossible: a chat that
+    cannot be tidied must never turn into a visible failure for the operator.
+    """
+    helper = cleanup_helper("delete_quietly")
+    if helper is None:
+        logger.debug("chat cleanup is unavailable in this process")
+        return False
+    try:
+        return bool(await helper(message))
+    except Exception:  # pragma: no cover - cleanup must never mask the reply
+        logger.debug("could not clean up a message", exc_info=True)
+        return False
 
 
 def is_admin(telegram_id: int | None) -> bool:
@@ -233,12 +276,7 @@ async def deny(target: CallbackQuery | Message) -> None:
 
     if message is None:
         return
-    try:
-        from __main__ import delete_quietly
-
-        await delete_quietly(message)
-    except Exception:  # pragma: no cover - cleanup must never mask the refusal
-        logger.debug("could not clean up a refused message", exc_info=True)
+    await delete_quietly(message)
 
 
 def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[None]]:

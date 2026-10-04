@@ -348,8 +348,8 @@ class StubBackend:
 def backend(monkeypatch: pytest.MonkeyPatch) -> StubBackend:
     stub = StubBackend()
     # The admin modules import ``get_client`` by name, so patching only
-    # ``bot.admin.common`` would leave the handler modules holding the real one.
-    for module in ("bot.admin.common", "bot.admin.router", "bot.admin.world", "bot.admin.players"):
+    # ``admin.common`` would leave the handler modules holding the real one.
+    for module in ("admin.common", "admin.router", "admin.world", "admin.players"):
         monkeypatch.setattr(f"{module}.get_client", lambda: stub, raising=False)
     return stub
 
@@ -733,7 +733,7 @@ class TestPanelAvailability:
                 raise RuntimeError("panel exploded")
 
         broken = _Broken()
-        for module in ("bot.admin.common", "bot.admin.router", "bot.admin.world", "bot.admin.players"):
+        for module in ("admin.common", "admin.router", "admin.world", "admin.players"):
             monkeypatch.setattr(f"{module}.get_client", lambda: broken, raising=False)
 
         session.reset()
@@ -752,7 +752,7 @@ class TestPanelAvailability:
                 raise RuntimeError("backend unreachable")
 
         broken = _Broken()
-        for module in ("bot.admin.common", "bot.admin.router", "bot.admin.world", "bot.admin.players"):
+        for module in ("admin.common", "admin.router", "admin.world", "admin.players"):
             monkeypatch.setattr(f"{module}.get_client", lambda: broken, raising=False)
 
         session.reset()
@@ -825,7 +825,7 @@ class TestCommandPublication:
             async def dashboard(self, telegram_id: int) -> dict[str, Any]:
                 return {"users": {}}
 
-        monkeypatch.setattr("bot.admin.common.get_client", lambda: _Ok())
+        monkeypatch.setattr("admin.common.get_client", lambda: _Ok())
         assert await verify_panel(None, ADMIN_ID) is None  # type: ignore[arg-type]
 
     async def test_an_unreachable_backend_is_reported(self, monkeypatch):
@@ -836,7 +836,7 @@ class TestCommandPublication:
             async def dashboard(self, telegram_id: int) -> dict[str, Any]:
                 raise AdminAPIUnavailable("Backend unreachable.", code="UNREACHABLE")
 
-        monkeypatch.setattr("bot.admin.common.get_client", lambda: _Down())
+        monkeypatch.setattr("admin.common.get_client", lambda: _Down())
         reason = await verify_panel(None, ADMIN_ID)  # type: ignore[arg-type]
         assert reason is not None
         assert "unreachable" in reason
