@@ -136,7 +136,16 @@ def _is_callback(event: Any) -> bool:
 
 
 def _message_of(event: Any) -> Message | None:
+    """The panel message behind a callback. ``None`` for a plain message event."""
     return getattr(event, "message", None)
+
+
+def _incoming_message(event: Any) -> Message | None:
+    """The message the event *arrived with* - the one worth cleaning up."""
+    inner = _message_of(event)
+    if inner is not None:
+        return inner
+    return event if hasattr(event, "delete") else None
 
 
 async def render(
@@ -196,11 +205,26 @@ async def render_error(target: CallbackQuery | Message, exc: Exception) -> None:
 # guards
 # ---------------------------------------------------------------------------
 async def deny(target: CallbackQuery | Message) -> None:
-    """Generic refusal. Never reveals who *is* an admin."""
+    """Generic refusal. Never reveals who *is* an admin.
+
+    The incoming command is removed as well (best effort - see
+    :func:`bot.bot.delete_quietly`), so an unauthorised ``/admin`` leaves no
+    trace in the chat either.
+    """
+    message = _incoming_message(target)
     if _is_callback(target):
         await target.answer(ACCESS_DENIED_TEXT, show_alert=True)
+    else:
+        await target.answer(ACCESS_DENIED_TEXT)
+
+    if message is None:
         return
-    await target.answer(ACCESS_DENIED_TEXT)
+    try:
+        from bot.bot import delete_quietly
+
+        await delete_quietly(message)
+    except Exception:  # pragma: no cover - cleanup must never mask the refusal
+        logger.debug("could not clean up a refused message", exc_info=True)
 
 
 def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[None]]:

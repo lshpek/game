@@ -239,12 +239,18 @@ def build_generated_plate(
     discovery_count: int = 0,
     force_secret: bool = False,
     season_code: str | None = None,
+    force_rarity: Rarity | None = None,
 ) -> GeneratedPlate:
     """Score, price and package one already-rendered plate.
 
     Single source of truth for "plate text in, collectible out": the roll engine
     and the admin test lab both go through here, so a forced plate is scored by
     exactly the same rules as a real one.
+
+    ``force_rarity`` is the admin-only escape hatch: the normal resolver only ever
+    moves a plate *up* the rarity ladder, so a requested rarity could not be
+    honoured for COMMON. When set, it wins outright - and the value is still
+    derived from the real analysis, so a forced plate never gets a made-up price.
     """
     multipliers = event_multipliers or {}
     parsed_region = region.code if region else None
@@ -270,7 +276,7 @@ def build_generated_plate(
     )
 
     nat = natural_rarity(analysis)
-    rarity = resolve_final_rarity(
+    rarity = force_rarity or resolve_final_rarity(
         natural=nat,
         luck=luck,
         score=score,
@@ -333,6 +339,7 @@ class PlateGenerator:
         *,
         discovery_count: int = 0,
         force_secret: bool = False,
+        force_rarity: Rarity | None = None,
     ) -> GeneratedPlate:
         parsed = parse_template(template.pattern)
         plate_text, styles = render_template(
@@ -351,6 +358,7 @@ class PlateGenerator:
             event_multipliers=self.ctx.event_multipliers,
             discovery_count=discovery_count,
             force_secret=force_secret,
+            force_rarity=force_rarity,
             season_code=self.ctx.season_code,
         )
 
@@ -427,6 +435,9 @@ class PlateGenerator:
                 template,
                 wanted_rarity,
                 force_secret=force_secret,
+                # An explicit target is authoritative, so no retry loop is needed
+                # to reach it: the resolver only ever moves plates up the ladder.
+                force_rarity=target_rarity,
             )
             last = plate
             if plate.rarity is wanted_rarity and (

@@ -637,10 +637,34 @@ class TestPlatesAdmin:
         db.commit()
         return plate
 
+    def _search_all_pages(self, admin_bot, max_pages: int = 30, **params) -> list[dict]:
+        """Walk the paginated plate catalogue.
+
+        The endpoint is paginated, so a single page cannot prove that a plate is
+        findable. The walk is bounded: a text query that matches more than
+        ``max_pages * 15`` plates is not a search failure, it is a wide net.
+        """
+        found: list[dict] = []
+        for page in range(1, max_pages + 1):
+            body = admin_bot.get("/plates", params={**params, "page": page}).json()
+            found.extend(body["items"])
+            if not body["has_more"]:
+                break
+        return found
+
     def test_plate_search_supports_text_and_filters(self, admin_bot, db):
         plate = self._make_plate(db)
-        by_text = admin_bot.get("/plates", params={"query": plate.plate_text}).json()
-        assert any(item["id"] == plate.id for item in by_text["items"])
+
+        # Search by plate id. The endpoint also runs a fuzzy text match, so a
+        # numeric query legitimately returns many rows - hence the page walk.
+        by_id = self._search_all_pages(admin_bot, query=str(plate.id))
+        assert any(item["id"] == plate.id for item in by_id)
+
+        # Search by the exact text, across pages.
+        by_text = self._search_all_pages(admin_bot, query=plate.plate_text)
+        assert any(item["id"] == plate.id for item in by_text)
+
+        # Filters.
         by_country = admin_bot.get("/plates", params={"country_code": "RUS"}).json()
         assert by_country["total"] >= 1
         by_rarity = admin_bot.get("/plates", params={"rarity": plate.rarity}).json()

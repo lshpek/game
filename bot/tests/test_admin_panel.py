@@ -79,7 +79,11 @@ def context() -> FSMContext:
 
 @pytest.fixture(autouse=True)
 def _admin_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point the shared config at a known admin id for the whole module."""
+    """Point the shared config at a known admin id for the whole module.
+
+    ``bot/tests/conftest.py`` already pins it; this keeps the module self-contained
+    if it is ever run on its own.
+    """
     monkeypatch.setattr(
         "bot.admin.common.config",
         AdminConfig(admin_ids=frozenset({ADMIN_ID}), service_token="test-token"),

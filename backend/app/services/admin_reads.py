@@ -402,13 +402,17 @@ class AdminReadsMixin(AdminServiceBase):
         cleaned = (query or "").strip().lstrip("@")
         if cleaned:
             if cleaned.isdigit():
+                # A bare number is a Plate ID lookup. Mixing it with a fuzzy text
+                # match would bury the exact hit under every plate whose serial
+                # happens to contain those digits.
                 conditions.append(Plate.id == int(cleaned))
-            conditions.append(
-                or_(
-                    func.upper(Plate.plate_text).like(f"%{cleaned.upper()}%"),
-                    func.upper(Plate.normalized_text).like(f"%{cleaned.upper()}%"),
+            else:
+                conditions.append(
+                    or_(
+                        func.upper(Plate.plate_text).like(f"%{cleaned.upper()}%"),
+                        func.upper(Plate.normalized_text).like(f"%{cleaned.upper()}%"),
+                    )
                 )
-            )
         if country_code:
             conditions.append(Plate.country_code == str(country_code).upper())
         if rarity:

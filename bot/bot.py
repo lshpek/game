@@ -34,7 +34,12 @@ from typing import Any
 import httpx
 from aiogram import Bot, Dispatcher, F, Router, types
 from aiogram.client.default import DefaultBotProperties
-from aiogram.exceptions import TelegramNetworkError, TelegramUnauthorizedError
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramNetworkError,
+    TelegramUnauthorizedError,
+)
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
@@ -79,9 +84,25 @@ LOCALHOST_URLS = {
 START_PARAM_PREFIXES = ("ref_", "number_", "challenge_")
 MAX_START_PARAM_LENGTH = 64
 
+# Chat hygiene: the player sends /start once and the chat keeps exactly one bot
+# message (the text plus the Play button). Everything else - the command itself,
+# any other command, stray text, transient confirmations - is deleted again.
+# Requires the bot to be an admin with the "Delete messages" permission; without
+# it the bot silently keeps working and the chat just stays as it was.
+CLEAN_CHAT = os.getenv("TELEGRAM_CLEAN_CHAT", "true").strip().lower() not in {"0", "false", "no", "off"}
+CLEAN_PRIVATE_ONLY = os.getenv("TELEGRAM_CLEAN_PRIVATE_ONLY", "true").strip().lower() not in {"0", "false", "no", "off"}
+CLEANUP_DELAY = float(os.getenv("TELEGRAM_CLEANUP_DELAY", "8"))
+
 # Telegram must deliver callback_query updates for the admin panel's inline
 # keyboards; message-only polling would silently break every button.
 ALLOWED_UPDATES = ["message", "callback_query"]
+
+# The one bot message each chat is meant to keep. In-memory is fine: if it is
+# lost (restart, cleared history) the bot simply posts the welcome again.
+_welcome_messages: dict[int, int] = {}
+
+# Strong references to pending cleanup tasks so they are not collected early.
+_pending_cleanups: set[asyncio.Task[None]] = set()
 
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -93,6 +114,10 @@ logger = logging.getLogger("bot")
 router = Router()
 http: httpx.AsyncClient | None = None
 
+# Set during startup so helpers can edit the stored welcome message without
+# threading the Bot through every call.
+bot_instance: Bot | None = None
+
 # Admin panel readiness, evaluated once so ``--check`` can report it.
 ADMIN_PANEL_ENABLED = ADMIN_CONFIG.enabled
 ADMIN_ADMIN_IDS_COUNT = len(ADMIN_CONFIG.admin_ids)
@@ -101,6 +126,31 @@ ADMIN_ADMIN_IDS_COUNT = len(ADMIN_CONFIG.admin_ids)
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
+WELCOME_TEXT = (
+    "🎰 <b>Number Collector</b>\n\n"
+    "Roll four-digit numbers, build your collection and compete with friends.\n\n"
+    "• every plate is a real number plate with its own value\n"
+    "• rare finds, first discoveries and 777s are tracked for every player\n"
+    "• play with friends, climb the leaderboards, unlock PRO\n\n"
+    "Tap Play to start."
+)
+
+HELP_TEXT = (
+    "🎰 <b>Number Collector</b>\n\n"
+    "<b>How to play</b>\n"
+    "1. Tap Play and open the game\n"
+    "2. Roll - each roll reveals a number plate\n"
+    "3. Collect plates, find countries and rare rarities\n"
+    "4. Share your best find and climb the leaderboards\n\n"
+    "<b>Useful</b>\n"
+    "• every plate has a collector value and a dealer value\n"
+    "• duplicates turn into NUMORA\n"
+    "• PRO adds bonus rolls and a multiplier on duplicates\n"
+    "• daily missions and challenges pay out every day\n\n"
+    "Tap Play to open the game."
+)
+
+
 def mini_app_url(start_param: str | None = None) -> str:
     """Public HTTPS URL of the Mini App (Telegram requires HTTPS off localhost)."""
     base = f"{FRONTEND_URL}/{MINI_APP_SHORT_NAME}"
@@ -111,6 +161,83 @@ def open_keyboard(start_param: str | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="🎰 Play", web_app=WebAppInfo(url=mini_app_url(start_param)))]]
     )
+
+
+async def delete_quietly(message: types.Message | None) -> bool:
+    """Delete a message, tolerating every reason Telegram may refuse.
+
+    Deleting someone else's message requires the bot to be an administrator, so
+    this never raises: without the permission the chat simply stays as it was.
+    """
+    if message is None or not CLEAN_CHAT or message.chat is None:
+        return False
+    if CLEAN_PRIVATE_ONLY and message.chat.type != "private":
+        return False
+    try:
+        await message.delete()
+        return True
+    except TelegramForbiddenError:
+        _warn_delete_permission()
+        return False
+    except TelegramBadRequest:
+        # "message to delete not found" - e.g. it was already removed.
+        return False
+
+
+_delete_warned = False
+
+
+def _warn_delete_permission() -> None:
+    global _delete_warned
+    if _delete_warned:
+        return
+    _delete_warned = True
+    logger.warning(
+        "Cannot delete messages: promote the bot to admin with the 'Delete messages' permission to keep the chat clean."
+    )
+
+
+async def delete_after(message: types.Message | None, delay: float = 8.0) -> None:
+    """Remove a bot message shortly after posting it.
+
+    Used for confirmations the player should read but that must not pile up in
+    the chat. Runs as a background task so the handler returns immediately.
+    """
+
+    async def _worker() -> None:
+        try:
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:  # pragma: no cover - shutdown
+            raise
+        await delete_quietly(message)
+
+    # Keep a reference so the task is not garbage collected mid-sleep.
+    _pending_cleanups.add(asyncio.create_task(_worker()))
+
+
+async def show_welcome(message: types.Message, start_param: str | None = None) -> None:
+    """Post (or refresh) the single message the player is meant to keep.
+
+    ``/start`` and ``/help`` both end up here, so the private chat ends up with
+    exactly one bot message: the text plus the Play button.
+    """
+    keyboard = open_keyboard(start_param)
+    chat_id = message.chat.id if message.chat else None
+
+    existing = _welcome_messages.get(chat_id) if chat_id is not None else None
+    if existing is not None and bot_instance is not None:
+        try:
+            await bot_instance.edit_message_text(
+                text=WELCOME_TEXT, chat_id=chat_id, message_id=existing, reply_markup=keyboard
+            )
+            return
+        except TelegramBadRequest:
+            # The stored message is gone (cleared history, bot restarted, ...).
+            _welcome_messages.pop(chat_id, None)
+
+    sent = await message.answer(WELCOME_TEXT, reply_markup=keyboard)
+    if chat_id is not None and sent is not None:
+        _welcome_messages[chat_id] = sent.message_id
 
 
 def normalize_start_param(raw: str | None) -> str | None:
@@ -137,6 +264,8 @@ def config_problems() -> list[str]:
         problems.append(
             f"FRONTEND_URL ({FRONTEND_URL}) is not HTTPS. Telegram only opens Mini Apps over HTTPS outside localhost."
         )
+    if CLEAN_CHAT and not problems:
+        logger.info("Message cleanup is ON: incoming commands/text are deleted and only the Play message is kept.")
     return problems
 
 
@@ -145,20 +274,51 @@ def config_problems() -> list[str]:
 # --------------------------------------------------------------------------
 @router.message(CommandStart())
 async def handle_start(message: types.Message) -> None:
+    """``/start`` - the only message the player keeps in the chat."""
     raw = message.text or ""
     payload = normalize_start_param(raw[len("/start") :]) if raw.startswith("/start") else None
-    await message.answer(
-        "🎰 Number Collector\n\nRoll random four-digit numbers, collect them and compete with friends.",
-        reply_markup=open_keyboard(payload),
-    )
+    await delete_quietly(message)
+    await show_welcome(message, payload)
 
 
 @router.message(Command("help"))
 async def handle_help(message: types.Message) -> None:
-    await message.answer(
-        "/start - open the game\n/help - this message\n\nRoll numbers, open boxes and share your best find!",
-        reply_markup=open_keyboard(),
+    """``/help`` - deletes itself and rewrites the single welcome message."""
+    await delete_quietly(message)
+    chat_id = message.chat.id if message.chat else None
+    existing = _welcome_messages.get(chat_id) if chat_id is not None else None
+    if existing is not None and bot_instance is not None:
+        try:
+            await bot_instance.edit_message_text(
+                text=HELP_TEXT, chat_id=chat_id, message_id=existing, reply_markup=open_keyboard()
+            )
+            return
+        except TelegramBadRequest:
+            _welcome_messages.pop(chat_id, None)
+    await message.answer(HELP_TEXT, reply_markup=open_keyboard())
+
+
+@router.message(F.successful_payment)
+async def handle_successful_payment(message: types.Message) -> None:
+    payment = message.successful_payment
+    logger.info("Successful payment: payload=%s amount=%s", payment.invoice_payload, payment.total_amount)
+    await delete_quietly(message)
+    await forward_payment_update(message.model_dump(mode="json"))
+    # The player gets to read it, then it disappears like everything else.
+    confirmation = await message.answer(
+        "Payment received. Your rewards are being added — open the game to see them! 🎉"
     )
+    await delete_after(confirmation, CLEANUP_DELAY)
+
+
+@router.message()
+async def discard_everything_else(message: types.Message) -> None:
+    """Last handler: no command, no text, nothing to keep.
+
+    Stray messages (unknown commands, plain text, stickers in private chat) are
+    simply removed so the chat only ever holds the Play message.
+    """
+    await delete_quietly(message)
 
 
 async def forward_payment_update(update: dict[str, Any]) -> None:
@@ -180,14 +340,6 @@ async def forward_payment_update(update: dict[str, Any]) -> None:
         logger.error("Failed to forward payment update: %s", exc)
 
 
-@router.message(F.successful_payment)
-async def handle_successful_payment(message: types.Message) -> None:
-    payment = message.successful_payment
-    logger.info("Successful payment: payload=%s amount=%s", payment.invoice_payload, payment.total_amount)
-    await forward_payment_update(message.model_dump(mode="json"))
-    await message.answer("Payment received. Your rewards are being added — open the game to see them! 🎉")
-
-
 @router.callback_query()
 async def ignore_foreign_callbacks(callback: types.CallbackQuery) -> None:
     """Swallow callbacks from keyboards the bot did not create.
@@ -203,6 +355,9 @@ async def ignore_foreign_callbacks(callback: types.CallbackQuery) -> None:
 # --------------------------------------------------------------------------
 async def on_startup(bot: Bot) -> None:
     """aiogram injects the Bot instance, so no dispatcher lookup is needed."""
+    global bot_instance
+    bot_instance = bot
+
     me = await bot.get_me()
     logger.info("Bot connected as @%s (id=%s)", me.username, me.id)
 
