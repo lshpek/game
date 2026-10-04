@@ -561,7 +561,7 @@ def user_plates_keyboard(
 
 
 def country_keyboard(
-    codes: Sequence[tuple[str, str]],
+    codes: Sequence[tuple[str, str] | tuple[str, str, bool]],
     *,
     page: int = 1,
     pages: int = 1,
@@ -570,14 +570,19 @@ def country_keyboard(
     """Country picker for the test lab.
 
     Countries are paged instead of silently truncated, so the 41st country is
-    reachable; ``pages`` drives the pager and ``query`` is echoed back.
+    reachable; ``pages`` drives the pager and ``query`` is echoed back. A third tuple
+    element marks a country as locked (coming soon): it stays visible so an operator
+    can see the full catalogue, but the lock makes its state unambiguous.
     """
     keyboard: list[list[InlineKeyboardButton]] = []
     if query:
         keyboard.append([button(f"🔎 «{query[:16]}»", LAB_SEARCH, "clear")])
     line: list[InlineKeyboardButton] = []
-    for code, flag in codes:
-        line.append(button(f"{flag} {code}", LAB_COUNTRY, code, danger=True))
+    for entry in codes:
+        code, flag = entry[0], entry[1]
+        playable = entry[2] if len(entry) > 2 else True
+        label = f"{'🔒 ' if not playable else ''}{flag} {code}"
+        line.append(button(label, LAB_COUNTRY, code, danger=bool(playable)))
         if len(line) == 4:
             keyboard.append(line)
             line = []

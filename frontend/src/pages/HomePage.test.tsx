@@ -52,7 +52,7 @@ const plate: PlateCard = {
   country: { code: 'DEU', name_en: 'Germany', name_ru: 'Германия', flag: '🇩🇪' },
   region: null, template: { code: 'DE_STD', pattern: 'LDDDLLLDD' }, visual,
   owned: true, duplicate_count: 0, is_favorite: false, is_new: true, acquired_at: null,
-  number: 'A123BC 777',
+  kind: 'VEHICLE_PLATE', details: null,
 };
 
 const rollResult: PlateRollResult = {
@@ -128,7 +128,7 @@ describe('HomePage roll flow', () => {
 
     await waitFor(() => expect(screen.getByTestId('result-overlay')).toBeInTheDocument());
     const overlay = within(screen.getByTestId('result-overlay'));
-    expect(overlay.getByTestId('plate-visual')).toHaveAttribute('data-plate', 'A123BC 777');
+    expect(overlay.getByTestId('vehicle-plate-visual')).toHaveAttribute('data-plate', 'A123BC 777');
     expect(overlay.getByText('Secret')).toBeInTheDocument();
     expect(overlay.getByText(/Secret Discovered/)).toBeInTheDocument();
   });

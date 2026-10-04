@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import clsx from 'clsx';
-import { CollectibleVisual, resolveCategory } from '@/components/CollectibleVisual';
+import { CollectibleVisual, resolveKind } from '@/components/CollectibleVisual';
 import { RarityBadge } from '@/components/RarityBadge';
 import { ValueCounter } from '@/components/ValueCounter';
 import { haptic, hapticSuccess } from '@/lib/telegram';
 import { RARITY_COLORS } from '@/lib/format';
 import { useT } from '@/i18n';
-import type { CollectibleCategory, PlateCard, PlateRollResult, Rarity } from '@/types';
+import type { CollectibleKind, PlateCard, PlateRollResult, Rarity } from '@/types';
 
 /**
  * The cinematic reveal - the single most important moment in the game.
@@ -81,9 +81,9 @@ const PREVIEW_INTERVAL = 110;
 const DECEL_INTERVAL = 240;
 
 /** Fake previews shown while cycling. Never presented as a result. */
-const CYCLE_COUNTRIES = ['RUS', 'USA', 'JPN', 'DEU', 'GBR', 'UAE', 'FRA', 'ITA', 'KAZ', 'CAN', 'ARM', 'GEO'];
+const CYCLE_COUNTRIES = ['RUS', 'USA', 'JPN', 'DEU', 'GBR', 'ARE', 'FRA', 'ITA', 'KAZ', 'CAN', 'ARM', 'GEO'];
 const CYCLE_SERIALS = ['777', '012', '404', '088', '101', '777', '666', '313', '246', '909', '404', '515'];
-const CYCLE_KINDS: CollectibleCategory[] = ['VEHICLE_PLATE', 'PHONE_NUMBER', 'SIM_CARD'];
+const CYCLE_KINDS: CollectibleKind[] = ['VEHICLE_PLATE', 'SIM_CARD'];
 
 interface RevealProps {
   result: PlateRollResult | null;
@@ -99,19 +99,17 @@ interface RevealProps {
 function buildCycleCard(source: PlateCard, index: number): PlateCard {
   const country = CYCLE_COUNTRIES[index % CYCLE_COUNTRIES.length] ?? 'RUS';
   const serial = CYCLE_SERIALS[index % CYCLE_SERIALS.length] ?? '777';
-  const kind: CollectibleCategory = CYCLE_KINDS[index % CYCLE_KINDS.length] ?? 'VEHICLE_PLATE';
+  const kind: CollectibleKind = CYCLE_KINDS[index % CYCLE_KINDS.length] ?? 'VEHICLE_PLATE';
   const text =
-    kind === 'PHONE_NUMBER'
+    kind === 'SIM_CARD'
       ? `+${index % 90 + 1} ${serial} ${serial} ${serial}`
-      : kind === 'SIM_CARD'
-        ? `S${serial} ${serial} ${serial} NU`
-        : `${String.fromCharCode(65 + (index % 26))}${serial}${serial}AA`;
+      : `${String.fromCharCode(65 + (index % 26))}${serial}${serial}AA`;
   return {
     ...source,
     plate_text: text,
     display_segments: text.split(' '),
-    category: kind,
-    plate_type: kind === 'PHONE_NUMBER' ? 'PHONE' : kind === 'SIM_CARD' ? 'SIM' : 'VEHICLE',
+    kind,
+    plate_type: kind === 'SIM_CARD' ? 'SIM' : 'VEHICLE',
     country: { ...source.country, code: country, flag: '' },
   };
 }
@@ -127,7 +125,7 @@ export function Reveal({ result, pending, onClose, onShare, onSell, onViewCollec
   const plate = result?.plate ?? null;
   const rarity = (result?.rarity ?? 'COMMON') as Rarity;
   const accent = RARITY_COLORS[rarity] ?? RARITY_COLORS.COMMON;
-  const category = plate ? resolveCategory(plate) : 'VEHICLE_PLATE';
+  const category = plate ? resolveKind(plate) : 'VEHICLE_PLATE';
 
   const isCinematic = rarity === 'MYTHIC' || rarity === 'SECRET' || rarity === 'LEGENDARY';
 
@@ -356,11 +354,7 @@ export function Reveal({ result, pending, onClose, onShare, onSell, onViewCollec
               >
                 <span aria-hidden>{plate.country.flag}</span>
                 <span>
-                  {category === 'PHONE_NUMBER'
-                    ? t('category.phone')
-                    : category === 'SIM_CARD'
-                      ? t('category.sim')
-                      : t('category.plate')}
+                  {category === 'SIM_CARD' ? t('category.sim') : t('category.plate')}
                 </span>
                 <span className="h-3 w-px bg-white/15" />
                 <span className="text-white/50">{plate.country.code}</span>

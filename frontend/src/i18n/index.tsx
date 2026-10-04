@@ -19,7 +19,7 @@ export const LANG_SHORT: Record<Lang, string> = { en: 'EN', ru: 'RU' };
 
 export const LANG_LABELS: Record<Lang, string> = { en: 'English', ru: 'Русский' };
 
-const STORAGE_KEY = 'number-collector.lang';
+const STORAGE_KEY = 'numora.lang';
 
 export type DictKey = keyof typeof en;
 export type TranslateVars = Record<string, string | number>;

@@ -1,36 +1,56 @@
-import { useState } from 'react';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api';
 import { formatCoins, rarityColor } from '@/lib/format';
-import { game } from '@/services/api';
+import { countries as countriesApi, game } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 import { RARITY_ORDER } from '@/types';
-import type { Rarity } from '@/types';
+import type { CollectibleKind, CountrySummary, Rarity } from '@/types';
 import { ProgressBar } from '@/components/GameCard';
+import { CollectibleDetails, DetailSheet } from '@/components/CollectibleDetails';
 import { CollectionList } from '@/components/CollectionList';
 import { EmptyState, ErrorState, SkeletonRow } from '@/components/States';
 import { useI18n } from '@/i18n';
 
 const SORTS = ['recent', 'value', 'rarest', 'name'] as const;
+
+const KIND_TABS: Array<{ key: CollectibleKind | null; label: 'collection.kindAll' | 'collection.kindPlates' | 'collection.kindSim' }> = [
+  { key: null, label: 'collection.kindAll' },
+  { key: 'VEHICLE_PLATE', label: 'collection.kindPlates' },
+  { key: 'SIM_CARD', label: 'collection.kindSim' },
+];
+
 const INPUT =
   'min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none placeholder:text-white/35 focus:border-accent/60';
 
 export function CollectionPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);
   const applyProfile = useAuthStore((state) => state.applyProfile);
 
   const [page, setPage] = useState(1);
+  const [kind, setKind] = useState<CollectibleKind | null>(null);
   const [rarity, setRarity] = useState('ALL');
   const [sort, setSort] = useState('recent');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [detail, setDetail] = useState<number | null>(null);
+
+  // The collection follows the player's active country, which the server owns.
+  const activeQuery = useQuery({
+    queryKey: ['countries', 'active'],
+    queryFn: countriesApi.active,
+    staleTime: 60_000,
+  });
+  const activeCode = activeQuery.data?.code ?? null;
+  const activeCountry: CountrySummary | null = activeQuery.data?.country ?? null;
 
   const query = useInfiniteQuery({
-    queryKey: ['collection', page, rarity, sort, term],
-    queryFn: () => game.collection({ page, pageSize: 30, rarity, sort, search: term }),
+    queryKey: ['collection', page, kind, rarity, sort, term, activeCode],
+    queryFn: () =>
+      game.collection({ page, pageSize: 30, rarity, sort, search: term, kind: kind ?? undefined }),
     initialPageParam: page,
     getNextPageParam: (last) => (last.has_more ? last.page + 1 : undefined),
   });
@@ -63,10 +83,34 @@ export function CollectionPage() {
   });
 
   const meta = query.data?.pages[0];
-  const items = query.data?.pages.flatMap((entry) => entry.items) ?? [];
+  const items = useMemo(() => query.data?.pages.flatMap((entry) => entry.items) ?? [], [query.data]);
+  const detailCard = useMemo(() => items.find((item) => item.id === detail) ?? null, [detail, items]);
+  const countryLabel = activeCountry
+    ? lang === 'ru'
+      ? activeCountry.name_ru
+      : activeCountry.name_en
+    : t('country.all');
 
   return (
     <div className="space-y-4">
+      {/* Country context, always visible: the collection belongs to one world. */}
+      <header className="flex items-center justify-between gap-3" data-testid="collection-country">
+        <div className="flex min-w-0 items-center gap-2">
+          <span aria-hidden className="text-2xl leading-none">
+            {activeCountry?.flag ?? '\u{1F30D}'}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black tracking-tight text-white">{countryLabel}</p>
+            <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/35">
+              {activeCode ?? t('country.world')}
+            </p>
+          </div>
+        </div>
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
+          {t('collection.title')}
+        </span>
+      </header>
+
       <p className="text-xs text-white/45">
         {meta
           ? t('collection.count', {
@@ -118,6 +162,33 @@ export function CollectionPage() {
           </button>
         </form>
 
+        {/* Kind tabs: ALL / PLATES / SIM, exactly the two collectible kinds. */}
+        <div className="flex gap-1.5" role="tablist" aria-label={t('category.aria')}>
+          {KIND_TABS.map((tab) => {
+            const active = kind === tab.key;
+            return (
+              <button
+                key={tab.label}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                data-testid={`collection-kind-${tab.key ?? 'ALL'}`}
+                onClick={() => {
+                  setKind(tab.key);
+                  setPage(1);
+                }}
+                className={`min-h-[36px] flex-1 rounded-xl border px-2 text-[11px] font-bold uppercase tracking-[0.16em] transition ${
+                  active
+                    ? 'border-white/25 bg-white/[0.12] text-white'
+                    : 'border-white/8 bg-white/[0.03] text-white/45'
+                }`}
+              >
+                {t(tab.label)}
+              </button>
+            );
+          })}
+        </div>
+
         <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
           {['ALL', ...RARITY_ORDER].map((code) => (
             <button
@@ -167,17 +238,16 @@ export function CollectionPage() {
       ) : null}
 
       {!query.isLoading && items.length === 0 ? (
-        <EmptyState icon="📚" title={t('collection.empty')} hint={t('collection.emptyHint')} />
+        <EmptyState icon="\u{1F4DA}" title={t('collection.empty')} hint={t('collection.emptyHint')} />
       ) : null}
 
       <CollectionList
         items={items}
         expanded={expanded}
         onToggle={setExpanded}
+        onOpen={setDetail}
         selling={sell.isPending}
-        onSell={(plate) =>
-          sell.mutate({ plateId: plate.id, copies: Math.max(1, plate.duplicate_count) })
-        }
+        onSell={(item) => sell.mutate({ plateId: item.id, copies: Math.max(1, item.duplicate_count) })}
       />
 
       {query.data && query.data.pages.length > 1 ? (
@@ -203,6 +273,12 @@ export function CollectionPage() {
           </button>
         </div>
       ) : null}
+
+      <DetailSheet open={Boolean(detailCard)} onClose={() => setDetail(null)}>
+        {detailCard ? <CollectibleDetails collectible={detailCard} /> : null}
+      </DetailSheet>
     </div>
   );
 }
+
+export default CollectionPage;

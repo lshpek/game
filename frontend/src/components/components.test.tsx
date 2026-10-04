@@ -69,7 +69,8 @@ const basePlate: PlateCard = {
   is_favorite: false,
   is_new: false,
   acquired_at: '2026-01-01T00:00:00Z',
-  number: 'A777BC777',
+  kind: 'VEHICLE_PLATE',
+  details: null,
 };
 
 const baseRoll: PlateRollResult = {
@@ -153,7 +154,7 @@ describe('ResultOverlay', () => {
       <ResultOverlay open result={baseRoll} onClose={vi.fn()} onShare={vi.fn()} onSell={vi.fn()} />,
     );
 
-    expect(screen.getByTestId('plate-visual')).toHaveAttribute('data-plate', 'A777BC777');
+    expect(screen.getByTestId('vehicle-plate-visual')).toHaveAttribute('data-plate', 'A777BC777');
     expect(screen.getByText('Mythic')).toBeInTheDocument();
     expect(screen.getByText(/Secret Discovered/)).toBeInTheDocument();
     // The dealer value animates up to its final number.
@@ -188,7 +189,7 @@ describe('CollectionList', () => {
     render(
       <CollectionList items={[basePlate]} expanded={null} onToggle={vi.fn()} selling={false} onSell={vi.fn()} />,
     );
-    expect(screen.getByTestId('plate-visual')).toHaveAttribute('data-plate', 'A777BC777');
+    expect(screen.getByTestId('vehicle-plate-visual')).toHaveAttribute('data-plate', 'A777BC777');
     expect(screen.getByText('+12,500')).toBeInTheDocument();
     expect(screen.getByText('×2 dup')).toBeInTheDocument();
   });

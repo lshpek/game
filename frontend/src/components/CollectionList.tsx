@@ -1,24 +1,33 @@
 import { formatCoins, rarityColor } from '@/lib/format';
 import { useI18n } from '@/i18n';
-import type { PlateCard } from '@/types';
-import { PlateVisual } from './PlateVisual';
+import { CollectibleVisual } from './CollectibleVisual';
 import { RarityBadge, TraitChip } from './RarityBadge';
 
 interface CollectionListProps {
-  items: PlateCard[];
+  items: import('@/types').PlateCard[];
   expanded: number | null;
   onToggle: (plateId: number) => void;
   selling: boolean;
-  onSell: (plate: PlateCard) => void;
+  onSell: (plate: import('@/types').PlateCard) => void;
+  /** Opens the full detail sheet. */
+  onOpen?: (plateId: number) => void;
 }
 
-export function CollectionList({ items, expanded, onToggle, selling, onSell }: CollectionListProps) {
+/**
+ * The collection list.
+ *
+ * Thumbnails are *physical objects*, never generic placeholders: a plate renders as a
+ * plate and a SIM as a card. The list only draws, and delegates every write (sell,
+ * open) back to the page.
+ */
+export function CollectionList({ items, expanded, onToggle, selling, onSell, onOpen }: CollectionListProps) {
   const { lang, t } = useI18n();
   return (
     <ul className="space-y-2">
       {items.map((item) => {
         const color = rarityColor(item.rarity);
         const isOpen = expanded === item.id;
+        const kindLabel = item.kind === 'SIM_CARD' ? t('category.sim') : t('category.plate');
         return (
           <li key={item.id}>
             <div className="glass p-3" style={isOpen ? { borderColor: `${color}55` } : undefined}>
@@ -29,12 +38,18 @@ export function CollectionList({ items, expanded, onToggle, selling, onSell }: C
                 aria-expanded={isOpen}
                 aria-label={t('collection.ariaPlate', { plate: item.plate_text })}
                 data-testid="collection-row"
+                data-kind={item.kind ?? 'VEHICLE_PLATE'}
               >
                 <span className="w-32 shrink-0">
-                  <PlateVisual plate={item} size="sm" />
+                  <CollectibleVisual collectible={item} size="sm" accent={color} still />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <RarityBadge rarity={item.rarity} size="sm" />
+                  <span className="flex items-center gap-1.5">
+                    <RarityBadge rarity={item.rarity} size="sm" />
+                    <span className="rounded-md border border-white/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/40">
+                      {kindLabel}
+                    </span>
+                  </span>
                   <span className="mt-1 block truncate text-xs text-white/45">
                     {item.country.flag} {lang === 'ru' ? item.country.name_ru : item.country.name_en}
                   </span>
@@ -43,7 +58,10 @@ export function CollectionList({ items, expanded, onToggle, selling, onSell }: C
                   <span className="number-display block text-sm text-emerald-300">
                     +{formatCoins(item.dealer_value)}
                   </span>
-                  <span className="text-[10px] text-white/45">{item.currency_symbol}{formatCoins(item.collector_value)}</span>
+                  <span className="text-[10px] text-white/45">
+                    {item.currency_symbol}
+                    {formatCoins(item.collector_value)}
+                  </span>
                   {item.duplicate_count > 0 ? (
                     <span className="block text-[10px] text-amber-300/80">
                       {t('collection.dup', { count: item.duplicate_count })}
@@ -54,7 +72,9 @@ export function CollectionList({ items, expanded, onToggle, selling, onSell }: C
 
               {isOpen ? (
                 <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
-                  <p className="text-sm leading-relaxed text-white/70">{item.story}</p>
+                  {item.story ? (
+                    <p className="text-sm leading-relaxed text-white/70">{item.story}</p>
+                  ) : null}
                   <div className="flex flex-wrap gap-1.5">
                     {item.reason_labels.map((label, index) => (
                       <TraitChip
@@ -72,17 +92,31 @@ export function CollectionList({ items, expanded, onToggle, selling, onSell }: C
                         : '—',
                     })}
                   </p>
-                  {item.duplicate_count > 0 ? (
-                    <button
-                      type="button"
-                      className="btn-ghost w-full !text-sm"
-                      disabled={selling}
-                      onClick={() => onSell(item)}
-                      aria-label={t('collection.sellAria')}
-                    >
-                      {t('collection.sell', { coins: formatCoins(item.dealer_value * item.duplicate_count) })}
-                    </button>
-                  ) : null}
+                  <div className="flex gap-2">
+                    {onOpen ? (
+                      <button
+                        type="button"
+                        className="btn-ghost flex-1 !text-sm"
+                        onClick={() => onOpen(item.id)}
+                        data-testid="collection-open-detail"
+                      >
+                        {t('details.title')}
+                      </button>
+                    ) : null}
+                    {item.duplicate_count > 0 ? (
+                      <button
+                        type="button"
+                        className="btn-ghost flex-1 !text-sm"
+                        disabled={selling}
+                        onClick={() => onSell(item)}
+                        aria-label={t('collection.sellAria')}
+                      >
+                        {t('collection.sell', {
+                          coins: formatCoins(item.dealer_value * item.duplicate_count),
+                        })}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -92,3 +126,5 @@ export function CollectionList({ items, expanded, onToggle, selling, onSell }: C
     </ul>
   );
 }
+
+export default CollectionList;

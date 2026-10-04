@@ -2,6 +2,9 @@
 
 import { apiRequest, makeIdempotencyKey } from '@/lib/api';
 import type {
+  ActiveCountryResponse,
+  CountryCard,
+  CountryListResponse,
   HuntFilter,
   AchievementItem,
   AuthResponse,
@@ -23,6 +26,7 @@ import type {
   SeasonItem,
   SellAllResult,
   UserProfile,
+  WorldResponse,
 } from '@/types';
 
 export const auth = {
@@ -48,25 +52,32 @@ export const game = {
   /**
    * Draw one collectible.
    *
-   * `hunt` is a *pool filter* only - which category and which country may be
-   * eligible. Everything about the outcome is decided by the server, so this can
-   * never be used to forge a result.
+   * `hunt` is a *pool filter* only - which kind and which country may be eligible.
+   * Everything about the outcome is decided by the server, so this can never be used
+   * to forge a result. With no country given, the player's active country decides.
    */
   roll: (key?: string, hunt?: HuntFilter) =>
     apiRequest<PlateRollResult>('/api/roll', {
       method: 'POST',
       idempotencyKey: key ?? makeIdempotencyKey('roll'),
       query: {
-        ...(hunt?.category ? { category: hunt.category } : {}),
+        ...(hunt?.kind ? { category: hunt.kind } : {}),
         ...(hunt?.country_code ? { country_code: hunt.country_code } : {}),
       },
     }),
 
   rollHistory: (limit = 20) =>
-    apiRequest<Array<{ roll_id: number; plate_text: string; rarity: string; value: number; is_duplicate: boolean }>>(
-      '/api/roll/history',
-      { query: { limit } },
-    ),
+    apiRequest<
+      Array<{
+        roll_id: number;
+        plate_text: string;
+        rarity: string;
+        value: number;
+        is_duplicate: boolean;
+        country_code?: string;
+        kind?: string;
+      }>
+    >('/api/roll/history', { query: { limit } }),
 
   garage: () => apiRequest<GarageData>('/api/garage'),
 
@@ -79,6 +90,7 @@ export const game = {
     pageSize?: number;
     rarity?: string;
     country?: string;
+    kind?: string;
     search?: string;
     sort?: string;
     favoritesOnly?: boolean;
@@ -90,6 +102,7 @@ export const game = {
         page_size: params.pageSize ?? 30,
         rarity: params.rarity,
         country: params.country,
+        kind: params.kind,
         sort: params.sort,
         search: params.search,
         favorites_only: params.favoritesOnly ?? false,
@@ -104,7 +117,8 @@ export const game = {
       body: { copies },
     }),
 
-  sellDuplicates: () => apiRequest<SellAllResult>('/api/collection/sell-duplicates', { method: 'POST' }),
+  sellDuplicates: () =>
+    apiRequest<SellAllResult>('/api/collection/sell-duplicates', { method: 'POST' }),
 
   favorite: (plateId: number) =>
     apiRequest<{ plate_id: number; is_favorite: boolean }>(`/api/plates/${plateId}/favorite`, {
@@ -119,15 +133,47 @@ export const game = {
       `/api/plates/${plateId}`,
     ),
 
-  world: () =>
-    apiRequest<{ countries: Array<Record<string, unknown>>; total_collected: number; total_plates: number; progress: number }>(
-      '/api/world',
-    ),
+  /** The atlas, one page at a time. */
+  world: (params: { limit?: number; offset?: number } = {}) =>
+    apiRequest<WorldResponse>('/api/world', {
+      query: { limit: params.limit ?? 60, offset: params.offset ?? 0 },
+    }),
 
   achievements: () => apiRequest<AchievementItem[]>('/api/achievements'),
 
   seasons: () => apiRequest<SeasonItem[]>('/api/seasons'),
   activeSeason: () => apiRequest<SeasonItem | null>('/api/seasons/active'),
+};
+
+/**
+ * The country system.
+ *
+ * The active country is authoritative on the server; the client keeps only a mirror
+ * for instant rendering. `setActive` is the single write path, so a country can never
+ * look selected without the backend having validated it.
+ */
+export const countries = {
+  list: (params: { search?: string; region?: string; playableOnly?: boolean; limit?: number; offset?: number } = {}) =>
+    apiRequest<CountryListResponse>('/api/countries', {
+      query: {
+        search: params.search,
+        region: params.region,
+        playable_only: params.playableOnly ?? false,
+        limit: params.limit ?? 60,
+        offset: params.offset ?? 0,
+      },
+    }),
+
+  active: () => apiRequest<ActiveCountryResponse>('/api/countries/active'),
+
+  /** `null` clears the selection and returns the player to the world-wide hunt. */
+  setActive: (code: string | null) =>
+    apiRequest<ActiveCountryResponse>('/api/countries/active', {
+      method: 'POST',
+      body: { code },
+    }),
+
+  detail: (code: string) => apiRequest<CountryCard>(`/api/countries/${code}`),
 };
 export const containers = {
   list: () => apiRequest<ContainerCard[]>('/api/containers'),

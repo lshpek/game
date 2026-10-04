@@ -16,6 +16,7 @@ from app import __version__
 from app.core.errors import ValidationError
 from app.core.logging import error_buffer
 from app.core.timeutils import as_aware, start_of_utc_day, utcnow
+from app.game.collectibles import normalize_kind, plate_types_for
 from app.game.plate_rarity import RARITY_RANK, Rarity, rarity_case
 from app.models.admin import AdminAuditLog
 from app.models.enums import PaymentStatus
@@ -563,7 +564,11 @@ class AdminReadsMixin(AdminServiceBase):
         if country_code:
             conditions.append(Plate.country_code == str(country_code).upper())
         if category:
-            conditions.append(func.upper(func.coalesce(Plate.plate_type, "")) == str(category).upper())
+            # Accepts either the stored ``plate_type`` or a collectible kind, so the
+            # panel can filter by object rather than by an internal storage value.
+            wanted = normalize_kind(category)
+            types = sorted(plate_types_for(wanted)) if wanted else [str(category).upper()]
+            conditions.append(func.upper(func.coalesce(Plate.plate_type, "")).in_(types))
         if rarity:
             conditions.append(Plate.rarity == str(rarity).upper())
         if conditions:

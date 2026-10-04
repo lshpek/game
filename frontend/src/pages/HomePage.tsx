@@ -1,26 +1,35 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, makeIdempotencyKey } from '@/lib/api';
 import { haptic, hapticError, hapticSuccess, shareToChat } from '@/lib/telegram';
 import { compactCoins, formatCoins } from '@/lib/format';
-import { game, leaderboard, social } from '@/services/api';
+import { countries as countriesApi, game, leaderboard, social } from '@/services/api';
+import { useActiveCountry } from '@/store/activeCountry';
 import { useAuthStore } from '@/store/auth';
 import type { PlateRollResult } from '@/types';
 import { GameCard, ProgressBar, Section } from '@/components/GameCard';
-import { PlateVisual } from '@/components/PlateVisual';
+import { CollectibleVisual } from '@/components/CollectibleVisual';
 import { RarityBadge } from '@/components/RarityBadge';
 import { ResultOverlay } from '@/components/ResultOverlay';
 import { RollButton } from '@/components/RollButton';
 import { ErrorState } from '@/components/States';
 import { useI18n } from '@/i18n';
 
+/**
+ * The home screen.
+ *
+ * Its job is to answer three questions in under two seconds, in this order: *where
+ * am I hunting, what can I press, and what did I just find*. Everything else is
+ * secondary and sits below the roll.
+ */
 export function HomePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { lang, t } = useI18n();
   const profile = useAuthStore((state) => state.profile);
   const applyProfile = useAuthStore((state) => state.applyProfile);
+  const applyCountry = useActiveCountry((state) => state.apply);
 
   const [result, setResult] = useState<PlateRollResult | null>(null);
 
@@ -33,14 +42,28 @@ export function HomePage() {
   });
   const referrals = useQuery({ queryKey: ['referrals'], queryFn: social.referrals });
   const challenges = useQuery({ queryKey: ['challenges'], queryFn: social.challenges });
+  const activeQuery = useQuery({
+    queryKey: ['countries', 'active'],
+    queryFn: countriesApi.active,
+    staleTime: 60_000,
+  });
+
+  // Mirror the server's answer so every screen reads the same country from one store.
+  const { data: activePayload } = activeQuery;
+  useEffect(() => {
+    if (activePayload) applyCountry(activePayload);
+  }, [activePayload, applyCountry]);
+
+  const activeCountry = activeCountryQueryCountry(activePayload?.country);
 
   const invalidate = useCallback(() => {
-    for (const key of ['daily', 'garage', 'collection', 'leaderboard', 'referrals', 'challenges', 'user']) {
+    for (const key of ['daily', 'garage', 'collection', 'leaderboard', 'referrals', 'challenges', 'user', 'countries']) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
   }, [queryClient]);
 
   const roll = useMutation({
+    // No country is sent: the server rolls in the player's active country.
     mutationFn: (key: string) => game.roll(key),
     onSuccess: (data) => {
       setResult(data);
@@ -52,9 +75,7 @@ export function HomePage() {
     },
     onError: (error) => {
       hapticError();
-      if (error instanceof ApiError) {
-        invalidate();
-      }
+      if (error instanceof ApiError) invalidate();
     },
   });
 
@@ -81,7 +102,10 @@ export function HomePage() {
     if (!result) return;
     try {
       const share = await game.share(result.plate.id);
-      shareToChat(share.mini_app_link, (lang === 'ru' ? share.share_text_ru : share.share_text_en) || share.plate_text);
+      shareToChat(
+        share.mini_app_link,
+        (lang === 'ru' ? share.share_text_ru : share.share_text_en) || share.plate_text,
+      );
       invalidate();
     } catch (error) {
       if (error instanceof ApiError) window.alert(error.message);
@@ -96,23 +120,50 @@ export function HomePage() {
 
   return (
     <div className="space-y-5">
-      <section className="flex flex-col items-center gap-3 pt-2">
-        {daily.data?.can_claim ? (
-          <GameCard accent="#fbbf24" className="w-full space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-amber-200">{t('home.dailyReady')}</span>
-              <span className="font-semibold text-amber-200">
-                +{formatCoins(daily.data.claim_reward_coins)} 🪙
-              </span>
-            </div>
-            <p className="text-xs text-white/55">{t('home.dailyRewardHint', { coins: formatCoins(daily.data.claim_reward_coins) })}</p>
-          </GameCard>
-        ) : null}
+      {/* 1. Where am I. */}
+      <button
+        type="button"
+        onClick={() => navigate('/world')}
+        data-testid="home-active-country"
+        className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.10] to-white/[0.02] px-4 py-3 text-left active:scale-[0.99]"
+      >
+        <span aria-hidden className="text-3xl leading-none">
+          {activeCountry?.flag ?? '\u{1F30D}'}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[15px] font-black tracking-tight text-white">
+            {activeCountry ? (lang === 'ru' ? activeCountry.name_ru : activeCountry.name_en) : t('country.world')}
+          </span>
+          <span className="truncate text-[10px] font-bold uppercase tracking-[0.22em] text-white/40">
+            {activeQuery.data?.code ?? t('country.anywhere')}
+          </span>
+        </span>
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.18em] text-white/45">
+          {t('country.change')} ›
+        </span>
+      </button>
 
+      {daily.data?.can_claim ? (
+        <GameCard accent="#fbbf24" className="w-full space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-amber-200">{t('home.dailyReady')}</span>
+            <span className="font-semibold text-amber-200">
+              +{formatCoins(daily.data.claim_reward_coins)} 🪙
+            </span>
+          </div>
+          <p className="text-xs text-white/55">
+            {t('home.dailyRewardHint', { coins: formatCoins(daily.data.claim_reward_coins) })}
+          </p>
+        </GameCard>
+      ) : null}
+
+      {/* 2. The main action. */}
+      <section className="flex flex-col items-center gap-3 pt-2">
         <RollButton rollsLeft={rollsLeft} rolling={roll.isPending} onRoll={handleRoll} />
         {rollsLeft <= 0 && !daily.data?.can_claim ? (
           <p className="text-sm text-white/55">{t('home.noRolls')}</p>
         ) : null}
+        <p className="text-center text-[11px] text-white/35">{t('hunt.syntheticNote')}</p>
       </section>
 
       {roll.isError ? (
@@ -121,7 +172,8 @@ export function HomePage() {
           onRetry={() => roll.mutate(makeIdempotencyKey('roll'))}
         />
       ) : null}
-      {/* Garage hero: the most recent find, then the best find stats. */}
+
+      {/* 3-4. What is being collected, and the recent discovery. */}
       {garage.data?.recent ? (
         <Section
           title={t('home.bestFind')}
@@ -132,18 +184,21 @@ export function HomePage() {
           }
         >
           <GameCard className="space-y-3">
-            <PlateVisual plate={garage.data.recent} size="md" />
+            <CollectibleVisual collectible={garage.data.recent} size="md" still />
             <div className="flex items-center justify-between">
               <RarityBadge rarity={garage.data.recent.rarity} size="sm" />
               <span className="text-xs text-white/50">
                 {garage.data.recent.country.flag}{' '}
-                {lang === 'ru' ? garage.data.recent.country.name_ru : garage.data.recent.country.name_en}
+                {lang === 'ru'
+                  ? garage.data.recent.country.name_ru
+                  : garage.data.recent.country.name_en}
               </span>
             </div>
           </GameCard>
         </Section>
       ) : null}
 
+      {/* 5-6. Progress and progression. */}
       {garage.data ? (
         <Section title={t('collection.title')}>
           <GameCard className="space-y-3">
@@ -232,3 +287,16 @@ export function HomePage() {
     </div>
   );
 }
+
+/** Narrow the server payload to what the header renders. */
+function activeCountryQueryCountry(country: unknown) {
+  if (!country || typeof country !== 'object') return null;
+  const item = country as { flag?: string; name_ru?: string; name_en?: string };
+  return {
+    flag: item.flag ?? '\u{1F30D}',
+    name_ru: item.name_ru ?? '',
+    name_en: item.name_en ?? '',
+  };
+}
+
+export default HomePage;

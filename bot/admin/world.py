@@ -151,7 +151,7 @@ async def _lab_header(mode: str, user_id: int | None, context: FSMContext) -> st
         f"игрок: {'<code>' + str(user_id) + '</code>' if user_id else '<i>не выбран</i>'}",
     ]
     if category:
-        rows.append(f"категория: {esc(category)}")
+        rows.append(f"тип: {esc(category)}")
     if preset:
         rows.append(f"пресет: {esc(preset)}")
     if country:
@@ -165,7 +165,8 @@ async def _lab_header(mode: str, user_id: int | None, context: FSMContext) -> st
     rows.extend(
         [
             "",
-            "<i>Симуляция ничего не меняет.\nLIVE — создаёт и выдаёт номер игроку.</i>",
+            "<i>Симуляция ничего не меняет.\n"
+            "LIVE — создаёт и выдаёт коллекцию игроку.</i>",
         ]
     )
     return "\n".join(rows)
@@ -199,7 +200,9 @@ async def lab_category_menu(callback: CallbackQuery, context: FSMContext) -> Non
         return
     await render(
         callback.message,
-        "📂 <b>КАТЕГОРИЯ</b>\n━━━━━━━━━━\n\nКатегория коллекционного номера.",
+        "📂 <b>ТИП КОЛЛЕКЦИИ</b>\n━━━━━━━━━━\n\n<i>Номер — не отдельная коллекция.\n"
+        "🚗 Vehicle plate — номерной знак.\n"
+        "💳 SIM card — карта с синтетическим номером.</i>",
         kb.lab_category_keyboard(categories, current=await data_of(context, KEY_CATEGORY)),
     )
 
@@ -212,7 +215,7 @@ async def lab_category_pick(callback: CallbackQuery, context: FSMContext) -> Non
     await context.update_data(
         **{KEY_CATEGORY: None if value == "*" else value.upper(), KEY_PRESET: None}
     )
-    await toast(callback, f"Категория: {value}")
+    await toast(callback, "Любой тип" if value == "*" else f"Тип: {value.upper()}")
     await lab_menu(callback, context)
 
 
@@ -340,19 +343,14 @@ async def _render_country_picker(
         await render_error(target, exc)
         return
     raw = catalog.get("countries") or []
-    category = await data_of(context, KEY_CATEGORY)
-    if category:
-        raw = [
-            item
-            for item in raw
-            if str((item.get("config") or {}).get("category") or "").upper() == str(category).upper()
-        ]
     needle = (query or "").strip().lower()
     if needle:
         raw = [
             item
             for item in raw
             if needle in str(item.get("code", "")).lower()
+            or needle in str(item.get("iso_alpha2", "")).lower()
+            or needle in str(item.get("calling_code", "")).lower()
             or needle in str(item.get("name_en", "")).lower()
             or needle in str(item.get("name_ru", "")).lower()
             or needle in str(item.get("flag", "")).lower()
@@ -368,8 +366,16 @@ async def _render_country_picker(
     pages = max(1, -(-len(raw) // COUNTRY_PAGE_SIZE))
     page = max(1, min(page, pages))
     window = raw[(page - 1) * COUNTRY_PAGE_SIZE : page * COUNTRY_PAGE_SIZE]
-    codes = [(str(item.get("code")), str(item.get("flag") or "")) for item in window]
+    # Locked countries stay visible but marked: an operator must be able to see that
+    # a country exists before it can be rolled, instead of wondering where it went.
+    codes = [
+        (str(item.get("code")), str(item.get("flag") or ""), bool(item.get("is_playable")))
+        for item in window
+    ]
+    locked = sum(1 for item in raw if not item.get("is_playable"))
     header = "🌍 <b>СТРАНА</b>\n━━━━━━━━━━\n\nВыберите страну для генерации."
+    if locked:
+        header += f"\n\n🔒 ещё {locked} — закрыты (coming soon)"
     if query:
         header += f"\n\n🔎 {esc(query)} • найдено {len(raw)}"
     await render(target, header, kb.country_keyboard(codes, page=page, pages=pages, query=query))
@@ -444,6 +450,7 @@ async def lab_preset_pick(callback: CallbackQuery, context: FSMContext) -> None:
 
 async def _lab_request(context: FSMContext) -> dict[str, Any]:
     return {
+        "kind": await data_of(context, KEY_CATEGORY),
         "country_code": await data_of(context, KEY_COUNTRY),
         "rarity": await data_of(context, KEY_RARITY),
         "preset": await data_of(context, KEY_PRESET),
@@ -543,10 +550,10 @@ async def plate_search_prompt(callback: CallbackQuery, context: FSMContext) -> N
     await context.update_data(**{KEY_SCREEN: "plate-search"})
     await render(
         callback.message,
-        "🔍 <b>ПОИСК НОМЕРА</b>\n━━━━━━━━━━\n\n"
-        "Введите текст номера (<code>A777AA 77</code>), его номер в каталоге\n"
-        "(<code>#1234</code>), страну (<code>RUS</code>) или фильтр\n"
-        "(<code>MYTHIC</code>, <code>PHONE</code>).\n"
+        "🔍 <b>ПОИСК ПО КАТАЛОГУ</b>\n━━━━━━━━━━\n\n"
+        "Текст номера (<code>A777AA 77</code>), синтетический номер SIM-карты\n"
+        "(<code>+7 900 123 45 67</code>), ID в каталоге (<code>#1234</code>),\n"
+        "страну (<code>RUS</code>) или фильтр (<code>MYTHIC</code>, <code>SIM_CARD</code>).\n"
         "<i>Точный ID больше не поглощает текстовый запрос</i>",
         kb.prompt_keyboard(),
     )

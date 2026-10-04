@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { RARITY_COLORS, formatCoins } from '@/lib/format';
 import type { AchievementBadge, PlateRollResult, Rarity } from '@/types';
 import { useI18n } from '@/i18n';
-import { PlateVisual } from './PlateVisual';
+import { CollectibleVisual } from './CollectibleVisual';
 import { RarityBadge, TraitChip } from './RarityBadge';
 import { ValueCounter } from './ValueCounter';
 
@@ -14,7 +14,7 @@ interface ResultOverlayProps {
   onSell: () => void;
 }
 
-/** The roll reveal: plate flips in, value counts up, story explains why. */
+/** The compact reveal: the object flips in, the value counts up, the story explains why. */
 export function ResultOverlay({ open, result, onClose, onShare, onSell }: ResultOverlayProps) {
   const { lang, t } = useI18n();
   const plate = result?.plate ?? null;
@@ -80,7 +80,7 @@ export function ResultOverlay({ open, result, onClose, onShare, onSell }: Result
               className="my-3"
               data-testid="result-plate"
             >
-              <PlateVisual plate={plate} size="lg" reveal />
+              <CollectibleVisual collectible={plate} size="lg" reveal accent={color} />
             </motion.div>
 
             <div className="flex flex-wrap items-center justify-center gap-1.5">

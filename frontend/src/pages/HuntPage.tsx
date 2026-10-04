@@ -1,89 +1,96 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { LoadingSpinner } from '@/components/States';
 import clsx from 'clsx';
-import { RarityBadge } from '@/components/RarityBadge';
+import { CountrySelector } from '@/components/CountrySelector';
 import { Reveal } from '@/components/Reveal';
-import { CategorySelector, CountrySelector } from '@/components/Selectors';
+import { KindSelector } from '@/components/Selectors';
+import { LoadingSpinner } from '@/components/States';
 import { useI18n } from '@/i18n';
-import { makeIdempotencyKey } from '@/lib/api';
+import { ApiError, makeIdempotencyKey } from '@/lib/api';
 import { RARITY_COLORS, formatCoins } from '@/lib/format';
 import { haptic, hapticError, hapticSuccess } from '@/lib/telegram';
-import { game, leaderboard } from '@/services/api';
+import { countries as countriesApi, game, leaderboard } from '@/services/api';
+import { useActiveCountry } from '@/store/activeCountry';
 import { useAuthStore } from '@/store/auth';
-import type { CollectibleCategory, PlateRollResult } from '@/types';
-
-interface CountryOption {
-  code: string;
-  flag: string;
-  name_en: string;
-  name_ru: string;
-  discovered?: number;
-  total?: number;
-}
+import type { CollectibleKind, CountrySummary, PlateRollResult } from '@/types';
 
 /**
  * The hunt screen - the game's home, and the loop the player repeats.
  *
  * Reading order is deliberate and matches what the player is actually doing:
- * category (what am I hunting) → country (where) → wallet (what it costs) →
- * **the button** → recent find. Everything else is secondary and lives below the
- * fold on a 390px screen.
+ * country (where) → kind (what) → wallet (what it costs) → **the button** → recent
+ * find. Everything else is secondary and lives below the fold on a 390px screen.
  *
- * The roll button is the largest touch target in the app and is the only element
- * that gets a glow. Everything about the outcome is decided by the server; this
- * screen only sends the two filters it was given.
+ * The active country is the one the server stores; this screen mirrors it, so a
+ * refresh always lands on the same world. Changing it is a validated write, not a
+ * local toggle.
  */
 export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const applyProfile = useAuthStore((state) => state.applyProfile);
   const profile = useAuthStore((state) => state.profile);
+  const applyCountry = useActiveCountry((state) => state.apply);
 
-  const [category, setCategory] = useState<CollectibleCategory | null>(null);
-  const [country, setCountry] = useState<string | null>(null);
+  const [kind, setKind] = useState<CollectibleKind | null>(null);
   const [result, setResult] = useState<PlateRollResult | null>(null);
   // Guards the in-flight roll against a double tap inside a single frame.
   const rollingRef = useRef(false);
 
-  const worldQuery = useQuery({
-    queryKey: ['world'],
-    queryFn: () => game.world(),
+  // The atlas is cached for five minutes: 250 countries never change during a session.
+  const countryList = useQuery({
+    queryKey: ['countries', 'selector'],
+    queryFn: () => countriesApi.list({ limit: 250 }),
+    staleTime: 300_000,
+  });
+  const activeCountry = useQuery({
+    queryKey: ['countries', 'active'],
+    queryFn: countriesApi.active,
     staleTime: 60_000,
   });
+
   const historyQuery = useQuery({
     queryKey: ['roll-history'],
     queryFn: () => game.rollHistory(4),
     staleTime: 15_000,
   });
 
-  const countries = useMemo<CountryOption[]>(() => {
-    const raw = (worldQuery.data?.countries ?? []) as Array<Record<string, unknown>>;
-    return raw
-      .map((entry) => {
-        const item = entry;
-        const config = (item.config ?? {}) as Record<string, unknown>;
-        return {
-          code: String(item.code ?? ''),
-          flag: String(item.flag ?? ''),
-          name_en: String(item.name_en ?? item.code ?? ''),
-          name_ru: String(item.name_ru ?? item.code ?? ''),
-          discovered: Number(item.discovered ?? config.discovered ?? 0),
-          total: Number(item.total ?? config.total ?? 0),
-        };
-      })
-      .filter((entry) => entry.code !== '');
-  }, [worldQuery.data]);
+  const list: CountrySummary[] = useMemo(
+    () => (countryList.data?.items ?? []) as CountrySummary[],
+    [countryList.data],
+  );
+  const activeCode = activeCountry.data?.code ?? null;
+
+  const switchCountry = useMutation({
+    mutationFn: (code: string | null) => countriesApi.setActive(code),
+    onSuccess: (data) => {
+      applyCountry(data);
+      void queryClient.invalidateQueries({ queryKey: ['countries'] });
+      void queryClient.invalidateQueries({ queryKey: ['collection'] });
+      void queryClient.invalidateQueries({ queryKey: ['world'] });
+      void queryClient.invalidateQueries({ queryKey: ['garage'] });
+      hapticSuccess();
+    },
+    onError: (error) => {
+      hapticError();
+      // Never leave the sheet showing a country the backend refused.
+      if (error instanceof ApiError) {
+        void queryClient.invalidateQueries({ queryKey: ['countries', 'active'] });
+      }
+    },
+  });
 
   const invalidate = useCallback(() => {
-    for (const key of ['world', 'roll-history', 'garage', 'collection', 'user', 'daily']) {
+    for (const key of ['world', 'roll-history', 'garage', 'collection', 'user', 'daily', 'countries']) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
   }, [queryClient]);
 
   const roll = useMutation({
-    mutationFn: (key: string) => game.roll(key, { category, country_code: country }),
+    // No country is sent: the server uses the active country it stored, so the
+    // client can never point a roll at a country the backend has not validated.
+    mutationFn: (key: string) => game.roll(key, { kind }),
     onSuccess: (data) => {
       rollingRef.current = false;
       setResult(data);
@@ -95,7 +102,7 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
     onError: (error) => {
       rollingRef.current = false;
       hapticError();
-      if (error instanceof Error && 'code' in error) invalidate();
+      if (error instanceof ApiError) invalidate();
     },
   });
 
@@ -126,10 +133,10 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
     if (!result) return;
     try {
       const share = await game.share(result.plate.id);
-      const link = share.mini_app_link;
-      const text = (share.share_text_en || share.share_text_ru || share.plate_text) ?? '';
       window.open(
-        `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`,
+        `https://t.me/share/url?url=${encodeURIComponent(share.mini_app_link)}&text=${encodeURIComponent(
+          share.share_text_en || share.share_text_ru || share.plate_text,
+        )}`,
         '_blank',
         'noopener',
       );
@@ -138,21 +145,13 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
     }
   }, [result]);
 
-  const recent = historyQuery.data?.[0] as
-    | { roll_id: number; plate_text: string; rarity: string; value: number; country_code?: string }
-    | undefined;
+  const recent = historyQuery.data?.[0];
   const rollsLeft = profile?.rolls_remaining ?? 0;
   const coins = profile?.coins ?? 0;
-  const busy = roll.isPending;
+  const busy = roll.isPending || switchCountry.isPending;
   const outOfRolls = !busy && !result && rollsLeft <= 0;
-
-  const huntLabel = category
-    ? category === 'PHONE_NUMBER'
-      ? t('category.phone')
-      : category === 'SIM_CARD'
-        ? t('category.sim')
-        : t('category.plate')
-    : t('hunt.world');
+  const activeCountryName = list.find((item) => item.code === activeCode);
+  const kindLabel = kind ? t(kind === 'SIM_CARD' ? 'category.sim' : 'category.plate') : t('category.all');
 
   return (
     <div className="flex flex-col gap-4 pb-28" data-testid="hunt-page">
@@ -171,28 +170,27 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
         }}
       />
 
-      {/* Current hunt: what and where. */}
+      {/* Where, then what. */}
       <section className="flex flex-col gap-2" aria-label={t('hunt.aria')}>
         <div className="flex items-center justify-between px-1">
           <h2 className="text-[10px] font-black uppercase tracking-[0.32em] text-white/35">
             {t('hunt.title')}
           </h2>
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/35">
-            {huntLabel}
-            {country ? ` · ${country}` : ''}
+            {activeCountryName?.flag} {activeCode ?? t('hunt.world')} · {kindLabel}
           </span>
         </div>
-        <CategorySelector value={category} onChange={setCategory} disabled={busy} />
-        {worldQuery.isLoading ? (
-          <div className="h-[38px] animate-pulse rounded-full bg-white/[0.04]" />
+        {countryList.isLoading ? (
+          <div className="h-[58px] animate-pulse rounded-2xl bg-white/[0.04]" />
         ) : (
           <CountrySelector
-            value={country}
-            onChange={setCountry}
-            countries={countries}
+            value={activeCode}
+            onChange={(code) => switchCountry.mutate(code)}
+            countries={list}
             disabled={busy}
           />
         )}
+        <KindSelector value={kind} onChange={setKind} disabled={busy} />
       </section>
 
       {/* Wallet. */}
@@ -201,13 +199,17 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
           <span className="text-[9px] font-bold uppercase tracking-[0.28em] text-white/35">
             {t('hunt.wallet')}
           </span>
-          <span className="text-lg font-black tracking-tight text-white">{formatCoins(coins)}</span>
+          <span className="number-display text-lg font-black tracking-tight text-white">
+            {formatCoins(coins)}
+          </span>
         </div>
         <div className="flex flex-col items-end">
           <span className="text-[9px] font-bold uppercase tracking-[0.28em] text-white/35">
             {t('hunt.rollsLeft')}
           </span>
-          <span className="text-lg font-black tracking-tight text-emerald-300">{rollsLeft}</span>
+          <span className="number-display text-lg font-black tracking-tight text-emerald-300">
+            {rollsLeft}
+          </span>
         </div>
       </section>
 
@@ -261,19 +263,18 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
             style={{ borderColor: `${RARITY_COLORS[(recent.rarity as never) ?? 'COMMON'] ?? '#8b93a7'}33` }}
           >
             <div className="mb-2 flex items-center justify-between">
-              <RarityBadge rarity={recent.rarity} size="sm" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
+                {recent.rarity}
+              </span>
               <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
                 {recent.country_code}
               </span>
             </div>
-            <span className="number-display block text-center text-2xl text-white">
-              {recent.plate_text}
-            </span>
+            <span className="number-display block text-center text-2xl text-white">{recent.plate_text}</span>
           </div>
         )}
       </section>
 
-      {/* Social preview, deliberately compact. */}
       <SocialStrip />
     </div>
   );
@@ -296,22 +297,14 @@ function SocialStrip() {
         {t('nav.ranking')}
       </h3>
       <div className="flex flex-col gap-1">
-        {entries.map((raw) => {
-          const entry = raw as unknown as {
-            user_id: number;
-            username?: string | null;
-            display_name?: string | null;
-            score?: number | null;
-          };
-          return (
-            <div key={entry.user_id} className="flex items-center justify-between text-xs">
-              <span className="text-white/60">
-                {entry.display_name || (entry.username ? `@${entry.username}` : `#${entry.user_id}`)}
-              </span>
-              <span className="number-display text-white/80">{formatCoins(Number(entry.score ?? 0))}</span>
-            </div>
-          );
-        })}
+        {entries.map((entry) => (
+          <div key={entry.user_id} className="flex items-center justify-between text-xs">
+            <span className="text-white/60">
+              {entry.display_name || (entry.username ? `@${entry.username}` : `#${entry.user_id}`)}
+            </span>
+            <span className="number-display text-white/80">{formatCoins(entry.score)}</span>
+          </div>
+        ))}
       </div>
     </section>
   );

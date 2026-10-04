@@ -980,6 +980,7 @@ class AdminActionsMixin(AdminServiceBase):
         country_code: str | None = None,
         region_code: str | None = None,
         template_code: str | None = None,
+        kind: str | None = None,
         rarity: str | None = None,
         preset: str | None = None,
         require_trait: str | None = None,
@@ -990,6 +991,7 @@ class AdminActionsMixin(AdminServiceBase):
             country_code=country_code,
             region_code=region_code,
             template_code=template_code,
+            kind=kind,
             rarity=rarity,
             preset=preset,
             require_trait=require_trait,
@@ -1002,6 +1004,7 @@ class AdminActionsMixin(AdminServiceBase):
             metadata={
                 "source": "telegram_admin_panel",
                 "country_code": payload["plate"]["country_code"],
+                "kind": payload["plate"]["kind"],
                 "rarity": payload["plate"]["rarity"],
                 "preset": preset,
                 "mode": "SIMULATION",
@@ -1019,6 +1022,7 @@ class AdminActionsMixin(AdminServiceBase):
         country_code: str | None = None,
         region_code: str | None = None,
         template_code: str | None = None,
+        kind: str | None = None,
         rarity: str | None = None,
         preset: str | None = None,
         require_trait: str | None = None,
@@ -1035,6 +1039,7 @@ class AdminActionsMixin(AdminServiceBase):
                 country_code=country_code,
                 region_code=region_code,
                 template_code=template_code,
+                kind=kind,
                 rarity=rarity,
                 preset=preset,
                 require_trait=require_trait,
@@ -1107,6 +1112,9 @@ class AdminActionsMixin(AdminServiceBase):
             "countries": self.test_lab.countries(),
             "rarities": self.test_lab.rarities(),
             "presets": self.test_lab.presets(),
+            # Collectible kinds, straight from the domain module: the panel builds
+            # its category menu from this list, so a new kind needs no bot release.
+            "categories": self.test_lab.categories(),
         }
 
     # ==================================================================

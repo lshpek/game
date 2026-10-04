@@ -139,6 +139,10 @@ class TestRollRequest(BaseModel):
     country_code: str | None = Field(default=None, max_length=8)
     region_code: str | None = Field(default=None, max_length=16)
     template_code: str | None = Field(default=None, max_length=48)
+    #: Collectible kind to generate: ``VEHICLE_PLATE`` or ``SIM_CARD``. The backend
+    #: rejects anything else, so the test lab can never "test" a kind the game does
+    #: not have.
+    kind: str | None = Field(default=None, max_length=24)
     rarity: str | None = Field(default=None, max_length=16)
     preset: str | None = Field(default=None, max_length=32)
     require_trait: str | None = Field(default=None, max_length=32)

@@ -21,7 +21,7 @@ Two hard rules:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from sqlalchemy import func, select
@@ -31,10 +31,12 @@ from app.core.config import Settings, settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.locks import user_lock
 from app.core.timeutils import as_aware
+from app.game.collectibles import KINDS, CollectibleKind, normalize_kind, plate_types_for
 from app.game.plate_generator import (
     GeneratedPlate,
     GenerationContext,
     PlateGenerator,
+    TemplateOption,
     build_generated_plate,
     styles_for_text,
 )
@@ -48,6 +50,17 @@ from app.services.catalog import build_snapshot
 from app.services.economy import EconomyService
 from app.services.plates import PlateService
 from app.services.progression import ProgressionService
+
+#: Menu labels for the collectible kinds, in both panel languages.
+CATEGORY_LABELS: dict[CollectibleKind, str] = {
+    CollectibleKind.VEHICLE_PLATE: "\U0001F699 Vehicle plate",
+    CollectibleKind.SIM_CARD: "\U0001F4F7 SIM card",
+}
+
+CATEGORY_EMOJI: dict[CollectibleKind, str] = {
+    CollectibleKind.VEHICLE_PLATE: "\U0001F699",
+    CollectibleKind.SIM_CARD: "\U0001F4F7",
+}
 
 # Reusable presets. They only carry *intent* (a country, a rarity, a trait
 # goal); every generation still goes through the real template/analysis stack, so
@@ -90,12 +103,28 @@ TEST_PRESETS: tuple[dict[str, Any], ...] = (
         "rarity": None,
         "require_trait": "palindrome",
     },
-    {
+{
         "code": "FIRST_DISCOVERY",
         "label": "First discovery",
-        "emoji": "🥇",
+        "emoji": "\U0001F947",
         "country_code": None,
         "rarity": None,
+    },
+    {
+        "code": "SIM_CROWN_RUSSIA",
+        "label": "CROWN SIM (Russia)",
+        "emoji": "\U0001F4F7",
+        "country_code": "RUS",
+        "kind": CollectibleKind.SIM_CARD.value,
+        "rarity": Rarity.LEGENDARY.value,
+    },
+    {
+        "code": "SIM_ORIGIN_JAPAN",
+        "label": "ORIGIN SIM (Japan)",
+        "emoji": "\U0001F4F7",
+        "country_code": "JPN",
+        "kind": CollectibleKind.SIM_CARD.value,
+        "rarity": Rarity.COMMON.value,
     },
 )
 
@@ -135,6 +164,7 @@ class TestLabResult:
             "is_first_discovery": self.is_first_discovery,
             "plate": {
                 "id": self.plate_id,
+                "kind": plate.kind.value,
                 "plate_text": plate.plate_text,
                 "normalized_text": plate.normalized_text,
                 "display_segments": list(plate.display_segments),
@@ -158,6 +188,9 @@ class TestLabResult:
                 "letters": list(plate.analysis.letters),
                 "numeric_core": plate.analysis.numeric_core,
                 "is_secret": bool(plate.is_secret),
+                # Kind-specific payload: the SIM card's operator, series, edition and
+                # the synthetic number printed on it. Empty for a vehicle plate.
+                "details": dict(plate.details or {}),
             },
         }
 
@@ -195,10 +228,13 @@ class TestLabService:
         return [
             {
                 "code": country.code,
+                "iso_alpha2": country.iso_alpha2 or "",
                 "flag": country.flag,
                 "name_en": country.name_en,
                 "name_ru": country.name_ru,
                 "region_group": country.region_group,
+                "calling_code": (country.sim_config or {}).get("calling_code", ""),
+                "is_playable": bool(country.is_playable),
                 "templates": template_counts.get(int(country.id), 0),
             }
             for country in rows
@@ -216,6 +252,21 @@ class TestLabService:
     def rarities(self) -> list[str]:
         return [rarity.value for rarity in RARITY_ORDER]
 
+    def categories(self) -> list[dict[str, object]]:
+        """The collectible kinds, straight from the domain module.
+
+        The panel builds its menu from this list, so a new kind appears in the test
+        lab without a bot release.
+        """
+        return [
+            {
+                "code": kind.value,
+                "label": CATEGORY_LABELS.get(kind, kind.value),
+                "emoji": CATEGORY_EMOJI.get(kind, "\U0001F4E6"),
+            }
+            for kind in KINDS
+        ]
+
     # --- generation ------------------------------------------------------
     def generate(
         self,
@@ -223,24 +274,38 @@ class TestLabService:
         country_code: str | None = None,
         region_code: str | None = None,
         template_code: str | None = None,
+        kind: str | None = None,
         rarity: str | None = None,
         preset: str | None = None,
         require_trait: str | None = None,
     ) -> TestLabResult:
-        """Build a plate without touching a single row."""
+        """Build a collectible without touching a single row."""
         if preset:
             definition = preset_by_code(preset)
             country_code = country_code or definition.get("country_code")
             rarity = rarity or definition.get("rarity")
+            kind = kind or definition.get("kind")
             require_trait = require_trait or definition.get("require_trait")
 
         if require_trait and not country_code:
             country_code = DEFAULT_TRAIT_COUNTRY
 
         target = Rarity(str(rarity).upper()) if rarity else None
+        wanted = normalize_kind(kind)
+        if kind and wanted is None:
+            raise ValidationError(f"Unknown collectible kind: {kind!r}.", code="BAD_CATEGORY")
+
         ctx = self.context()
         # Local event multipliers only; nothing global is written.
         ctx.event_multipliers = {}
+        if wanted is not None:
+            narrowed = self._narrow(ctx, wanted, country_code, template_code)
+            if narrowed is None:
+                raise ValidationError(
+                    f"{country_code or 'This country'} has no {wanted.value} layout yet.",
+                    code="BAD_CATEGORY",
+                )
+            ctx = narrowed
 
         generator = PlateGenerator(ctx, default_rng())
         generated = generator.generate_targeted(
@@ -259,6 +324,42 @@ class TestLabService:
             flags=self.flags(),
         )
 
+    def _narrow(
+        self,
+        ctx: GenerationContext,
+        kind: CollectibleKind,
+        country_code: str | None,
+        template_code: str | None,
+    ) -> GenerationContext | None:
+        """Restrict a private snapshot to one collectible kind.
+
+        The same narrowing the roll does, applied to a throw-away context: the
+        production RNG and the production pool are never modified.
+        """
+        wanted_types = plate_types_for(kind)
+        countries = tuple(
+            country
+            for country in ctx.countries
+            if country_code is None or country.code == str(country_code).upper()
+        )
+        if not countries:
+            return None
+        templates: dict[str, tuple[TemplateOption, ...]] = {}
+        for country in countries:
+            options = tuple(
+                option
+                for option in ctx.templates_by_country.get(country.code, ())
+                if (option.plate_type or "").upper() in wanted_types
+            )
+            if template_code:
+                options = tuple(option for option in options if option.code == template_code)
+            if options:
+                templates[country.code] = options
+        usable = tuple(country for country in countries if templates.get(country.code))
+        if not usable:
+            return None
+        return replace(ctx, countries=usable, templates_by_country=templates)
+
     # --- simulation ------------------------------------------------------
     def simulate(
         self,
@@ -266,6 +367,7 @@ class TestLabService:
         country_code: str | None = None,
         region_code: str | None = None,
         template_code: str | None = None,
+        kind: str | None = None,
         rarity: str | None = None,
         preset: str | None = None,
         require_trait: str | None = None,
@@ -275,6 +377,7 @@ class TestLabService:
             country_code=country_code,
             region_code=region_code,
             template_code=template_code,
+            kind=kind,
             rarity=rarity,
             preset=preset,
             require_trait=require_trait,
@@ -292,6 +395,7 @@ class TestLabService:
         country_code: str | None = None,
         region_code: str | None = None,
         template_code: str | None = None,
+        kind: str | None = None,
         rarity: str | None = None,
         preset: str | None = None,
         require_trait: str | None = None,
@@ -307,6 +411,7 @@ class TestLabService:
                 country_code=country_code,
                 region_code=region_code,
                 template_code=template_code,
+                kind=kind,
                 rarity=rarity,
                 preset=preset,
                 require_trait=require_trait,
@@ -467,7 +572,9 @@ class TestLabService:
             if country_code
             else list(
                 self.db.execute(
-                    select(Country).where(Country.is_active.is_(True)).order_by(Country.sort_order, Country.id)
+                    select(Country)
+                    .where(Country.is_active.is_(True), Country.is_playable.is_(True))
+                    .order_by(Country.sort_order, Country.id)
                 ).scalars()
             )
         )
