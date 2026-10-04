@@ -1,0 +1,33 @@
+# Ruff configuration for the bot service.
+# Mirrors backend/ruff.toml so both Python services in this repo are linted with
+# the same rule set.
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # warnings
+    "F",    # pyflakes (unused imports/variables, undefined names)
+    "I",    # import sorting
+    "UP",   # pyupgrade modernisation
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",  # ruff specific
+]
+ignore = [
+    # Line length is handled by the formatter.
+    "E501",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "SIM105",
+]
+
+[lint.isort]
+known-first-party = ["bot"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

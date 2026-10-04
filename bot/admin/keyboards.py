@@ -11,7 +11,8 @@ uses short codes (``a:<route>[:<arg>]``). Two rules are enforced throughout:
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -162,10 +163,12 @@ def button(text: str, *parts: Any, danger: bool = False) -> InlineKeyboardButton
 
 def confirm_keyboard(operation_id: str, *, confirm_text: str = "✅ Confirm") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[
-            button(confirm_text, CONFIRM, operation_id, danger=True),
-            button("❌ Отмена", CANCEL, operation_id),
-        ]]
+        inline_keyboard=[
+            [
+                button(confirm_text, CONFIRM, operation_id, danger=True),
+                button("❌ Отмена", CANCEL, operation_id),
+            ]
+        ]
     )
 
 
@@ -228,12 +231,8 @@ def users_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def search_results_keyboard(
-    items: Iterable[tuple[int, str]], *, page: int, has_more: bool
-) -> InlineKeyboardMarkup:
-    keyboard: list[list[InlineKeyboardButton]] = [
-        [button(label, USER_OPEN, user_id) for user_id, label in items]
-    ]
+def search_results_keyboard(items: Iterable[tuple[int, str]], *, page: int, has_more: bool) -> InlineKeyboardMarkup:
+    keyboard: list[list[InlineKeyboardButton]] = [[button(label, USER_OPEN, user_id) for user_id, label in items]]
     nav: list[InlineKeyboardButton] = []
     if page > 1:
         nav.append(button("◀️", USER_PAGE, page - 1))
@@ -276,7 +275,10 @@ def user_keyboard() -> InlineKeyboardMarkup:
 def economy_keyboard() -> InlineKeyboardMarkup:
     return rows(
         (button("+100", COIN_PRESET, 100), button("+1 000", COIN_PRESET, 1000)),
-        (button("+10 000", COIN_PRESET, 10000), button("+100 000", COIN_PRESET, 100000)),
+        (
+            button("+10 000", COIN_PRESET, 10000),
+            button("+100 000", COIN_PRESET, 100000),
+        ),
         (
             button("➕ Своя сумма", COIN_CUSTOM),
             button("➖ Вычесть", COIN_SUBTRACT),
@@ -306,7 +308,10 @@ def progression_keyboard() -> InlineKeyboardMarkup:
     return rows(
         (button("✨ +100", XP_PRESET, 100), button("✨ +500", XP_PRESET, 500)),
         (button("✨ +1 000", XP_PRESET, 1000), button("✨ Своё", XP_PRESET, "custom")),
-        (button("🎯 Точный XP", XP_PRESET, "exact"), button("🏆 Уровень", XP_PRESET, "level")),
+        (
+            button("🎯 Точный XP", XP_PRESET, "exact"),
+            button("🏆 Уровень", XP_PRESET, "level"),
+        ),
         (
             button("🔥 Стрик", XP_PRESET, "streak"),
             button("♻️ Сбросить прогресс", XP_PRESET, "reset", danger=True),
@@ -317,7 +322,11 @@ def progression_keyboard() -> InlineKeyboardMarkup:
 
 def streak_keyboard() -> InlineKeyboardMarkup:
     return rows(
-        (button("1", STREAK_VALUE, 1), button("3", STREAK_VALUE, 3), button("7", STREAK_VALUE, 7)),
+        (
+            button("1", STREAK_VALUE, 1),
+            button("3", STREAK_VALUE, 3),
+            button("7", STREAK_VALUE, 7),
+        ),
         (
             button("14", STREAK_VALUE, 14),
             button("30", STREAK_VALUE, 30),
@@ -345,7 +354,10 @@ def premium_keyboard() -> InlineKeyboardMarkup:
     return rows(
         (button("1 день", PREMIUM_PRESET, 1), button("7 дней", PREMIUM_PRESET, 7)),
         (button("30 дней", PREMIUM_PRESET, 30), button("90 дней", PREMIUM_PRESET, 90)),
-        (button("365 дней", PREMIUM_PRESET, 365), button("➕ Своё", PREMIUM_PRESET, "custom")),
+        (
+            button("365 дней", PREMIUM_PRESET, 365),
+            button("➕ Своё", PREMIUM_PRESET, "custom"),
+        ),
         (button("⛔ Отозвать", PREMIUM_PRESET, "revoke", danger=True)),
         (button("🔄 Обновить", REFRESH), button("⬅️ Назад", USER_OPEN)),
     )
@@ -391,7 +403,10 @@ def lab_keyboard(*, mode: str, has_user: bool) -> InlineKeyboardMarkup:
         "live" if mode == "SIMULATION" else "sim",
     )
     return rows(
-        (button("🎲 Симулировать", LAB_SIMULATE), button("🔴 LIVE тест", LAB_LIVE, danger=True)),
+        (
+            button("🎲 Симулировать", LAB_SIMULATE),
+            button("🔴 LIVE тест", LAB_LIVE, danger=True),
+        ),
         (
             button("🌍 Страна", LAB_COUNTRY),
             button("💎 Редкость", LAB_RARITY),
@@ -430,7 +445,12 @@ def rarity_keyboard(rarities: Sequence[str]) -> InlineKeyboardMarkup:
 
 def preset_keyboard(presets: Sequence[dict[str, Any]]) -> InlineKeyboardMarkup:
     line = [
-        button(f"{item.get('emoji', '⚡')} {item.get('label')}", LAB_PRESET, item.get("code"), danger=True)
+        button(
+            f"{item.get('emoji', '⚡')} {item.get('label')}",
+            LAB_PRESET,
+            item.get("code"),
+            danger=True,
+        )
         for item in presets
     ]
     half = (len(line) + 1) // 2
@@ -511,7 +531,9 @@ def events_keyboard(events: Sequence[dict[str, Any]]) -> InlineKeyboardMarkup:
     return rows(*keyboard)
 
 
-def analytics_keyboard(periods: Sequence[str] = ("today", "7d", "30d", "all")) -> InlineKeyboardMarkup:
+def analytics_keyboard(
+    periods: Sequence[str] = ("today", "7d", "30d", "all"),
+) -> InlineKeyboardMarkup:
     labels = {"today": "Сегодня", "7d": "7 дней", "30d": "30 дней", "all": "Всё"}
     return rows(
         [button(labels.get(value, value), ANALYTICS_PERIOD, value) for value in periods],
@@ -587,7 +609,9 @@ def missions_item_keyboard(codes: Sequence[str], page: int = 1) -> InlineKeyboar
     return rows(*keyboard)
 
 
-def achievements_item_keyboard(codes: Sequence[tuple[str, bool]]) -> InlineKeyboardMarkup:
+def achievements_item_keyboard(
+    codes: Sequence[tuple[str, bool]],
+) -> InlineKeyboardMarkup:
     keyboard: list[list[InlineKeyboardButton]] = []
     line: list[InlineKeyboardButton] = []
     for code, unlocked in codes:

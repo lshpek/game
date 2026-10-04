@@ -84,9 +84,7 @@ def mini_app_url(start_param: str | None = None) -> str:
 
 def open_keyboard(start_param: str | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🎰 Play", web_app=WebAppInfo(url=mini_app_url(start_param)))]
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text="🎰 Play", web_app=WebAppInfo(url=mini_app_url(start_param)))]]
     )
 
 
@@ -97,7 +95,7 @@ def normalize_start_param(raw: str | None) -> str | None:
     value = raw.strip()
     for prefix in ("/start_", "start="):
         if value.startswith(prefix):
-            value = value[len(prefix):]
+            value = value[len(prefix) :]
     if len(value) > MAX_START_PARAM_LENGTH:
         return None
     return value if value.startswith(START_PARAM_PREFIXES) else None
@@ -112,8 +110,7 @@ def config_problems() -> list[str]:
         problems.append("BOT_TOKEN is malformed - it must look like '123456789:AAE...'.")
     if FRONTEND_URL.startswith("http://") and FRONTEND_URL not in LOCALHOST_URLS:
         problems.append(
-            f"FRONTEND_URL ({FRONTEND_URL}) is not HTTPS. Telegram only opens Mini Apps over "
-            "HTTPS outside localhost."
+            f"FRONTEND_URL ({FRONTEND_URL}) is not HTTPS. Telegram only opens Mini Apps over HTTPS outside localhost."
         )
     return problems
 
@@ -124,7 +121,7 @@ def config_problems() -> list[str]:
 @router.message(CommandStart())
 async def handle_start(message: types.Message) -> None:
     raw = message.text or ""
-    payload = normalize_start_param(raw[len("/start"):]) if raw.startswith("/start") else None
+    payload = normalize_start_param(raw[len("/start") :]) if raw.startswith("/start") else None
     await message.answer(
         "🎰 Number Collector\n\nRoll random four-digit numbers, collect them and compete with friends.",
         reply_markup=open_keyboard(payload),

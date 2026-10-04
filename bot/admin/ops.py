@@ -58,4 +58,4 @@ async def clear(context: FSMContext) -> None:
     await context.pop_data(KEY_PENDING, None)
 
 
-__all__ = ["MAX_PENDING", "get", "new_operation_id", "pop", "put", "clear"]
+__all__ = ["MAX_PENDING", "clear", "get", "new_operation_id", "pop", "put"]

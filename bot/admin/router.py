@@ -1,0 +1,331 @@
+"""Admin panel: entry command, navigation, users and every per-player screen.
+
+Registered behind :func:`bot.admin.common.guard`, so authorisation is enforced
+for every single event - command, callback or text message - independently of how
+the panel was opened.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from aiogram import F, Router
+from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+
+from bot.admin import keyboards as kb
+from bot.admin import ops
+from bot.admin.common import config, data_of, guard, render, render_error, require_user, stage, toast
+from bot.admin.formatters import (
+    achievements as fmt_achievements,
+)
+from bot.admin.formatters import (
+    cosmetics as fmt_cosmetics,
+)
+from bot.admin.formatters import (
+    economy as fmt_economy,
+)
+from bot.admin.formatters import (
+    missions as fmt_missions,
+)
+from bot.admin.formatters import (
+    premium as fmt_premium,
+)
+from bot.admin.formatters import (
+    progression as fmt_progression,
+)
+from bot.admin.formatters import (
+    user_card,
+)
+from bot.admin.formatters import (
+    user_line,
+)
+from bot.admin.formatters import esc, num
+from bot.admin.states import (
+    KEY_AMOUNT,
+    KEY_KIND,
+    KEY_MODE,
+    KEY_REASON,
+    AdminStates,
+    clear_flow_data,
+    selected_user_id,
+    set_selected_user,
+)
+from bot.admin.world import router as world_router
+
+logger = logging.getLogger("bot.admin.router")
+
+router = Router(name="admin")
+router.include_router(world_router)
+
+# Actions that need an explicit confirmation before they run.
+DANGEROUS_PREFIXES = (
+    kb.ACT_COINS,
+    kb.ACT_BALANCE,
+    kb.ACT_ROLLS_RESET,
+    kb.ACT_PROG_RESET,
+    kb.ACT_PREMIUM_REVOKE,
+    kb.ACT_BAN,
+    kb.ACT_FIRST_DISCOVERY,
+    kb.ACT_LIVE_ROLL,
+    kb.ACT_COUNTRY,
+    kb.ACT_EVENT,
+    kb.ACT_SEASON,
+)
+
+
+# ---------------------------------------------------------------------------
+# entry point
+# ---------------------------------------------------------------------------
+@router.message(CommandStart())
+@guard
+async def handle_start(message: Message, command: CommandObject) -> None:
+    """``/admin`` (also ``/panel`` / ``/a``) opens the control centre.
+
+    Non-admins get the same generic refusal as any other unauthorised command.
+    """
+    del command
+    await open_panel(message, answer=True)
+
+
+async def open_panel(message: Message, *, answer: bool = False) -> None:
+    """Render the home dashboard, editing the current message when possible."""
+    from bot.admin.common import get_client
+
+    try:
+        data = await get_client().dashboard(_telegram_id(message))
+    except Exception as exc:  # noqa: BLE001 - surfaced to the admin below
+        await render_error(message, exc)
+        return
+    from bot.admin.formatters import home, recent_actions
+
+    text = home(data)
+    actions = recent_actions(data.get("recent_actions") or [])
+    if actions:
+        text = f"{text}\n\n{actions}"
+    await render(message, text, kb.home_keyboard(), answer=answer)
+
+
+def _telegram_id(target: Message | CallbackQuery) -> int:
+    return int(target.from_user.id)
+
+
+# ---------------------------------------------------------------------------
+# navigation
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == kb.pack(kb.HOME))
+@guard
+async def go_home(callback: CallbackQuery, context: FSMContext) -> None:
+    await context.set_state(None)
+    await ops.clear(context)
+    await open_panel(callback.message)
+
+
+@router.callback_query(F.data == kb.pack(kb.BACK))
+@guard
+async def go_back(callback: CallbackQuery, context: FSMContext) -> None:
+    """Back is state-driven: it always returns to the screen you came from."""
+    await context.set_state(None)
+    await ops.clear(context)
+    await open_panel(callback.message)
+
+
+@router.callback_query(F.data == kb.pack(kb.REFRESH))
+@guard
+async def refresh(callback: CallbackQuery, context: FSMContext) -> None:
+    """Re-read whatever screen is currently open."""
+    from bot.admin.world import refresh_current_screen
+
+    await refresh_current_screen(callback, context)
+
+
+@router.callback_query(F.data == kb.pack(kb.NOOP))
+@guard
+async def noop(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith(kb.PREFIX + ":"))
+@guard
+async def unknown_route(callback: CallbackQuery) -> None:
+    """Any callback the panel does not know about is rejected, not executed."""
+    logger.warning("unknown admin callback rejected: %s", callback.data)
+    await toast(callback, "Unknown action.")
+
+
+# ---------------------------------------------------------------------------
+# users
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == kb.pack(kb.USERS))
+@guard
+async def users_menu(callback: CallbackQuery) -> None:
+    await render(
+        callback.message,
+        "👤 <b>ЮЗЕРЫ</b>\n━━━━━━━━━━\n\nНайдите игрока по Telegram ID, внутреннему ID,\n"
+        "@username или имени.",
+        kb.users_keyboard(),
+    )
+
+
+@router.callback_query(F.data == kb.pack(kb.USER_RECENT))
+@guard
+async def users_recent(callback: CallbackQuery) -> None:
+    from bot.admin.common import get_client
+
+    try:
+        data = await get_client().search_users(_telegram_id(callback), None, 1)
+    except Exception as exc:  # noqa: BLE001
+        await render_error(callback, exc)
+        return
+    await _render_search(callback, data, title="🕘 <b>ПОСЛЕДНИЕ ИГРОКИ</b>")
+
+
+@router.callback_query(F.data == kb.pack(kb.USER_SEARCH))
+@guard
+async def users_search_prompt(callback: CallbackQuery, context: FSMContext) -> None:
+    await context.set_state(AdminStates.search_user)
+    await render(
+        callback.message,
+        "🔍 <b>ПОИСК ИГРОКА</b>\n━━━━━━━━━━\n\nВведите Telegram ID, внутренний ID,\n"
+        "@username или имя.\n\n<i>Пример: 123456789 · @alex · Alex</i>",
+        kb.prompt_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith(kb.pack(kb.USER_PAGE)))
+@guard
+async def users_page(callback: CallbackQuery, context: FSMContext) -> None:
+    from bot.admin.common import get_client
+
+    parts = kb.unpack(callback.data or "")
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
+    query = data_of(context, "query")
+    try:
+        data = await get_client().search_users(_telegram_id(callback), query, page)
+    except Exception as exc:  # noqa: BLE001
+        await render_error(callback, exc)
+        return
+    await _render_search(callback, data)
+
+
+@router.message(AdminStates.search_user)
+@guard
+async def users_search_input(message: Message, context: FSMContext) -> None:
+    from bot.admin.common import get_client
+
+    query = (message.text or "").strip()
+    await context.set_state(None)
+    if not query or query.startswith("/"):
+        await render(message, "🔍 <b>ПОИСК</b>\n\nПустой запрос.", kb.users_keyboard(), answer=True)
+        return
+    await context.update_data(query=query)
+    try:
+        data = await get_client().search_users(_telegram_id(message), query, 1)
+    except Exception as exc:  # noqa: BLE001
+        await render_error(message, exc)
+        return
+    await _render_search(message, data, answer=True)
+
+
+async def _render_search(
+    target: CallbackQuery | Message,
+    data: dict[str, Any],
+    *,
+    title: str = "🔍 <b>РЕЗУЛЬТАТЫ</b>",
+    answer: bool = False,
+) -> None:
+    items = data.get("items") or []
+    if not items:
+        await render(
+            target,
+            f"{title}\n━━━━━━━━━━\n\n<i>Никого не найдено.</i>",
+            kb.users_keyboard(),
+            answer=answer,
+        )
+        return
+    rows = []
+    for item in items:
+        label = user_line(item)
+        coins = num(item.get("coins"))
+        mark = "⛔" if item.get("is_banned") else ""
+        rows.append((int(item["id"]), f"{label} · {coins}💰 {mark}"))
+    body = [title, "━━━━━━━━━━", ""]
+    for user_id, label in rows:
+        body.append(f"• {esc(label)}  <code>{user_id}</code>")
+    body.append(f"\n<i>стр. {data.get('page', 1)} • всего {num(data.get('total'))}</i>")
+    await render(
+        target,
+        "\n".join(body),
+        kb.search_results_keyboard(
+            rows, page=int(data.get("page", 1)), has_more=bool(data.get("has_more"))
+        ),
+        answer=answer,
+    )
+
+
+@router.callback_query(F.data.startswith(kb.pack(kb.USER_OPEN)))
+@guard
+async def user_open(callback: CallbackQuery, context: FSMContext) -> None:
+    parts = kb.unpack(callback.data or "")
+    if len(parts) < 3 or not parts[2].isdigit():
+        await toast(callback, "Bad request.")
+        return
+    await set_selected_user(context, int(parts[2]))
+    await _render_user(callback, context, int(parts[2]))
+
+
+@router.callback_query(F.data == kb.pack(kb.USER_PLATES))
+@guard
+async def user_plates(callback: CallbackQuery, context: FSMContext) -> None:
+    user_id = await require_user(context, callback)
+    if user_id is None:
+        return
+    from bot.admin.common import get_client
+
+    try:
+        data = await get_client().plates(_telegram_id(callback), user_id=user_id, sort="recent", page=1)
+    except Exception as exc:  # noqa: BLE001
+        await render_error(callback, exc)
+        return
+    from bot.admin.formatters import plate_list
+
+    await render(callback.message, plate_list(data), kb.user_plates_keyboard())
+
+
+@router.callback_query(F.data == kb.pack(kb.USER_SNAPSHOT))
+@guard
+async def user_snapshot(callback: CallbackQuery, context: FSMContext) -> None:
+    await _render_user(callback, context)
+
+
+# ---------------------------------------------------------------------------
+# user card
+# ---------------------------------------------------------------------------
+async def _render_user(
+    target: CallbackQuery | Message,
+    context: FSMContext,
+    user_id: int | None = None,
+) -> None:
+    from bot.admin.common import get_client
+
+    user_id = user_id or await require_user(context, target)
+    if user_id is None:
+        return
+    try:
+        data = await get_client().user_detail(_telegram_id(target), user_id)
+    except Exception as exc:  # noqa: BLE001
+        await render_error(target, exc)
+        return
+    await render(target, user_card(data), kb.user_keyboard())
+
+
+
+
+from bot.admin.players import router as players_router
+
+router.include_router(players_router)
+
+__all__ = ["open_panel", "router"]
+

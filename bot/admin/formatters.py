@@ -8,8 +8,9 @@ Pure functions only - no I/O, no business rules.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 HR = "━━━━━━━━━━━━━━━━━━"
 SMALL = "──────────"
@@ -45,7 +46,12 @@ RARITY_RU = {
     "SECRET": "Секретный",
 }
 
-PERIOD_RU = {"today": "сегодня", "7d": "7 дней", "30d": "30 дней", "all": "за всё время"}
+PERIOD_RU = {
+    "today": "сегодня",
+    "7d": "7 дней",
+    "30d": "30 дней",
+    "all": "за всё время",
+}
 
 
 def esc(value: Any) -> str:
@@ -173,14 +179,13 @@ def home(data: dict[str, Any]) -> str:
             f"• выпущено сегодня: {num(economy.get('issued_today'))}",
             f"• потрачено сегодня: {num(economy.get('spent_today'))}",
             "",
-            f"⭐ <b>Монетизация</b>",
+            "⭐ <b>Монетизация</b>",
             f"• оплат: {num(money.get('paid_purchases'))}",
             f"• Stars: {num(money.get('stars_revenue'))}",
             f"• активных PRO: {num(money.get('pro_active'))}",
             "",
-            f"🎯 <b>Сезон</b>",
-            f"• {code(season.get('code') or 'нет')} "
-            f"{'🟢 активен' if season.get('is_active') else '⚪ не активен'}",
+            "🎯 <b>Сезон</b>",
+            f"• {code(season.get('code') or 'нет')} {'🟢 активен' if season.get('is_active') else '⚪ не активен'}",
             f"• ивент: {code(season.get('event_code') or 'нет')}",
             "",
             "⚠️ <b>Система</b>",
@@ -197,7 +202,7 @@ def recent_actions(actions: Iterable[dict[str, Any]]) -> str:
     rows = list(actions)[:5]
     if not rows:
         return ""
-    body = [f"<b>🕘 Последние действия</b>"]
+    body = ["<b>🕘 Последние действия</b>"]
     for item in rows:
         amount = item.get("amount")
         amount_text = f" {signed(amount)}" if amount is not None else ""
@@ -225,10 +230,8 @@ def user_card(data: dict[str, Any]) -> str:
         "",
         f"{EMOJI['economy']} NUMORA: <b>{num(data.get('coins'))}</b>",
         f"заработано: {num(data.get('total_earned'))} • потрачено: {num(data.get('total_spent'))}",
-        f"{EMOJI['rolls']} роллов: {num(data.get('total_rolls'))}"
-        f" • бонус: {num(data.get('bonus_rolls'))}",
-        f"сегодня использовано: {num(data.get('daily_rolls_used'))}"
-        f" / осталось {num(data.get('rolls_remaining'))}",
+        f"{EMOJI['rolls']} роллов: {num(data.get('total_rolls'))} • бонус: {num(data.get('bonus_rolls'))}",
+        f"сегодня использовано: {num(data.get('daily_rolls_used'))} / осталось {num(data.get('rolls_remaining'))}",
         f"{EMOJI['ranks']} уровень: <b>{num(level.get('level'))}</b> — {esc(level.get('title_ru') or '')}",
         f"✨ XP: {num(level.get('xp'))} / {num(level.get('xp_for_level'))}",
         f"🔥 стрик: {num(data.get('current_streak'))} (рекорд {num(data.get('longest_streak'))})",
@@ -244,10 +247,7 @@ def user_card(data: dict[str, Any]) -> str:
             f"[{esc(rarity(best.get('rarity')))}] {num(best.get('collector_value'))}"
         )
     if rarest and rarest.get("id") != best.get("id"):
-        rows.append(
-            f"🌟 самый редкий: {code(rarest.get('plate_text'))} "
-            f"[{esc(rarity(rarest.get('rarity')))}]"
-        )
+        rows.append(f"🌟 самый редкий: {code(rarest.get('plate_text'))} [{esc(rarity(rarest.get('rarity')))}]")
 
     rows.extend(
         [
@@ -281,7 +281,7 @@ def economy(data: dict[str, Any]) -> str:
         "",
     ]
     if transactions:
-        body.append(f"<b>Последние операции</b>")
+        body.append("<b>Последние операции</b>")
         for item in transactions[:10]:
             body.append(
                 f"• {dt(item.get('created_at'))} {signed(item.get('amount'))}"
@@ -306,15 +306,13 @@ def progression(data: dict[str, Any], missions_board: dict[str, Any] | None = No
             f"уровень: <b>{num(level.get('level'))}</b> — {esc(level.get('title_ru') or '')}",
             f"✨ XP: {num(level.get('xp'))} (в уровень: {num(level.get('xp_into_level'))}"
             f" / {num(level.get('xp_for_level'))})",
-            f"🔥 стрик: {num(data.get('current_streak'))}"
-            f" • рекорд: {num(data.get('longest_streak'))}",
+            f"🔥 стрик: {num(data.get('current_streak'))} • рекорд: {num(data.get('longest_streak'))}",
             f"{EMOJI['countries']} стран: {num(data.get('countries_count'))}"
             f" • регионов: {num(data.get('regions_count'))}",
             f"{EMOJI['plates']} номеров: {num(data.get('plates_count'))}",
             f"🥇 первых находок: {num(data.get('first_discoveries_count'))}",
             f"{EMOJI['economy']} баланс: {num(data.get('coins'))} NUMORA",
-            f"{EMOJI['missions']} заданий: {num(completed)}/{num(len(items))}"
-            f" • наград выдано: {num(paid)}",
+            f"{EMOJI['missions']} заданий: {num(completed)}/{num(len(items))} • наград выдано: {num(paid)}",
         ]
     )
 
@@ -361,19 +359,16 @@ def achievements(data: dict[str, Any]) -> str:
 
 def premium(data: dict[str, Any]) -> str:
     perks = data.get("perks") or {}
-    perk_lines = [
-        f"• {esc(name)}: {esc(value)}" for name, value in perks.items()
-    ] or ["<i>нет данных</i>"]
+    perk_lines = [f"• {esc(name)}: {esc(value)}" for name, value in perks.items()] or ["<i>нет данных</i>"]
     return "\n".join(
         [
-            f"⭐ <b>PREMIUM</b>",
+            "⭐ <b>PREMIUM</b>",
             SMALL,
             f"статус: {'🟢 активен' if data.get('active') else '⚪ нет'}",
             f"уровень: {code(data.get('tier') or '—')}",
             f"начало: {dt(data.get('starts_at'))}",
             f"истекает: {dt(data.get('expires_at'))}",
-            f"+{num(data.get('daily_rolls_bonus'))} роллов в день"
-            f" • ×{data.get('duplicate_multiplier')} за дубли",
+            f"+{num(data.get('daily_rolls_bonus'))} роллов в день • ×{data.get('duplicate_multiplier')} за дубли",
             "",
             "<b>Бонусы</b>",
             *perk_lines,
@@ -406,9 +401,7 @@ def cosmetics(catalogue: dict[str, Any], owned: Iterable[str] = ()) -> str:
 def plate_card(data: dict[str, Any], *, with_history: bool = True) -> str:
     discoverer = data.get("first_discoverer") or {}
     discoverer_label = (
-        f"@{discoverer['username']}"
-        if discoverer.get("username")
-        else (discoverer.get("display_name") or "—")
+        f"@{discoverer['username']}" if discoverer.get("username") else (discoverer.get("display_name") or "—")
     )
     body = [
         f"{EMOJI['plates']} <b>НОМЕР</b>",
@@ -419,15 +412,11 @@ def plate_card(data: dict[str, Any], *, with_history: bool = True) -> str:
         f"шаблон: {code(data.get('template_code') or '—')} ({code(data.get('template_pattern') or '—')})",
         f"текст: <b>{esc(data.get('plate_text'))}</b>",
         f"нормализованный: {code(data.get('normalized_text'))}",
-        f"редкость: <b>{esc(rarity(data.get('rarity')))}</b>"
-        f" • score: {num(data.get('rarity_score'))}",
-        f"коллекционная: {num(data.get('collector_value'))}"
-        f" • скупщик: {num(data.get('dealer_value'))}",
+        f"редкость: <b>{esc(rarity(data.get('rarity')))}</b> • score: {num(data.get('rarity_score'))}",
+        f"коллекционная: {num(data.get('collector_value'))} • скупщик: {num(data.get('dealer_value'))}",
         f"находок: {num(data.get('discovery_count'))}",
-        f"первый: {esc(discoverer_label)}"
-        f" • {dt(data.get('first_discovered_at'), with_time=False)}",
-        f"сезон: {code(data.get('season_code') or '—')}"
-        f" • секретный: {'да' if data.get('is_secret') else 'нет'}",
+        f"первый: {esc(discoverer_label)} • {dt(data.get('first_discovered_at'), with_time=False)}",
+        f"сезон: {code(data.get('season_code') or '—')} • секретный: {'да' if data.get('is_secret') else 'нет'}",
         f"traits: {esc(', '.join(data.get('traits') or []) or '—')}",
         f"tags: {esc(', '.join(data.get('tags') or []) or '—')}",
     ]
@@ -438,7 +427,7 @@ def plate_card(data: dict[str, Any], *, with_history: bool = True) -> str:
             body.append("<b>Владельцы</b>")
             for owner in owners[:5]:
                 body.append(
-                    f"• {esc(owner.get('username') and '@' + owner['username'] or owner.get('display_name'))}"
+                    f"• {esc((owner.get('username') and '@' + owner['username']) or owner.get('display_name'))}"
                     f" — дублей {num(owner.get('duplicate_count'))}"
                     f" • {dt(owner.get('acquired_at'), with_time=False)}"
                 )
@@ -448,7 +437,7 @@ def plate_card(data: dict[str, Any], *, with_history: bool = True) -> str:
             for row in history[:5]:
                 flag = "🥇 " if row.get("is_first_discovery") else "• "
                 body.append(
-                    f"{flag}{esc(row.get('username') and '@' + row['username'] or row.get('display_name'))}"
+                    f"{flag}{esc((row.get('username') and '@' + row['username']) or row.get('display_name'))}"
                     f" — {dt(row.get('created_at'))} ({esc(row.get('source') or '—')})"
                 )
     return "\n".join(body)
@@ -473,7 +462,7 @@ def plate_list(data: dict[str, Any]) -> str:
 
 def test_roll(payload: dict[str, Any], *, mode: str, user_label: str = "") -> str:
     plate = payload.get("plate", {})
-    header = f"🧪 <b>ТЕСТ-РОЛЛ</b>"
+    header = "🧪 <b>ТЕСТ-РОЛЛ</b>"
     body = [header, SMALL]
     if user_label:
         body.append(f"игрок: {esc(user_label)}")
@@ -482,8 +471,7 @@ def test_roll(payload: dict[str, Any], *, mode: str, user_label: str = "") -> st
     body.append(f"редкость: <b>{esc(rarity(plate.get('rarity')))}</b>")
     body.append(f"текст: <b>{esc(plate.get('plate_text'))}</b>")
     body.append(f"score: {num(plate.get('rarity_score'))}")
-    body.append(f"коллекционная: {num(plate.get('collector_value'))}"
-                f" • скупщик: {num(plate.get('dealer_value'))}")
+    body.append(f"коллекционная: {num(plate.get('collector_value'))} • скупщик: {num(plate.get('dealer_value'))}")
     traits = plate.get("traits") or []
     body.append(f"traits: {esc(', '.join(traits) or '—')}")
     if mode == "LIVE":
@@ -511,10 +499,7 @@ def ranks(data: dict[str, Any]) -> str:
         medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(index, f"{index}.")
         username = entry.get("username")
         label = f"@{username}" if username else (entry.get("display_name") or str(entry.get("user_id")))
-        body.append(
-            f"{medal} {esc(label)} <code>{esc(entry.get('user_id'))}</code>"
-            f" — {num(entry.get('value'))}"
-        )
+        body.append(f"{medal} {esc(label)} <code>{esc(entry.get('user_id'))}</code> — {num(entry.get('value'))}")
     if not entries:
         body.append("<i>пусто</i>")
     return "\n".join(body)
@@ -540,8 +525,7 @@ def events(data: dict[str, Any]) -> str:
     body = [
         f"{EMOJI['events']} <b>ИВЕНТЫ</b>",
         SMALL,
-        f"активный: {code(active.get('code') or 'нет')}"
-        f" {esc(active.get('name_ru') or '')}",
+        f"активный: {code(active.get('code') or 'нет')} {esc(active.get('name_ru') or '')}",
         f"до: {dt(active.get('ends_at'))}",
     ]
     multipliers = active.get("country_multipliers") or {}
@@ -650,10 +634,7 @@ def system(data: dict[str, Any], *, bot_username: str = "", mini_app: str = "") 
         body.append("")
         body.append("<b>Последние ошибки</b>")
         for item in errors:
-            body.append(
-                f"• {esc(item.get('ts'))} {esc(item.get('logger'))}\n"
-                f"  {esc(item.get('message'))}"
-            )
+            body.append(f"• {esc(item.get('ts'))} {esc(item.get('logger'))}\n  {esc(item.get('message'))}")
     return "\n".join(body)
 
 
@@ -679,7 +660,7 @@ def transactions(data: dict[str, Any]) -> str:
 # confirmations
 # ---------------------------------------------------------------------------
 def confirm(title: str, rows: Iterable[str]) -> str:
-    body = [f"⚠️ <b>ПОДТВЕРЖДЕНИЕ</b>", f"<b>{esc(title)}</b>", SMALL]
+    body = ["⚠️ <b>ПОДТВЕРЖДЕНИЕ</b>", f"<b>{esc(title)}</b>", SMALL]
     body.extend(rows)
     body.append("")
     body.append("<i>операция попадёт в журнал админов</i>")

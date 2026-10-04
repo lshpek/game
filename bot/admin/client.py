@@ -165,7 +165,9 @@ class AdminBotClient:
 
     async def search_users(self, telegram_id: int, query: str | None, page: int = 1) -> dict[str, Any]:
         return await self.get(
-            "/users", admin_telegram_id=telegram_id, params={"query": query or "", "page": page}
+            "/users",
+            admin_telegram_id=telegram_id,
+            params={"query": query or "", "page": page},
         )
 
     async def user_detail(self, telegram_id: int, user_id: int) -> dict[str, Any]:
@@ -194,7 +196,9 @@ class AdminBotClient:
 
     async def ranks(self, telegram_id: int, category: str, period: str) -> dict[str, Any]:
         return await self.get(
-            "/ranks", admin_telegram_id=telegram_id, params={"category": category, "period": period}
+            "/ranks",
+            admin_telegram_id=telegram_id,
+            params={"category": category, "period": period},
         )
 
     async def countries(self, telegram_id: int) -> dict[str, Any]:
