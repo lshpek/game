@@ -14,6 +14,7 @@ panel three uniform guarantees:
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -32,12 +33,49 @@ from bot.admin.states import get_data, selected_user_id
 
 logger = logging.getLogger("bot.admin")
 
-config: AdminConfig = load_config()
+_resolved: AdminConfig | None = None
+
+
+def get_config() -> AdminConfig:
+    """Resolve the admin configuration from the environment, once.
+
+    Deliberately lazy: the panel modules can be imported before ``bot.py`` has
+    called ``load_dotenv()``, and snapshotting the environment at import time
+    would silently produce an empty admin list - i.e. ``/admin`` would refuse
+    everyone with "Access denied".
+    """
+    global _resolved
+    if _resolved is None:
+        _resolved = load_config()
+    return _resolved
+
+
+def reload_config() -> AdminConfig:
+    """Re-read the environment (used by tests and after a settings change)."""
+    global _resolved
+    _resolved = load_config()
+    return _resolved
+
+
+class _LazyConfig:
+    """Attribute proxy so ``config.admin_ids`` resolves on first use."""
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_config(), name)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging helper
+        return repr(get_config())
+
+
+config = _LazyConfig()
 
 
 def get_client() -> AdminBotClient:
     """Build a client from the environment. Credentials never leave this object."""
-    return AdminBotClient(config.backend_url, config.service_token, timeout=config.request_timeout)
+    resolved = get_config()
+    return AdminBotClient(resolved.backend_url, resolved.service_token, timeout=resolved.request_timeout)
 
 
 def is_admin(telegram_id: int | None) -> bool:
@@ -169,8 +207,15 @@ def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[No
     """Middleware that rejects any event from a non-admin.
 
     Applied to the whole admin router, so no individual handler can forget it.
+
+    ``functools.wraps`` is essential, not cosmetic: aiogram inspects the handler
+    signature to decide which dependencies to inject. A bare ``*args, **kwargs``
+    wrapper would make it inject ``bot`` and friends into every handler, and the
+    first call would raise ``TypeError``. ``wraps`` exposes the original
+    signature through ``__wrapped__`` while this function still gates access.
     """
 
+    @functools.wraps(handler)
     async def wrapper(event: CallbackQuery | Message, *args: Any, **kwargs: Any) -> None:
         user = event.from_user
         if not config.is_admin(user.id if user else None):
@@ -180,8 +225,6 @@ def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[No
             return
         await handler(event, *args, **kwargs)
 
-    wrapper.__name__ = getattr(handler, "__name__", "wrapper")
-    wrapper.__doc__ = handler.__doc__
     wrapper.__wrapped_by_guard__ = True  # type: ignore[attr-defined]
     return wrapper
 

@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.filters import CommandObject, CommandStart
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -54,10 +54,10 @@ DANGEROUS_PREFIXES = (
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
-@router.message(CommandStart())
+@router.message(Command("admin", "panel", "a"))
 @guard
 async def handle_start(message: Message, command: CommandObject) -> None:
-    """``/admin`` (also ``/panel`` / ``/a``) opens the control centre.
+    """``/admin`` (also ``/panel`` and ``/a``) opens the control centre.
 
     Non-admins get the same generic refusal as any other unauthorised command.
     """

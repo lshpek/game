@@ -274,9 +274,7 @@ class TestRouting:
         for observer_name in ("callback_query", "message"):
             for observer in self._handlers(observer_name):
                 if not getattr(observer.callback, "__wrapped_by_guard__", False):
-                    unguarded.append(
-                        f"{observer_name}:{getattr(observer.callback, '__name__', '?')}"
-                    )
+                    unguarded.append(f"{observer_name}:{getattr(observer.callback, '__name__', '?')}")
         assert unguarded == []
 
     def test_state_aware_text_handlers_exist(self):
