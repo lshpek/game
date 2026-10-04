@@ -469,8 +469,14 @@ def upgrade() -> None:
             sa.Column("pity_legendary_streak", sa.Integer(), nullable=False, server_default="0"),
         ):
             batch.add_column(col)
+        # Batch helpers know the source table implicitly; args are
+        # (name, referent_table, local_cols, remote_cols).
         batch.create_foreign_key(
-            "fk_users_best_plate_id", "users", ["best_plate_id"], ["plates", "id"], ondelete="SET NULL"
+            "fk_users_best_plate_id",
+            "plates",
+            ["best_plate_id"],
+            ["id"],
+            ondelete="SET NULL",
         )
         batch.create_index("ix_users_collector_level", ["collector_level"])
         batch.create_index("ix_users_plates_count", ["plates_count"])

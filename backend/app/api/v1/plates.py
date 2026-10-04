@@ -166,15 +166,24 @@ def _collection_conditions(
         conditions.append(cast(Plate.tags, sa.String).like(f'%"{tag.lower()}"%'))
     if search:
         normalized = normalize_plate(search)
-        conditions.append(
-            or_(
-                Plate.normalized_text.like(f"%{normalized}%"),
-                Plate.plate_text.ilike(f"%{search}%"),
-                Plate.country_code.ilike(f"%{search}%"),
-                Plate.region_code.ilike(f"%{search}%"),
-                Plate.story.ilike(f"%{search}%"),
+        compact = normalized.replace(" ", "")
+        clauses = [
+            Plate.country_code.ilike(f"%{search}%"),
+            Plate.region_code.ilike(f"%{search}%"),
+            Plate.story.ilike(f"%{search}%"),
+        ]
+        if normalized:
+            # ``normalized_text`` keeps single spaces (``B EI 8938``), while the
+            # client may send a spaceless fragment (``BE`` from ``B EI 8938``).
+            # Match both the spaced and the compact form so any substring of
+            # the visible plate text is found.
+            clauses.append(Plate.normalized_text.like(f"%{normalized}%"))
+            clauses.append(Plate.plate_text.ilike(f"%{search}%"))
+        if compact:
+            clauses.append(
+                func.replace(Plate.normalized_text, " ", "").like(f"%{compact}%")
             )
-        )
+        conditions.append(or_(*clauses))
     return conditions
 
 

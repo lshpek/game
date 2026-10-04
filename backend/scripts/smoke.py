@@ -61,7 +61,7 @@ def ensure_funds(token: str, target: int = 500) -> int:
     current = balance(token)
     while current < target:
         invoice = call("POST", "/api/payments/invoice", token,
-                       body={"product_code": "coins_1000"},
+                       body={"product_code": "numora_5000"},
                        idempotency=f"fund-{RUN}-{current}")
         if invoice[0] != 200:
             break
@@ -99,11 +99,15 @@ check("forged initData rejected", status == 401, tampered.get("error", {}).get("
 
 print("\n== roll ==")
 status, roll1 = call("POST", "/api/roll", token_a, idempotency=f"smoke-roll-{RUN}")
-check("roll succeeds", status == 200, roll1.get("number", {}).get("number"))
-number = roll1.get("number", {}).get("number", "")
-check("number is 4 digits", len(number) == 4 and number.isdigit(), number)
-check("story present", bool(roll1.get("number", {}).get("story")))
-check("server-computed value", roll1.get("number", {}).get("value", 0) > 0)
+check("roll succeeds", status == 200, roll1.get("plate", {}).get("plate_text"))
+plate = roll1.get("plate", {})
+plate_text = plate.get("plate_text", "")
+plate_id = plate.get("id", 0)
+country = (plate.get("country") or {}).get("code", "")
+check("plate text present", bool(plate_text) and len(plate_text) <= 16, plate_text)
+check("country resolved", len(country) == 3 and country.isalpha(), country)
+check("story present", bool(plate.get("story")))
+check("server-computed value", plate.get("dealer_value", 0) > 0 and roll1.get("sale_value", 0) > 0)
 
 status, retry = call("POST", "/api/roll", token_a, idempotency=f"smoke-roll-{RUN}")
 check("idempotent retry returns same roll", status == 200 and retry.get("roll_id") == roll1.get("roll_id"))
@@ -118,9 +122,12 @@ status, again = call("POST", "/api/daily/claim", token_a)
 check("second claim blocked", again.get("error", {}).get("code") == "DAILY_ALREADY_CLAIMED")
 status, collection = call("GET", "/api/collection?page=1&page_size=10", token_a)
 check("collection loads", status == 200 and collection.get("total", 0) >= 1)
-status, detail = call("GET", "/api/numbers/0007", token_a)
-check("number detail works", status == 200 and detail.get("number") == "0007")
-status, bad = call("GET", "/api/numbers/12345", token_a)
+owned_first = (collection.get("items") or [{}])[0]
+check("collection serial matches the roll", owned_first.get("plate_text") == plate_text,
+      owned_first.get("plate_text", ""))
+status, detail = call("GET", "/api/legacy/numbers/0007", token_a)
+check("legacy number detail works", status == 200 and detail.get("number") == "0007")
+status, bad = call("GET", "/api/legacy/numbers/12345", token_a)
 check("invalid number rejected", bad.get("error", {}).get("code") == "VALIDATION_ERROR")
 
 print("\n== economy & containers ==")
@@ -190,15 +197,16 @@ check("challenge deep link", "startapp=challenge_" in (challenge.get("link") or 
 call("POST", "/api/roll", token_b)
 status, accepted = call("POST", f"/api/challenges/{challenge.get('code')}/accept", token_b)
 check("challenge completed", status == 200 and accepted.get("status") == "COMPLETED")
-status, closed = call("POST", f"/api/challenges/{challenge.get('code')}/accept", token_a)
+status, closed = call("POST", f"/api/challenges/{challenge.get('code')}/accept", token_b)
 check("re-accept blocked", closed.get("error", {}).get("code") == "CHALLENGE_CLOSED")
 
 print("\n== leaderboards, achievements, seasons ==")
 for period in ("daily", "weekly", "alltime"):
-    status, board = call("GET", f"/api/leaderboard?period={period}&category=VALUE", token_a)
+    status, board = call("GET", f"/api/leaderboard?period={period}&category=COLLECTION", token_a)
     check(f"leaderboard {period}", status == 200 and isinstance(board.get("entries"), list))
 status, boards = call("GET", "/api/leaderboard/all?period=alltime", token_a)
-check("all leaderboards", set(boards.get("boards", {})) == {"VALUE", "RARITY", "COLLECTION", "ROLLS"})
+check("all leaderboards",
+      set(boards.get("boards", {})) == {"COLLECTION", "COUNTRIES", "FIRST_DISCOVERIES", "RARITY", "ROLLS"})
 
 status, achievements = call("GET", "/api/achievements", token_a)
 check("achievements listed", status == 200 and len(achievements) > 0)
@@ -209,7 +217,7 @@ print("\n== payments (mock provider) ==")
 status, products = call("GET", "/api/payments/products", token_a)
 check("products listed", status == 200 and len(products) > 0)
 status, invoice = call("POST", "/api/payments/invoice", token_a,
-                       body={"product_code": "coins_1000"}, idempotency=f"smoke-pay-{RUN}")
+                       body={"product_code": "numora_5000"}, idempotency=f"smoke-pay-{RUN}")
 check("invoice created", status == 200 and invoice.get("provider") == "MOCK")
 
 coins_pre = call("GET", "/api/user", token_a)[1].get("coins", 0)
@@ -217,7 +225,7 @@ status, confirmed = call("POST", "/api/payments/mock/confirm", token_a,
                          body={"payment_id": invoice["payment_id"]})
 check("payment confirmed", status == 200 and confirmed.get("status") == "PAID")
 coins_post = call("GET", "/api/user", token_a)[1].get("coins", 0)
-check("coins granted once", coins_post == coins_pre + 1000, f"{coins_pre} -> {coins_post}")
+check("coins granted once", coins_post == coins_pre + 5000, f"{coins_pre} -> {coins_post}")
 
 call("POST", "/api/payments/mock/confirm", token_a, body={"payment_id": invoice["payment_id"]})
 check("re-confirm does not double pay", call("GET", "/api/user", token_a)[1].get("coins") == coins_post)
@@ -226,8 +234,8 @@ status, webhook = call("POST", "/api/payments/telegram/webhook", body={"message"
 check("payment webhook requires a secret", webhook.get("error", {}).get("code") == "WEBHOOK_UNAUTHORIZED")
 
 print("\n== sharing, analytics, rate limiting ==")
-status, share = call("POST", f"/api/numbers/{number}/share", token_a)
-check("share deep link", status == 200 and "startapp=number_" in share.get("mini_app_link", ""))
+status, share = call("POST", f"/api/plates/{plate_id}/share", token_a)
+check("share deep link", status == 200 and "startapp=plate_" in share.get("mini_app_link", ""))
 
 status, tracked = call("POST", "/api/analytics/event", token_a, body={"name": "share", "props": {"n": 1}})
 check("analytics event accepted", status == 200 and tracked.get("success") is True)
