@@ -81,7 +81,9 @@ function ProfileSync() {
 export default function App() {
   return (
     <I18nProvider>
-      // Opt in to the React Router v7 behaviours to silence upgrade warnings.
+      {/*
+        Opt in to the React Router v7 behaviours to silence upgrade warnings.
+      */}
       <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ProfileSync />
         <AppShell />
