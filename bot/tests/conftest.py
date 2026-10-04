@@ -33,7 +33,13 @@ class RecordingSession:
         return [call for call in self.calls if isinstance(call, kind)]
 
     async def make_request(self, bot: Bot, method: Any, timeout: Any = None) -> Any:
-        from aiogram.methods import AnswerCallbackQuery, DeleteMessage, EditMessageText, SendMessage
+        from aiogram.methods import (
+            AnswerCallbackQuery,
+            DeleteMessage,
+            EditMessageText,
+            SendMessage,
+            SetMyCommands,
+        )
 
         self.calls.append(method)
         if isinstance(method, SendMessage):
@@ -47,6 +53,8 @@ class RecordingSession:
             return EditMessageText(ok=True, result=None)
         if isinstance(method, DeleteMessage):
             return DeleteMessage(ok=True, chat_id=method.chat_id, message_id=method.message_id)
+        if isinstance(method, SetMyCommands):
+            return SetMyCommands(ok=True, result=True, commands=method.commands)
         if isinstance(method, AnswerCallbackQuery):
             return AnswerCallbackQuery(ok=True)
         raise AssertionError(f"unexpected method {type(method).__name__}")

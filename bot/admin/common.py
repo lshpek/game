@@ -276,14 +276,17 @@ async def refresh_commands(bot: Bot) -> None:
 
     from bot.admin.config import ADMIN_COMMANDS, USER_COMMANDS
 
-    default = [BotCommand(**{"command": cmd, "description": text}) for cmd, text in USER_COMMANDS]
+    default = [BotCommand(command=cmd, description=text) for cmd, text in USER_COMMANDS]
+    admin_commands = [BotCommand(command=cmd, description=text) for cmd, text in ADMIN_COMMANDS]
+
     await bot.set_my_commands(default, scope=BotCommandScopeDefault())
     for telegram_id in sorted(config.admin_ids):
-        scoped = default + [BotCommand(**{"command": cmd, "description": text}) for cmd, text in ADMIN_COMMANDS]
-        try:
-            await bot.set_my_commands(scoped, scope=BotCommandScopeChat(telegram_id))
-        except TelegramBadRequest:  # pragma: no cover - admin has never started the bot
-            logger.debug("could not scope commands for %s", telegram_id)
+        # ``BotCommandScopeChat`` is keyword-only. Passing the id positionally
+        # raises inside pydantic and takes the whole bot down on startup.
+        await bot.set_my_commands(
+            default + admin_commands,
+            scope=BotCommandScopeChat(chat_id=telegram_id),
+        )
 
 
 __all__ = [

@@ -76,6 +76,33 @@ class TestCommandRouting:
         assert "message" in ALLOWED_UPDATES
 
 
+class TestCommandScoping:
+    """Regression: the command list must be publishable without crashing.
+
+    A scope built positionally (``BotCommandScopeChat(telegram_id)``) raised inside
+    pydantic and killed the bot during startup - invisible to handler tests.
+    """
+
+    async def test_commands_publish_for_default_and_every_admin(self, bot, session):
+        from aiogram.methods import SetMyCommands
+
+        from bot.admin.common import refresh_commands
+
+        await refresh_commands(bot)
+
+        calls = session.of(SetMyCommands)
+        # One default scope plus one per configured admin id.
+        assert len(calls) == 2
+        default_call, admin_call = calls
+
+        default_names = {item.command for item in default_call.commands}
+        admin_names = {item.command for item in admin_call.commands}
+        assert {"start", "help"} <= default_names
+        assert "admin" not in default_names, "ordinary players must not see /admin"
+        assert {"start", "help", "admin", "panel", "a"} == admin_names
+        assert admin_call.scope.chat_id == 1604952820
+
+
 class TestConfigIsLazy:
     """Regression: the admin list must not be snapshotted before dotenv runs.
 
