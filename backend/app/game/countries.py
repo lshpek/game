@@ -10,7 +10,7 @@ make no legal claim about real registration formats.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 LATIN = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CYRILLIC = "РђР‘Р’Р“Р”Р•РЃР–Р—РР™РљР›РњРќРћРџР РЎРўРЈР¤РҐР¦Р§РЁР©РЄР«Р¬Р­Р®РЇ"
@@ -515,6 +515,42 @@ COUNTRIES: tuple[CountryDef, ...] = (
 
 COUNTRY_BY_CODE: dict[str, CountryDef] = {country.code: country for country in COUNTRIES}
 CONTINENT_OF_COUNTRY: dict[str, str] = {c.code: c.region_group for c in COUNTRIES}
+
+
+def _with_collectible_templates(country: CountryDef) -> CountryDef:
+    """Attach the PHONE_NUMBER and SIM_CARD templates to a country.
+
+    Categories are *data*, not schema: the templates join the same pool the roll
+    pipeline already picks from, so ownership, duplicates, first discovery,
+    albums and the ledger keep working unchanged for every category. Adding a
+    fourth category later means one more call here and one more table in
+    ``app.game.collectibles``.
+    """
+    from app.game import collectibles
+
+    phone = collectibles.phone_templates(country.code)
+    sim = collectibles.sim_templates(country.code)
+    if not phone and not sim:
+        return country
+    # Vehicle templates keep their weights; the new categories are rarer by
+    # design, so they are added at a fraction of the weight rather than in
+    # proportion to the number of templates each country contributes.
+    extra = tuple(
+        TemplateDef(
+            code=template.code,
+            pattern=template.pattern,
+            weight=template.weight * 0.12,
+            plate_type=template.plate_type,
+            rarity_floor=template.rarity_floor,
+            config=dict(template.config),
+        )
+        for template in (*phone, *sim)
+    )
+    return replace(country, templates=(*country.templates, *extra))
+
+
+COUNTRIES: tuple[CountryDef, ...] = tuple(_with_collectible_templates(c) for c in COUNTRIES)
+COUNTRY_BY_CODE = {country.code: country for country in COUNTRIES}
 
 
 def country_by_code(code: str) -> CountryDef | None:

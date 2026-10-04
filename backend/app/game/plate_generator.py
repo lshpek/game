@@ -20,8 +20,9 @@ Production uses ``secrets.SystemRandom``; tests inject a seeded
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from app.game.collectibles import PLATE_TYPE_BY_CATEGORY, CollectibleCategory
 from app.game.countries import CountryDef
 from app.game.plate_patterns import PlateAnalysis, analyze_plate
 from app.game.plate_rarity import (
@@ -366,19 +367,33 @@ class PlateGenerator:
         *,
         luck: Rarity,
         rejected: set[tuple[str, str]] | None = None,
+        category: CollectibleCategory | None = None,
+        country_code: str | None = None,
     ) -> GeneratedPlate:
-        """Generate one plate, retrying when the serial was already rejected.
+        """Generate one collectible, retrying when the serial was already rejected.
 
         ``rejected`` lets the service pass the keys the player already owns so a
         roll reliably produces something new when a fresh plate is possible.
+
+        ``category`` and ``country_code`` only **narrow the eligible pool**. They
+        decide which templates may be picked, never what the number is worth: the
+        rarity resolver, the valuation and the reward all still run on the generated
+        structure. That is what makes "hunt PHONES" a gameplay filter rather than a
+        way to forge a result.
         """
+        pool = self._narrow(country_code=country_code, category=category)
+        if pool is None:
+            # An empty catalogue for the requested hunt must not fail the roll:
+            # fall back to the world so a player always gets a collectible.
+            pool = self.ctx
+
         seen: set[tuple[str, str]] = set(rejected or set())
         last: GeneratedPlate | None = None
 
         for _ in range(MAX_GENERATION_ATTEMPTS):
-            country = pick_country(self.ctx, self.rng)
-            region = pick_region(self.ctx, country, self.rng)
-            template = pick_template(self.ctx, country, region, self.rng)
+            country = pick_country(pool, self.rng)
+            region = pick_region(pool, country, self.rng)
+            template = pick_template(pool, country, region, self.rng)
             plate = self._attempt(country, region, template, luck)
             last = plate
             if plate.unique_key not in seen:
@@ -388,6 +403,59 @@ class PlateGenerator:
         # Extremely unlikely after MAX_GENERATION_ATTEMPTS; returning the last
         # candidate is better than failing the roll.
         return last  # type: ignore[return-value]
+
+    def _narrow(
+        self,
+        *,
+        country_code: str | None,
+        category: CollectibleCategory | None,
+    ) -> GenerationContext | None:
+        """Restrict the generation context to one country and/or category.
+
+        Returns ``None`` when the request matches nothing, so the caller can fall
+        back to the world instead of raising in front of the player.
+        """
+        wanted_country = str(country_code or "").strip().upper() or None
+        wanted_type = (
+            PLATE_TYPE_BY_CATEGORY[category] if category is not None else None
+        )
+
+        countries = tuple(
+            country
+            for country in self.ctx.countries
+            if wanted_country is None or country.code == wanted_country
+        )
+        if not countries:
+            return None
+
+        templates_by_country: dict[str, tuple[TemplateOption, ...]] = {}
+        for country in countries:
+            options = self.ctx.templates_by_country.get(country.code, ())
+            if wanted_type is not None:
+                options = tuple(option for option in options if option.plate_type == wanted_type)
+            templates_by_country[country.code] = options
+
+        # A country can legitimately have no template for the requested category
+        # yet (a new SIM line, say). Keep only the countries that do.
+        usable = tuple(
+            country
+            for country in countries
+            if any(
+                not option.requires_region for option in templates_by_country[country.code]
+            )
+            or bool(templates_by_country[country.code])
+        )
+        if not usable:
+            return None
+
+        usable_codes = {country.code for country in usable}
+        return replace(
+            self.ctx,
+            countries=usable,
+            templates_by_country={
+                code: options for code, options in templates_by_country.items() if code in usable_codes
+            },
+        )
 
     # --- admin test lab --------------------------------------------------
     def generate_targeted(

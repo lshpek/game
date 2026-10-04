@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.timeutils import utcnow
 from app.db.session import get_db
+from app.game.collectibles import parse_hunt_filter
 from app.game.plate_rarity import RARITY_RANK
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
 from app.models.plates import Plate, UserPlate
@@ -85,15 +86,39 @@ def _roll_response(outcome, db: Session) -> PlateRollResponse:
     "/roll",
     response_model=PlateRollResponse,
     dependencies=[Depends(rate_limit("roll", "rate_limit_roll"))],
-    summary="Roll a plate - the server decides everything",
+    summary="Roll a collectible number - the server decides everything",
 )
 def perform_roll(
+    category: str | None = Query(
+        default=None,
+        max_length=24,
+        description="Optional hunt filter: VEHICLE_PLATE, PHONE_NUMBER or SIM_CARD.",
+    ),
+    country_code: str | None = Query(
+        default=None,
+        max_length=32,
+        description="Optional hunt filter: restrict the roll to one country (3-letter code).",
+    ),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     key: str | None = Depends(idempotency_key),
 ) -> PlateRollResponse:
+    """Draw one collectible.
+
+    The client may only narrow the *eligible pool* with ``category`` and
+    ``country_code``. Everything that decides the outcome - the number, its
+    rarity, its value, whether it is a first discovery, whether it is a duplicate
+    and the reward - is computed here. A roll with no filters behaves exactly as
+    before.
+    """
+    hunt = parse_hunt_filter(category=category, country_code=country_code)
     service = PlateRollService(db, settings)
-    outcome = service.perform_roll(user, source=RollSource.DAILY, idempotency_key=key)
+    outcome = service.perform_roll(
+        user,
+        source=RollSource.DAILY,
+        idempotency_key=key,
+        **hunt,
+    )
 
     # First real roll activates any pending referral (reward paid here only).
     from app.services.referrals import ReferralService

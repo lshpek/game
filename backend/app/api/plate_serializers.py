@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.timeutils import as_aware
+from app.game.collectibles import category_for_plate_type
 from app.game.plate_rarity import RARITY_COLOR
 from app.game.plate_traits import trait_labels
 from app.game.plate_visuals import serialize_visual
@@ -54,6 +55,7 @@ def plate_card(
     country = plate.country
     region = plate.region
     traits = list(plate.traits or [])
+    category = category_for_plate_type(plate.plate_type)
 
     return {
         "id": plate.id,
@@ -63,6 +65,10 @@ def plate_card(
         "letters": list(plate.letter_parts or []),
         "numbers": list(plate.numeric_parts or []),
         "plate_type": plate.plate_type,
+        # Unified category axis. The frontend selects on ``category`` for every
+        # collectible kind and never branches on ``plate_type``; ``plate_type``
+        # stays for existing consumers and for the admin panel.
+        "category": category.value,
         "rarity": plate.rarity,
         "rarity_score": int(plate.rarity_score),
         "rarity_color": RARITY_COLOR.get(plate.rarity, RARITY_COLOR["COMMON"]),

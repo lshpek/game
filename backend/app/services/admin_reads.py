@@ -36,6 +36,29 @@ from app.services.leaderboards import periods
 __all__ = ["AdminReadsMixin"]
 
 
+def _plate_text_like(term: str):
+    """Case-insensitive ``contains`` over both the display and the normalised form.
+
+    Both sides are pushed through the same normaliser the catalogue uses, because
+    a pasted plate routinely differs from the stored one by a non-breaking space or
+    a different separator - and SQLite's ``upper()`` is ASCII-only, so Cyrillic and
+    Georgian plates would otherwise never match. Normalising both sides makes the
+    comparison script-agnostic instead of a coin toss.
+    """
+    from app.game.plate_templates import normalize_plate
+
+    variants = {term.strip(), normalize_plate(term)}
+    variants = {value for value in variants if value}
+    if not variants:  # pragma: no cover - guarded by the caller
+        variants = {term}
+    clauses = []
+    for value in variants:
+        pattern = f"%{value}%"
+        clauses.append(Plate.normalized_text.ilike(pattern))
+        clauses.append(Plate.plate_text.ilike(pattern))
+    return or_(*clauses)
+
+
 class AdminReadsMixin(AdminServiceBase):
     """Read-only views used by every control-surface screen."""
 
@@ -530,17 +553,11 @@ class AdminReadsMixin(AdminServiceBase):
             conditions.append(
                 or_(
                     Plate.id == int(cleaned),
-                    func.upper(Plate.plate_text).like(f"%{cleaned}%"),
-                    func.upper(Plate.normalized_text).like(f"%{cleaned}%"),
+                    _plate_text_like(cleaned),
                 )
             )
         elif cleaned:
-            conditions.append(
-                or_(
-                    func.upper(Plate.plate_text).like(f"%{cleaned.upper()}%"),
-                    func.upper(Plate.normalized_text).like(f"%{cleaned.upper()}%"),
-                )
-            )
+            conditions.append(_plate_text_like(cleaned))
         if explicit_id is not None:
             conditions.append(Plate.id == explicit_id)
         if country_code:

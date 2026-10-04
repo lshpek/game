@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, settings
 from app.core.locks import user_lock
 from app.core.timeutils import utcnow
+from app.game.collectibles import CollectibleCategory
 from app.game.plate_generator import PlateGenerator
 from app.game.plate_rarity import RARITY_RANK, Rarity, pity_weights, rarity_rank
 from app.game.plate_valuation import duplicate_sale_value
@@ -212,8 +213,16 @@ class PlateRollService:
         source: RollSource = RollSource.DAILY,
         idempotency_key: str | None = None,
         bypass_allowance: bool = False,
+        category: CollectibleCategory | None = None,
+        country_code: str | None = None,
     ) -> PlateRollOutcome:
-        """The single entry point for producing a plate."""
+        """The single entry point for producing a collectible.
+
+        ``category`` and ``country_code`` only narrow the *eligible pool* that the
+        generator draws from. They cannot influence the number itself, its rarity,
+        its value or the reward - all of that stays server-side, which is what keeps
+        a hunt filter from becoming a cheat or a forgery vector.
+        """
         with user_lock(user.id):
             existing = self._existing_roll(user.id, idempotency_key)
             if existing is not None:
@@ -232,7 +241,11 @@ class PlateRollService:
             context.event_multipliers = multipliers
 
             luck = self._luck_rarity(user)
-            generated = PlateGenerator(context, self.rng).generate(luck=luck)
+            generated = PlateGenerator(context, self.rng).generate(
+                luck=luck,
+                category=category,
+                country_code=country_code,
+            )
 
             plate, _created = self.plates.materialize(generated)
             grant = self.plates.grant(plate, user)

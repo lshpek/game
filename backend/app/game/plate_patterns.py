@@ -15,6 +15,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from itertools import pairwise
 
+from app.game.phone_patterns import PHONE_TRAIT_WEIGHTS, detect_phone_traits
+
 # Digit-run patterns that carry an extra "recognisable" bonus.
 SPECIAL_NUMBER_RUNS: dict[str, str] = {
     "0001": "double_zero_one",
@@ -332,6 +334,12 @@ LETTER_DETECTORS: tuple[tuple[str, object], ...] = (
     ("mirrored_letters", detect_mirrored_letters),
 )
 
+#: ``Plate.plate_type`` values that are judged purely on their digits. A phone
+#: number or a SIM serial has no letters to reward and no region to mirror, so the
+#: vehicle detectors would call every one of them ordinary - which is how a 777
+#: number used to come out as an unremarkable plate.
+_DIGIT_JUDGED_TYPES: frozenset[str] = frozenset({"PHONE", "SIM"})
+
 
 def build_tags(
     traits: list[str],
@@ -349,6 +357,10 @@ def build_tags(
         tags.append("sequence")
     if {"lucky_pattern", "contains_777", "contains_666", "contains_123"} & set(traits):
         tags.append("lucky")
+    if {"triple_repeat", "quad_repeat", "lucky_run", "repeated_digits"} & set(traits):
+        tags.append("lucky")
+    if {"low_entropy", "alternating"} & set(traits):
+        tags.append("pattern")
     if "meme_pattern" in traits:
         tags.append("meme")
     if is_secret:
@@ -357,6 +369,11 @@ def build_tags(
         tags.append("seasonal")
     if plate_type in {"DIPLOMATIC_STYLE", "GOVERNMENT_STYLE", "SPECIAL", "HISTORICAL"}:
         tags.append("luxury")
+    if plate_type in _DIGIT_JUDGED_TYPES:
+        # Every synthetic collectible is tagged, so a player can filter the whole
+        # phone/SIM line out of a mixed collection.
+        tags.append("phone" if plate_type == "PHONE" else "sim")
+        tags.append("synthetic")
     return sorted(set(tags))
 
 
@@ -411,6 +428,17 @@ def analyze_plate(
         _record("symmetric_plate")
     if detect_rare_template(rarity_floor):
         _record("rare_template")
+
+    # PHONE_NUMBERS and SIM_CARDS are judged on their digits. A phone number has no
+    # letters worth rewarding and no region to mirror, so the vehicle detectors
+    # above would report almost nothing for one - which is exactly how a 777 number
+    # used to come out as an ordinary plate. These detectors read the digit
+    # structure directly, so rarity is a property of the number itself.
+    if plate_type in _DIGIT_JUDGED_TYPES:
+        for code in detect_phone_traits(plate_text):
+            if code not in scores:
+                scores[code] = PHONE_TRAIT_WEIGHTS.get(code, 4)
+                traits.append(code)
 
     # Order traits deterministically by score (desc) then code, so the strongest
     # reasons always come first for the result UI.

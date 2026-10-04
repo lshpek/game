@@ -65,6 +65,10 @@ class PlateCard(BaseModel):
     letters: list[str] = Field(default_factory=list)
     numbers: list[str] = Field(default_factory=list)
     plate_type: str = "STANDARD"
+    #: Unified category axis (VEHICLE_PLATE / PHONE_NUMBER / SIM_CARD). Clients
+    #: select on this and never branch on ``plate_type``; a new category is a
+    #: catalogue change, not a client release.
+    category: str = "VEHICLE_PLATE"
     rarity: str
     rarity_score: int = 0
     rarity_color: str = "#8b93a7"
