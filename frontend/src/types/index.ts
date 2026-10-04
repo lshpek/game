@@ -51,6 +51,22 @@ export interface PlateDiscoverer {
   photo_url: string | null;
 }
 
+/**
+ * The kinds of collectible a player can hunt.
+ *
+ * One Number Universe: every kind is rolled, owned, duplicated, sold and shared
+ * through the same loop, so the UI never presents them as separate games. The
+ * server decides which kind a roll produces - the client only ever sends a
+ * *filter*.
+ */
+export type CollectibleCategory = 'VEHICLE_PLATE' | 'PHONE_NUMBER' | 'SIM_CARD';
+
+export const COLLECTIBLE_CATEGORIES: readonly CollectibleCategory[] = [
+  'VEHICLE_PLATE',
+  'PHONE_NUMBER',
+  'SIM_CARD',
+] as const;
+
 /** Canonical plate payload returned by every plate endpoint. */
 export interface PlateCard {
   id: number;
@@ -60,6 +76,8 @@ export interface PlateCard {
   letters: string[];
   numbers: string[];
   plate_type: string;
+  /** Unified category axis. Defaults are for older cached payloads. */
+  category?: CollectibleCategory;
   rarity: Rarity;
   rarity_score: number;
   rarity_color: string;
@@ -165,7 +183,7 @@ export interface UserProfile {
   last_seen_at: string | null;
 }
 
-/** Result of POST /api/roll - the plate reveal payload. */
+/** Result of POST /api/roll - the collectible reveal payload. */
 export interface PlateRollResult {
   success: true;
   roll_id: number;
@@ -194,6 +212,19 @@ export interface PlateRollResult {
   coins_awarded: number;
   conversion_value: number;
   number: PlateCard;
+}
+
+/**
+ * What the player asked for.
+ *
+ * This is the *only* thing the client may influence about a roll. The number,
+ * its rarity, its value, whether it is a first discovery and the reward are all
+ * decided server-side - sending any of them from here would be a forgery attempt
+ * the backend ignores.
+ */
+export interface HuntFilter {
+  category?: CollectibleCategory | null;
+  country_code?: string | null;
 }
 export interface GarageData {
   best: PlateCard | null;

@@ -96,3 +96,8 @@ export function useI18n(): I18nValue {
   if (!context) throw new Error('useI18n must be used inside <I18nProvider>');
   return context;
 }
+
+/** Convenience hook for components that only need the translator. */
+export function useT(): I18nValue['t'] {
+  return useI18n().t;
+}

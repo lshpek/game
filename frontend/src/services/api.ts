@@ -2,6 +2,7 @@
 
 import { apiRequest, makeIdempotencyKey } from '@/lib/api';
 import type {
+  HuntFilter,
   AchievementItem,
   AuthResponse,
   ChallengeItem,
@@ -44,10 +45,21 @@ export const user = {
 
 export const game = {
   /** The server decides the result; the client only animates it. */
-  roll: (key?: string) =>
+  /**
+   * Draw one collectible.
+   *
+   * `hunt` is a *pool filter* only - which category and which country may be
+   * eligible. Everything about the outcome is decided by the server, so this can
+   * never be used to forge a result.
+   */
+  roll: (key?: string, hunt?: HuntFilter) =>
     apiRequest<PlateRollResult>('/api/roll', {
       method: 'POST',
       idempotencyKey: key ?? makeIdempotencyKey('roll'),
+      query: {
+        ...(hunt?.category ? { category: hunt.category } : {}),
+        ...(hunt?.country_code ? { country_code: hunt.country_code } : {}),
+      },
     }),
 
   rollHistory: (limit = 20) =>

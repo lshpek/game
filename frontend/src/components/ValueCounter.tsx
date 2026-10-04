@@ -7,6 +7,8 @@ interface ValueCounterProps {
   prefix?: string;
   suffix?: string;
   className?: string;
+  /** Small caption rendered under the number, e.g. "NUMORA". */
+  label?: string;
 }
 
 /**
@@ -14,7 +16,7 @@ interface ValueCounterProps {
  * final number (good for tests, slow devices and reduced motion), then the
  * count-up starts from zero for the theatrical reveal.
  */
-export function ValueCounter({ value, duration = 900, prefix = '', suffix = '', className }: ValueCounterProps) {
+export function ValueCounter({ value, duration = 900, prefix = '', suffix = '', className, label }: ValueCounterProps) {
   const [display, setDisplay] = useState(value);
   const frame = useRef<number | null>(null);
 
@@ -47,10 +49,15 @@ export function ValueCounter({ value, duration = 900, prefix = '', suffix = '', 
   }, [duration, value]);
 
   return (
-    <span className={className} data-testid="value-counter">
-      {prefix}
-      {formatCoins(display)}
-      {suffix}
+    <span className="flex flex-col items-center gap-0.5">
+      <span className={className} data-testid="value-counter">
+        {prefix}
+        {formatCoins(display)}
+        {suffix}
+      </span>
+      {label ? (
+        <span className="text-[9px] font-bold uppercase tracking-[0.28em] text-white/35">{label}</span>
+      ) : null}
     </span>
   );
 }

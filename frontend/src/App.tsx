@@ -5,7 +5,8 @@ import { BottomNav } from '@/components/BottomNav';
 import { LoadingSpinner } from '@/components/States';
 import { BoxesPage } from '@/pages/BoxesPage';
 import { CollectionPage } from '@/pages/CollectionPage';
-import { HomePage } from '@/pages/HomePage';
+import { HuntPage } from '@/pages/HuntPage';
+import { WorldPage } from '@/pages/WorldPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { RankingPage } from '@/pages/RankingPage';
 import { useAuthStore } from '@/store/auth';
@@ -45,8 +46,11 @@ function AppShell() {
     <div className="mx-auto min-h-dvh w-full max-w-lg px-4 safe-top pb-safe-nav">
       <main className="pt-4">
         <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/containers" element={<BoxesPage />} />
+          {/* ROLL is the product now. Boxes is the legacy four-digit line and is
+              reachable from the profile, not from the primary navigation. */}
+          <Route path="/" element={<HuntPage />} />
+          <Route path="/world" element={<WorldPage />} />
+          <Route path="/legacy" element={<BoxesPage />} />
           <Route path="/collection" element={<CollectionPage />} />
           <Route path="/ranking" element={<RankingPage />} />
           <Route path="/profile" element={<ProfilePage />} />
