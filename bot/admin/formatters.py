@@ -8,7 +8,7 @@ Pure functions only - no I/O, no business rules.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -398,6 +398,45 @@ def cosmetics(catalogue: dict[str, Any], owned: Iterable[str] = ()) -> str:
     return "\n".join(body)
 
 
+def rewards(data: dict[str, Any]) -> str:
+    """The fixed-value reward catalogue the operator can hand out.
+
+    Rendered from the backend so the panel never invents a grant type the API
+    would reject.
+    """
+    items = data.get("items") or []
+    body = ["🎁 <b>НАГРАДЫ</b>", SMALL, "Фиксированные значения — без случайных предметов."]
+    for item in items[:20]:
+        grants = ", ".join(str(value) for value in (item.get("grants") or [])) or "—"
+        body.append(
+            f"• <code>{esc(item.get('code'))}</code> — {esc(item.get('label'))}\n"
+            f"   <i>{esc(grants)}</i>"
+        )
+    if not items:
+        body.append("<i>каталог пуст</i>")
+    else:
+        body.append(f"<i>показано {min(len(items), 20)} из {len(items)}</i>")
+    return "\n".join(body)
+
+
+def user_profile(data: dict[str, Any]) -> str:
+    """A player's collector identity, as an operator sees it."""
+    level = data.get("collector_level") or {}
+    premium = data.get("premium") or {}
+    rows = [
+        f"👤 <b>{esc(data.get('display_name') or data.get('username') or data.get('id'))}</b>",
+        SMALL,
+        f"уровень: <b>{num(level.get('level'))}</b> {esc(level.get('title_ru') or '')}",
+        f"xp: {num(level.get('xp'))} / {num(level.get('xp_for_level'))}",
+        f"💰 {num(data.get('coins'))} NUMORA",
+        f"🎰 {num(data.get('bonus_rolls'))} доп. роллов",
+        f"⭐ PRO: {'активен' if premium.get('active') else 'нет'}",
+    ]
+    if data.get("username"):
+        rows.append(f"@{esc(data['username'])}")
+    return "\n".join(rows)
+
+
 def plate_card(data: dict[str, Any], *, with_history: bool = True) -> str:
     discoverer = data.get("first_discoverer") or {}
     discoverer_label = (
@@ -443,9 +482,13 @@ def plate_card(data: dict[str, Any], *, with_history: bool = True) -> str:
     return "\n".join(body)
 
 
-def plate_list(data: dict[str, Any]) -> str:
+def plate_list(data: dict[str, Any], *, filters: Sequence[str] = ()) -> str:
     items = data.get("items") or []
     body = [f"{EMOJI['plates']} <b>НОМЕРА</b> <i>{esc(data.get('sort'))}</i>", SMALL]
+    for value in filters:
+        body.append(value)
+    if filters:
+        body.append(SMALL)
     for item in items:
         owner_count = item.get("owner_count") or 0
         body.append(

@@ -42,12 +42,19 @@ KEY_AMOUNT = "amount"
 KEY_KIND = "kind"
 KEY_MODE = "mode"
 KEY_COUNTRY = "country"
+KEY_CATEGORY = "category"
+KEY_REGION = "region"
 KEY_RARITY = "rarity"
 KEY_PRESET = "preset"
 KEY_TRAIT = "trait"
 KEY_QUERY = "query"
 KEY_PAGE = "page"
 KEY_SORT = "sort"
+
+#: How long a staged operation and its FSM flow stay valid. A pending mutation is
+#: short-lived on purpose: an operator who walks away must not be able to confirm a
+#: grant half an hour later against a balance that has moved on.
+FLOW_TTL_SECONDS = 900
 
 
 async def get_data(context: FSMContext) -> dict[str, Any]:
@@ -93,7 +100,9 @@ async def clear_flow_data(context: FSMContext, *, keep_user: bool = True) -> Non
 
 
 __all__ = [
+    "FLOW_TTL_SECONDS",
     "KEY_AMOUNT",
+    "KEY_CATEGORY",
     "KEY_COUNTRY",
     "KEY_KIND",
     "KEY_MODE",
@@ -103,6 +112,7 @@ __all__ = [
     "KEY_QUERY",
     "KEY_RARITY",
     "KEY_REASON",
+    "KEY_REGION",
     "KEY_SCREEN",
     "KEY_SELECTED_USER",
     "KEY_SORT",

@@ -78,8 +78,43 @@ def _error_message(status: int, code: str, message: str) -> str:
     return message or "Request failed."
 
 
+# One pooled client per timeout value, reused by every AdminBotClient instance.
+# ``get_client()`` builds a fresh wrapper per call (it must, so a reloaded config
+# takes effect), but the underlying connections are shared.
+_CLIENTS: dict[float, httpx.AsyncClient] = {}
+
+
+def _shared_client(timeout: float) -> httpx.AsyncClient:
+    client = _CLIENTS.get(timeout)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10, keepalive_expiry=30.0),
+        )
+        _CLIENTS[timeout] = client
+    return client
+
+
+async def close_shared_clients() -> None:
+    """Close every pooled connection. Called from the bot's shutdown path."""
+    for client in list(_CLIENTS.values()):
+        try:
+            await client.aclose()
+        except Exception:  # pragma: no cover - shutdown must never raise
+            logger.debug("could not close an admin HTTP client", exc_info=True)
+    _CLIENTS.clear()
+
+
 class AdminBotClient:
-    """Thin, typed wrapper around ``/api/admin/bot/*``."""
+    """Thin, typed wrapper around ``/api/admin/bot/*``.
+
+    The HTTP connection pool is **process-wide and shared**, not per request. The
+    panel fires a burst of calls on every navigation (``/transactions`` alone does
+    three), so building a fresh ``AsyncClient`` per request re-opened a TCP/TLS
+    connection every time and exhausted sockets under load. Credentials still never
+    leave this object, and the pool is closed by :func:`close_shared_clients` on
+    bot shutdown.
+    """
 
     def __init__(self, base_url: str, service_token: str, *, timeout: float = 20.0) -> None:
         self._base_url = base_url.rstrip("/")
@@ -97,6 +132,10 @@ class AdminBotClient:
             headers["X-Request-ID"] = operation_id
         return headers
 
+    def _client(self) -> httpx.AsyncClient:
+        """Return the shared pooled client, creating it on first use."""
+        return _shared_client(self._timeout)
+
     async def request(
         self,
         method: str,
@@ -108,15 +147,15 @@ class AdminBotClient:
         operation_id: str | None = None,
     ) -> dict[str, Any]:
         url = f"{self._base_url}/api/admin/bot{path}"
+        client = self._client()
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json,
-                    headers=self._headers(admin_telegram_id, operation_id),
-                )
+            response = await client.request(
+                method,
+                url,
+                params=params,
+                json=json,
+                headers=self._headers(admin_telegram_id, operation_id),
+            )
         except httpx.TimeoutException as exc:
             raise AdminAPIUnavailable("Backend timed out.", code="TIMEOUT") from exc
         except httpx.HTTPError as exc:
@@ -137,7 +176,7 @@ class AdminBotClient:
             ) from exc
 
         if response.status_code >= 400:
-            error = payload.get("error") or {}
+            error = payload.get("error") or {} if isinstance(payload, dict) else {}
             raise AdminAPIError(
                 _error_message(
                     response.status_code,
@@ -253,4 +292,5 @@ __all__ = [
     "AdminAPIError",
     "AdminAPIUnavailable",
     "AdminBotClient",
+    "close_shared_clients",
 ]

@@ -59,8 +59,10 @@ load_dotenv(ENV_FILE, override=False)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from bot.admin.client import close_shared_clients
 from bot.admin.common import config as ADMIN_CONFIG
 from bot.admin.common import refresh_commands
+from bot.admin.formatters import esc
 from bot.admin.router import router as admin_router
 from bot.admin.states import AdminStates
 
@@ -81,8 +83,67 @@ LOCALHOST_URLS = {
     "http://127.0.0.1",
     "http://127.0.0.1:5173",
 }
-START_PARAM_PREFIXES = ("ref_", "number_", "challenge_")
 MAX_START_PARAM_LENGTH = 64
+
+# --------------------------------------------------------------------------
+# Deep links
+#
+# A collectible deep link is ``<kind>_<token>``. ``<kind>`` selects how the token is
+# resolved, ``<token>`` is what actually travels on the wire - so internal database
+# ids stay inside the backend and only a short public token is exposed.
+#
+#   plate_<id>          an existing collectible by catalogue id
+#   collectible_<token> a collectible by its public share token
+#   number_<id>         legacy four-digit number (kept for old links)
+#   challenge_<code>    a head-to-head challenge
+#   ref_<id>            a referral
+#   country_<code>      jump straight into a country's album
+#   album_<code>        jump straight into an album
+# --------------------------------------------------------------------------
+DEEPLINK_KINDS: frozenset[str] = frozenset(
+    {
+        "plate",
+        "collectible",
+        "number",
+        "challenge",
+        "ref",
+        "country",
+        "album",
+    }
+)
+#: Only these kinds may carry a numeric argument that looks like an id.
+NUMERIC_KINDS: frozenset[str] = frozenset({"plate", "number", "ref"})
+#: Start params that must never be forwarded verbatim into a URL.
+_BLOCKED_START_PARAMS = frozenset({"admin", "panel", "a"})
+
+
+def normalize_start_param(raw: str | None) -> str | None:
+    """Validate a Telegram ``/start`` payload and return it in canonical form.
+
+    Only ``<kind>_<token>`` shapes with a sane token survive, so the payload can be
+    forwarded to the Mini App without any further escaping or re-validation.
+    """
+    if not raw:
+        return None
+    value = raw.strip()
+    for prefix in ("/start_", "start=", "/start "):
+        if value.startswith(prefix):
+            value = value[len(prefix) :].strip()
+    if not value or len(value) > MAX_START_PARAM_LENGTH:
+        return None
+    kind, separator, token = value.partition("_")
+    if not separator or kind.lower() not in DEEPLINK_KINDS or not token:
+        return None
+    kind = kind.lower()
+    if kind in NUMERIC_KINDS and not token.isdigit():
+        return None
+    if kind in NUMERIC_KINDS and int(token) <= 0:
+        return None
+    if any(char.isspace() for char in token):
+        return None
+    if kind in _BLOCKED_START_PARAMS:
+        return None
+    return f"{kind}_{token}"
 
 # Chat hygiene: the player sends /start once and the chat keeps exactly one bot
 # message (the text plus the Play button). Everything else - the command itself,
@@ -127,26 +188,30 @@ ADMIN_ADMIN_IDS_COUNT = len(ADMIN_CONFIG.admin_ids)
 # Helpers
 # --------------------------------------------------------------------------
 WELCOME_TEXT = (
-    "🎰 <b>Number Collector</b>\n\n"
-    "Roll four-digit numbers, build your collection and compete with friends.\n\n"
-    "• every plate is a real number plate with its own value\n"
-    "• rare finds, first discoveries and 777s are tracked for every player\n"
-    "• play with friends, climb the leaderboards, unlock PRO\n\n"
-    "Tap Play to start."
+    "🔢 <b>NUMORA</b>\n"
+    "<i>Global Number Collector</i>\n\n"
+    "Hunt collectible numbers from every corner of the world.\n\n"
+    "• 🚘 real vehicle plates from 30+ countries\n"
+    "• 📱 synthetic phone numbers you will never see on a bill\n"
+    "• 💎 COMMON → MYTHIC → SECRET rarities, computed from the number itself\n"
+    "• 🌍 complete countries, categories and albums\n"
+    "• 🏆 first discoveries, leaderboards, challenges, PRO\n\n"
+    "Tap Play to start hunting."
 )
 
 HELP_TEXT = (
-    "🎰 <b>Number Collector</b>\n\n"
+    "🔢 <b>NUMORA</b>\n<i>Global Number Collector</i>\n\n"
     "<b>How to play</b>\n"
     "1. Tap Play and open the game\n"
-    "2. Roll - each roll reveals a number plate\n"
-    "3. Collect plates, find countries and rare rarities\n"
-    "4. Share your best find and climb the leaderboards\n\n"
+    "2. ROLL - each roll reveals one collectible number\n"
+    "3. Hunt countries and categories: vehicles, phone numbers, more to come\n"
+    "4. Chase rarities, finish albums and share your best find\n\n"
     "<b>Useful</b>\n"
-    "• every plate has a collector value and a dealer value\n"
+    "• rarity comes from the structure of the number, not from a dice roll alone\n"
+    "• collector value and dealer value are in-game fiction, not money\n"
     "• duplicates turn into NUMORA\n"
-    "• PRO adds bonus rolls and a multiplier on duplicates\n"
-    "• daily missions and challenges pay out every day\n\n"
+    "• PRO adds daily rolls and a duplicate multiplier\n"
+    "• daily missions, streaks and challenges pay out every day\n\n"
     "Tap Play to open the game."
 )
 
@@ -240,19 +305,6 @@ async def show_welcome(message: types.Message, start_param: str | None = None) -
         _welcome_messages[chat_id] = sent.message_id
 
 
-def normalize_start_param(raw: str | None) -> str | None:
-    """Forward only payloads we recognise, and only when they look sane."""
-    if not raw:
-        return None
-    value = raw.strip()
-    for prefix in ("/start_", "start="):
-        if value.startswith(prefix):
-            value = value[len(prefix) :]
-    if len(value) > MAX_START_PARAM_LENGTH:
-        return None
-    return value if value.startswith(START_PARAM_PREFIXES) else None
-
-
 def config_problems() -> list[str]:
     """Human-readable list of everything that stops the bot from working."""
     problems: list[str] = []
@@ -300,14 +352,30 @@ async def handle_help(message: types.Message) -> None:
 
 @router.message(F.successful_payment)
 async def handle_successful_payment(message: types.Message) -> None:
+    """Forward a paid invoice to the backend, which is the only grant authority.
+
+    The player is told the outcome of the *forward*, never of the grant: the
+    backend may legitimately fail and be retried by Telegram, so claiming the
+    reward is granted here would be a lie the system cannot keep.
+    """
     payment = message.successful_payment
-    logger.info("Successful payment: payload=%s amount=%s", payment.invoice_payload, payment.total_amount)
-    await delete_quietly(message)
-    await forward_payment_update(message.model_dump(mode="json"))
-    # The player gets to read it, then it disappears like everything else.
-    confirmation = await message.answer(
-        "Payment received. Your rewards are being added — open the game to see them! 🎉"
+    logger.info(
+        "Successful payment: payload=%s amount=%s charge=%s",
+        payment.invoice_payload,
+        payment.total_amount,
+        payment.telegram_payment_charge_id,
     )
+    await delete_quietly(message)
+    forwarded, detail = await forward_payment_update(message.model_dump(mode="json"))
+    if forwarded:
+        text = "✅ Payment received. Opening the game to show your reward 🎉"
+    else:
+        text = (
+            "⚠️ Payment received, but the reward is still processing.\n"
+            "It will be applied automatically — just reopen the game.\n"
+            f"<i>reference: {esc(detail[:24])}</i>"
+        )
+    confirmation = await message.answer(text)
     await delete_after(confirmation, CLEANUP_DELAY)
 
 
@@ -321,23 +389,60 @@ async def discard_everything_else(message: types.Message) -> None:
     await delete_quietly(message)
 
 
-async def forward_payment_update(update: dict[str, Any]) -> None:
-    """Forward successful payments to the backend for idempotent granting."""
+async def forward_payment_update(update: dict[str, Any]) -> tuple[bool, str]:
+    """Forward a successful payment to the backend for idempotent granting.
+
+    Returns ``(forwarded, detail)``. ``forwarded`` is only ``True`` when the
+    backend *acknowledged* the update, so the caller never promises a reward it
+    cannot prove. The backend keys the grant on the Telegram charge id, so a retry
+    of this exact update replays instead of granting twice.
+    """
     if SERVICE_TOKEN in PLACEHOLDERS:
-        logger.warning("SERVICE_TOKEN is not configured; payment updates will not be forwarded.")
-        return
+        logger.error("SERVICE_TOKEN is not configured; payment updates cannot be forwarded.")
+        return False, "SERVICE_TOKEN unset"
     if http is None:
-        logger.warning("HTTP client is not initialised; skipping payment forwarding.")
-        return
-    try:
-        response = await http.post(
-            f"{BACKEND_URL}/api/payments/telegram/webhook",
-            json=update,
-            headers={"X-Service-Token": SERVICE_TOKEN},
-        )
-        logger.info("Payment update forwarded: HTTP %s", response.status_code)
-    except httpx.HTTPError as exc:  # pragma: no cover - network failure path
-        logger.error("Failed to forward payment update: %s", exc)
+        logger.error("HTTP client is not initialised; skipping payment forwarding.")
+        return False, "client not ready"
+
+    charge = str((update.get("message") or {}).get("successful_payment") or {}).get("telegram_payment_charge_id", "")
+    url = f"{BACKEND_URL}/api/payments/telegram/webhook"
+    headers = {
+        "X-Service-Token": SERVICE_TOKEN,
+        # Telegram's own secret token, when configured, is equally accepted.
+        "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET or SERVICE_TOKEN,
+    }
+
+    # Three attempts with a short backoff: a transient 5xx or a connection reset
+    # must not cost the player their purchase.
+    for attempt in range(1, 4):
+        try:
+            response = await http.post(url, json=update, headers=headers)
+        except httpx.HTTPError as exc:
+            logger.warning("payment forward attempt %s failed: %s", attempt, type(exc).__name__)
+            if attempt == 3:
+                logger.error("giving up forwarding payment charge=%s: %s", charge, exc)
+                return False, "network error"
+            await asyncio.sleep(0.5 * attempt)
+            continue
+
+        status = response.status_code
+        if status < 400:
+            logger.info("payment charge=%s forwarded: HTTP %s", charge, status)
+            return True, str(status)
+        if 400 <= status < 500 and status != 429:
+            # A rejected update will be rejected again; do not hammer the backend.
+            logger.error(
+                "payment charge=%s rejected permanently: HTTP %s %s",
+                charge,
+                status,
+                response.text[:200].replace("\n", " "),
+            )
+            return False, f"HTTP {status}"
+        logger.warning("payment forward attempt %s got HTTP %s", attempt, status)
+        if attempt == 3:
+            return False, f"HTTP {status}"
+        await asyncio.sleep(0.5 * attempt)
+    return False, "exhausted"
 
 
 @router.callback_query()
@@ -430,6 +535,8 @@ async def run() -> int:
     finally:
         if http is not None:
             await http.aclose()
+        # Release the admin panel's pooled backend connections too.
+        await close_shared_clients()
         # Always release aiogram's aiohttp session, even on the error path.
         await bot.session.close()
     return 0

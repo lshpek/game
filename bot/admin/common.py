@@ -14,7 +14,7 @@ panel three uniform guarantees:
 
 from __future__ import annotations
 
-import functools
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -83,8 +83,22 @@ def is_admin(telegram_id: int | None) -> bool:
 
 
 def telegram_id(target: Message | CallbackQuery) -> int:
-    """The acting admin's Telegram id, straight from the event."""
-    return int(target.from_user.id)
+    """The acting admin's Telegram id, straight from the event.
+
+    Never read it from ``callback.message``: a message that arrived in a channel has
+    no ``from_user`` at all, and a message forwarded by somebody else would
+    attribute the action to the wrong operator.
+    """
+    user = target.from_user
+    if user is None or user.id is None:
+        raise PermissionError("the acting admin is unknown for this event")
+    return int(user.id)
+
+
+def actor_of(target: Message | CallbackQuery) -> int | None:
+    """Like :func:`telegram_id` but ``None`` instead of raising."""
+    user = getattr(target, "from_user", None)
+    return int(user.id) if user is not None and user.id is not None else None
 
 
 @dataclass(slots=True)
@@ -230,16 +244,37 @@ async def deny(target: CallbackQuery | Message) -> None:
 def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[None]]:
     """Middleware that rejects any event from a non-admin.
 
-    Applied to the whole admin router, so no individual handler can forget it.
+    Applied to every handler in the package, so no individual handler can forget
+    the check.
 
-    ``functools.wraps`` is essential, not cosmetic: aiogram inspects the handler
-    signature to decide which dependencies to inject. A bare ``*args, **kwargs``
-    wrapper would make it inject ``bot`` and friends into every handler, and the
-    first call would raise ``TypeError``. ``wraps`` exposes the original
-    signature through ``__wrapped__`` while this function still gates access.
+    Two deliberate deviations from a plain ``functools.wraps`` wrapper, both about
+    how aiogram decides what to inject:
+
+    * ``__wrapped__`` is **not** set. ``CallableObject`` calls
+      ``inspect.unwrap(callback)`` and then builds the argument list from the
+      *unwrapped* signature, so a wrapper advertising ``(event, *args, **kwargs)``
+      through ``wraps`` would still receive only the parameters the inner handler
+      declares - and would therefore never see the ``state`` aiogram provides.
+    * The ``FSMContext`` aiogram injects as ``state`` is forwarded under the name
+      the inner handler asks for. Every handler in this package spells it
+      ``context``; without the rename every one of them raises
+      ``TypeError: missing 1 required positional argument: 'context'`` on every
+      single event, which is precisely the bug that made the panel unusable.
+
+    The metadata that matters to humans, aiogram and the tests is copied by hand,
+    which keeps handler names visible without re-introducing ``__wrapped__``.
     """
+    wants_context = "context" in inspect.signature(handler).parameters
+    signature = inspect.signature(handler)
+    accepted = {
+        name
+        for name, parameter in signature.parameters.items()
+        if parameter.kind in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY)
+    }
+    takes_everything = any(
+        parameter.kind == parameter.VAR_KEYWORD for parameter in signature.parameters.values()
+    )
 
-    @functools.wraps(handler)
     async def wrapper(event: CallbackQuery | Message, *args: Any, **kwargs: Any) -> None:
         user = event.from_user
         if not config.is_admin(user.id if user else None):
@@ -247,9 +282,36 @@ def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[No
                 logger.warning("admin panel is disabled: ADMIN_TELEGRAM_IDS or SERVICE_TOKEN is unset")
             await deny(event)
             return
-        await handler(event, *args, **kwargs)
+        call_kwargs = dict(kwargs) if takes_everything else {key: value for key, value in kwargs.items() if key in accepted}
+        if wants_context and "context" not in call_kwargs:
+            # The FSMContext can arrive two ways: injected by aiogram as ``state``,
+            # or passed positionally when a guarded handler calls another guarded
+            # handler directly (the panel does this to refresh a screen). In the
+            # positional case it must *not* also be injected by keyword.
+            positional = next((value for value in args if isinstance(value, FSMContext)), None)
+            if positional is not None:
+                await handler(event, *args, **call_kwargs)
+                return True
+            context = call_kwargs.get("state") or kwargs.get("state")
+            if context is None:
+                # No FSM in this scope: fail loudly instead of with a TypeError
+                # three frames deeper.
+                raise RuntimeError(
+                    f"{getattr(handler, '__name__', handler)} needs an FSMContext but none was injected"
+                )
+            call_kwargs["context"] = context
+        await handler(event, *args, **call_kwargs)
+        # aiogram stops walking observers only when a handler returns something
+        # truthy. Returning ``None`` here would let every panel callback fall
+        # through to the reject-everything fallback and answer "Unknown action."
+        # after already having rendered the right screen.
+        return True
 
+    for attribute in ("__name__", "__qualname__", "__doc__", "__module__"):
+        setattr(wrapper, attribute, getattr(handler, attribute, type(handler).__name__))
+    wrapper.__dict__.pop("__wrapped__", None)
     wrapper.__wrapped_by_guard__ = True  # type: ignore[attr-defined]
+    wrapper.__panel_handler__ = handler  # type: ignore[attr-defined]
     return wrapper
 
 
@@ -292,6 +354,7 @@ async def refresh_commands(bot: Bot) -> None:
 __all__ = [
     "ACCESS_DENIED_TEXT",
     "PendingOperation",
+    "actor_of",
     "config",
     "data_of",
     "deny",
@@ -304,5 +367,6 @@ __all__ = [
     "render_error",
     "require_user",
     "stage",
+    "telegram_id",
     "toast",
 ]

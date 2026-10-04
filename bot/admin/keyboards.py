@@ -82,7 +82,6 @@ PLATE_OPEN = "pp"
 PLATE_PAGE = "pq"
 PLATE_GRANT = "pg"
 PLATE_FIRST = "pf"
-PLATE_COUNTRY = "pc"
 
 # Confirmation routes.
 CONFIRM = "cf"
@@ -91,9 +90,26 @@ CANCEL = "cx"
 # Ranks / analytics / audit sub-routes.
 RANK_CATEGORY = "rc"
 RANK_PERIOD = "rp"
+RANK_OPEN = "rx"
 ANALYTICS_PERIOD = "ap"
 AUDIT_SCOPE = "ls"
 AUDIT_PAGE = "lp"
+
+# Number-browser filters and paging. The ``f*`` family is used because ``pg``/``pf``
+# are already prefix-matched by the plate grant routes.
+PLATE_COUNTRY_FILTER = "fco"
+PLATE_CATEGORY_FILTER = "fca"
+PLATE_RARITY_FILTER = "fra"
+PLATE_CLEAR = "fcl"
+USER_PLATES_PAGE = "upl2"
+
+# Test-lab additions. The ``lab*`` family is new so nothing collides with the
+# existing ``tc``/``tr``/``tp``/``ts``/``tl``/``tt``/``tm`` prefix routes.
+LAB_CATEGORY = "lab1"
+LAB_REGION = "lab2"
+LAB_SEARCH = "lab3"
+LAB_SEARCH_PAGE = "lab4"
+LAB_TRAIT = "lab5"
 
 # World sub-routes.
 COUNTRY_TOGGLE = "nt"
@@ -117,6 +133,7 @@ ACT_PREMIUM_REVOKE = "premium_revoke"
 ACT_BAN = "ban"
 ACT_UNBAN = "unban"
 ACT_PLATE = "plate"
+ACT_PLATE_GRANT = "plate_grant"
 ACT_FIRST_DISCOVERY = "first_discovery"
 ACT_LIVE_ROLL = "live_roll"
 ACT_FORCE_PLATE = "force_plate"
@@ -126,6 +143,36 @@ ACT_SEASON = "season"
 ACT_REWARD = "reward"
 ACT_EQUIP = "equip"
 ACT_UNEQUIP = "unequip"
+
+#: Actions that stage through :func:`bot.admin.players.reason_input` and execute
+#: from the same module. Kept next to the route constants so a new staged action
+#: has exactly one obvious home.
+PANEL_ACTIONS: tuple[str, ...] = (
+    ACT_COINS,
+    ACT_BALANCE,
+    ACT_ROLLS,
+    ACT_ROLLS_RESET,
+    ACT_XP,
+    ACT_LEVEL,
+    ACT_STREAK,
+    ACT_PROG_RESET,
+    ACT_MISSION,
+    ACT_ACHIEVEMENT,
+    ACT_COSMETIC,
+    ACT_TITLE,
+    ACT_PREMIUM,
+    ACT_PREMIUM_REVOKE,
+    ACT_BAN,
+    ACT_UNBAN,
+    ACT_REWARD,
+    ACT_PLATE_GRANT,
+    ACT_FIRST_DISCOVERY,
+    ACT_LIVE_ROLL,
+    ACT_FORCE_PLATE,
+    ACT_COUNTRY,
+    ACT_EVENT,
+    ACT_SEASON,
+)
 
 # Inline routes used by the per-entity keyboards below.
 XP_PRESET = "x1"
@@ -177,7 +224,24 @@ def cancel_only() -> InlineKeyboardMarkup:
 
 
 def rows(*keyboard_rows: Sequence[InlineKeyboardButton]) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[list(row) for row in keyboard_rows if row])
+    """Build an inline keyboard, dropping empty rows.
+
+    Every argument must be a *sequence* of buttons. A bare button is rejected
+    loudly: ``(button(...))`` in Python is just the button, and ``list(button)``
+    yields ``(field, value)`` pairs - a markup object full of tuples that only
+    fails later, inside aiogram, when the message is actually sent. Three shipped
+    keyboards had exactly that typo and rendered an unusable screen.
+    """
+    normalised: list[list[InlineKeyboardButton]] = []
+    for row in keyboard_rows:
+        if isinstance(row, InlineKeyboardButton):
+            raise TypeError(
+                "a keyboard row must be a sequence of buttons; write (button(...),) for a single one"
+            )
+        built = [item for item in row if item is not None]
+        if built:
+            normalised.append(built)
+    return InlineKeyboardMarkup(inline_keyboard=normalised)
 
 
 def back_row(*extra: InlineKeyboardButton) -> list[InlineKeyboardButton]:
@@ -332,7 +396,7 @@ def streak_keyboard() -> InlineKeyboardMarkup:
             button("30", STREAK_VALUE, 30),
             button("♻️ Сброс", STREAK_VALUE, "reset", danger=True),
         ),
-        (button("⬅️ Назад", USER_PROGRESSION)),
+        (button("⬅️ Назад", USER_PROGRESSION),),
     )
 
 
@@ -358,7 +422,7 @@ def premium_keyboard() -> InlineKeyboardMarkup:
             button("365 дней", PREMIUM_PRESET, 365),
             button("➕ Своё", PREMIUM_PRESET, "custom"),
         ),
-        (button("⛔ Отозвать", PREMIUM_PRESET, "revoke", danger=True)),
+        (button("⛔ Отозвать", PREMIUM_PRESET, "revoke", danger=True),),
         (button("🔄 Обновить", REFRESH), button("⬅️ Назад", USER_OPEN)),
     )
 
@@ -391,7 +455,7 @@ def rewards_keyboard() -> InlineKeyboardMarkup:
             button("🎨 Косметика", REWARD_KIND, "cosmetic"),
             button("🏷 Титул", REWARD_KIND, "title"),
         ),
-        (button("🎫 Сезон-пасс", REWARD_KIND, "season_pass")),
+        (button("🎫 Сезон-пасс", REWARD_KIND, "season_pass"),),
         (button("🔄 Обновить", REFRESH), button("⬅️ Назад", USER_OPEN)),
     )
 
@@ -409,11 +473,19 @@ def lab_keyboard(*, mode: str, has_user: bool) -> InlineKeyboardMarkup:
         ),
         (
             button("🌍 Страна", LAB_COUNTRY),
+            button("📂 Категория", LAB_CATEGORY),
+        ),
+        (
+            button("🗺 Регион", LAB_REGION),
             button("💎 Редкость", LAB_RARITY),
         ),
         (
             button("⚡ Пресет", LAB_PRESET),
-            button("🔤 Текст номера", LAB_TEXT),
+            button("🧬 Trait", LAB_TRAIT),
+        ),
+        (
+            button("🔍 Найти страну", LAB_SEARCH),
+            button("🔤 Номер вручную", LAB_TEXT),
         ),
         (toggle,),
         (
@@ -423,8 +495,86 @@ def lab_keyboard(*, mode: str, has_user: bool) -> InlineKeyboardMarkup:
     )
 
 
-def country_keyboard(codes: Sequence[tuple[str, str]]) -> InlineKeyboardMarkup:
+def lab_category_keyboard(categories: Sequence[tuple[str, str]], *, current: str | None) -> InlineKeyboardMarkup:
+    keyboard: list[list[InlineKeyboardButton]] = [[button("📂 Любая категория", LAB_CATEGORY, "*")]]
+    line = [
+        button(f"{'✅ ' if current == value else ''}{label}", LAB_CATEGORY, value, danger=True)
+        for value, label in categories
+    ]
+    half = (len(line) + 1) // 2
+    keyboard.append(line[:half])
+    if line[half:]:
+        keyboard.append(line[half:])
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", TESTLAB)])
+    return rows(*keyboard)
+
+
+def lab_trait_keyboard(traits: Sequence[str], *, current: str | None) -> InlineKeyboardMarkup:
+    keyboard: list[list[InlineKeyboardButton]] = [[button("🧬 Любой trait", LAB_TRAIT, "*")]]
+    line = [
+        button(f"{'✅ ' if current == value else ''}{value}", LAB_TRAIT, value, danger=True) for value in traits[:24]
+    ]
+    half = (len(line) + 1) // 2
+    if line[:half]:
+        keyboard.append(line[:half])
+    if line[half:]:
+        keyboard.append(line[half:])
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", TESTLAB)])
+    return rows(*keyboard)
+
+
+def lab_region_keyboard(regions: Sequence[tuple[str, str]]) -> InlineKeyboardMarkup:
     keyboard: list[list[InlineKeyboardButton]] = []
+    line: list[InlineKeyboardButton] = []
+    for code, label in regions:
+        line.append(button(f"{label}"[:28], LAB_REGION, code, danger=True))
+        if len(line) == 3:
+            keyboard.append(line)
+            line = []
+    if line:
+        keyboard.append(line)
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", TESTLAB)])
+    return rows(*keyboard)
+
+
+def user_plates_keyboard(
+    user_id: int | None = None,
+    *,
+    page: int = 1,
+    has_more: bool = False,
+) -> InlineKeyboardMarkup:
+    """A player's own numbers. Back always returns to the player card."""
+    nav: list[InlineKeyboardButton] = []
+    if page > 1:
+        nav.append(button("◀️", USER_PLATES_PAGE, page - 1))
+    if has_more:
+        nav.append(button("▶️", USER_PLATES_PAGE, page + 1))
+    rows_out: list[Sequence[InlineKeyboardButton]] = []
+    if nav:
+        rows_out.append(nav)
+    if user_id is not None:
+        rows_out.append((button("🎁 Выдать ещё", PLATE_GRANT, user_id),))
+    rows_out.append(
+        [button("🔄 Обновить", REFRESH), button("⬅️ К карточке", USER_OPEN, user_id if user_id else 0)]
+    )
+    return rows(*rows_out)
+
+
+def country_keyboard(
+    codes: Sequence[tuple[str, str]],
+    *,
+    page: int = 1,
+    pages: int = 1,
+    query: str | None = None,
+) -> InlineKeyboardMarkup:
+    """Country picker for the test lab.
+
+    Countries are paged instead of silently truncated, so the 41st country is
+    reachable; ``pages`` drives the pager and ``query`` is echoed back.
+    """
+    keyboard: list[list[InlineKeyboardButton]] = []
+    if query:
+        keyboard.append([button(f"🔎 «{query[:16]}»", LAB_SEARCH, "clear")])
     line: list[InlineKeyboardButton] = []
     for code, flag in codes:
         line.append(button(f"{flag} {code}", LAB_COUNTRY, code, danger=True))
@@ -433,7 +583,15 @@ def country_keyboard(codes: Sequence[tuple[str, str]]) -> InlineKeyboardMarkup:
             line = []
     if line:
         keyboard.append(line)
-    keyboard.append([button("⬅️ Назад", TESTLAB)])
+    if pages > 1:
+        nav: list[InlineKeyboardButton] = []
+        if page > 1:
+            nav.append(button("◀️", LAB_SEARCH_PAGE, page - 1, query or ""))
+        nav.append(button(f"{page}/{pages}", NOOP))
+        if page < pages:
+            nav.append(button("▶️", LAB_SEARCH_PAGE, page + 1, query or ""))
+        keyboard.append(nav)
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", TESTLAB)])
     return rows(*keyboard)
 
 
@@ -471,8 +629,64 @@ def plates_keyboard() -> InlineKeyboardMarkup:
             button("👥 Больше находок", PLATE_SORT, "discoveries"),
             button("🕶 Секретные", PLATE_SORT, "secret"),
         ),
+        (
+            button("🌍 Страна", PLATE_COUNTRY_FILTER),
+            button("📂 Категория", PLATE_CATEGORY_FILTER),
+        ),
+        (
+            button("💎 Редкость", PLATE_RARITY_FILTER),
+            button("🧹 Сбросить", PLATE_CLEAR, danger=True),
+        ),
         (button("🔄 Обновить", REFRESH), button("⬅️ Назад", HOME)),
     )
+
+
+def country_filter_keyboard(codes: Sequence[tuple[str, str]], *, current: str | None) -> InlineKeyboardMarkup:
+    """Country filter for the number browser. ``None`` means "no filter"."""
+    keyboard: list[list[InlineKeyboardButton]] = [
+        [button("🌐 Все страны", PLATE_COUNTRY_FILTER, "*")]
+    ]
+    line: list[InlineKeyboardButton] = []
+    for country_code, flag in codes:
+        mark = "✅" if current == country_code else ""
+        line.append(button(f"{mark}{flag} {country_code}", PLATE_COUNTRY_FILTER, country_code))
+        if len(line) == 4:
+            keyboard.append(line)
+            line = []
+    if line:
+        keyboard.append(line)
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", PLATES)])
+    return rows(*keyboard)
+
+
+def category_filter_keyboard(categories: Sequence[tuple[str, str]], *, current: str | None) -> InlineKeyboardMarkup:
+    line = [
+        button(f"{'✅ ' if current == value else ''}{label}", PLATE_CATEGORY_FILTER, value)
+        for value, label in categories
+    ]
+    half = (len(line) + 1) // 2
+    keyboard: list[list[InlineKeyboardButton]] = [[button("📂 Все категории", PLATE_CATEGORY_FILTER, "*")]]
+    if line[:half]:
+        keyboard.append(line[:half])
+    if line[half:]:
+        keyboard.append(line[half:])
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", PLATES)])
+    return rows(*keyboard)
+
+
+def rarity_filter_keyboard(rarities: Sequence[str], *, current: str | None) -> InlineKeyboardMarkup:
+    line = [
+        button(f"{'✅ ' if current == value.upper() else ''}{value.title()}", PLATE_RARITY_FILTER, value.upper())
+        for value in rarities
+    ]
+    half = (len(line) + 1) // 2
+    keyboard: list[list[InlineKeyboardButton]] = [[button("💎 Любая редкость", PLATE_RARITY_FILTER, "*")]]
+    if line[:half]:
+        keyboard.append(line[:half])
+    if line[half:]:
+        keyboard.append(line[half:])
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", PLATES)])
+    return rows(*keyboard)
 
 
 def plate_list_keyboard(*, page: int, has_more: bool, sort: str | None = None) -> InlineKeyboardMarkup:
@@ -484,21 +698,74 @@ def plate_list_keyboard(*, page: int, has_more: bool, sort: str | None = None) -
     return rows(nav, [button("⬅️ Назад", PLATES)])
 
 
-def plate_keyboard() -> InlineKeyboardMarkup:
+def plate_keyboard(plate_id: int | None = None) -> InlineKeyboardMarkup:
+    args = (plate_id,) if plate_id is not None else ()
     return rows(
         (
-            button("🎁 Выдать", PLATE_GRANT),
-            button("🥇 Первая находка", PLATE_FIRST, danger=True),
+            button("🎁 Выдать", PLATE_GRANT, *args),
+            button("🥇 Первая находка", PLATE_FIRST, *args, danger=True),
         ),
         (button("🔄 Обновить", REFRESH), button("⬅️ Назад", PLATES)),
     )
 
 
-def ranks_keyboard(categories: Sequence[str], periods: Sequence[str]) -> InlineKeyboardMarkup:
+def ranks_keyboard(
+    categories: Sequence[str],
+    periods: Sequence[str],
+    entries: Sequence[tuple[int, str]] = (),
+) -> InlineKeyboardMarkup:
+    """Ranking filters plus one button per row entry.
+
+    Each entry opens the real player card, and the card's Back button returns to
+    the ranking, so an operator can go #1 → card → #2 → card without hunting.
+    """
     cat_line = [button(value[:3].title(), RANK_CATEGORY, value) for value in categories]
     per_line = [button(value, RANK_PERIOD, value) for value in periods]
     half = (len(cat_line) + 1) // 2
-    return rows(cat_line[:half], cat_line[half:], per_line, [button("⬅️ Назад", RANKS)])
+    rows_out: list[Sequence[InlineKeyboardButton]] = []
+    if cat_line[:half]:
+        rows_out.append(cat_line[:half])
+    if cat_line[half:]:
+        rows_out.append(cat_line[half:])
+    rows_out.append(per_line)
+    for user_id, label in entries:
+        rows_out.append((button(f"{label}"[:28], RANK_OPEN, user_id),))
+    rows_out.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", HOME)])
+    return rows(*rows_out)
+
+
+def cosmetics_catalogue_keyboard(items: Sequence[dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Catalogue-wide cosmetic list: pick one to stage a grant."""
+    keyboard: list[list[InlineKeyboardButton]] = []
+    line: list[InlineKeyboardButton] = []
+    for item in items[:24]:
+        line.append(button(str(item.get("code"))[:12], COSMETIC_GRANT, item.get("code")))
+        if len(line) == 3:
+            keyboard.append(line)
+            line = []
+    if line:
+        keyboard.append(line)
+    keyboard.append(
+        [
+            button("🔍 Найти", COSMETIC_SEARCH),
+            button("🔄 Обновить", REFRESH),
+            button("⬅️ Назад", HOME),
+        ]
+    )
+    return rows(*keyboard)
+
+
+def rewards_catalogue_keyboard(items: Sequence[dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Fixed-value rewards; ``grant_<code>`` routes to the quick-grant menu."""
+    keyboard: list[list[InlineKeyboardButton]] = []
+    for item in items[:16]:
+        keyboard.append(
+            [
+                button(f"{item.get('emoji', '🎁')} {str(item.get('label'))[:22]}", REWARD_KIND, item.get("code")),
+            ]
+        )
+    keyboard.append([button("🔄 Обновить", REFRESH), button("⬅️ Назад", HOME)])
+    return rows(*keyboard)
 
 
 def countries_keyboard(countries: Sequence[dict[str, Any]]) -> InlineKeyboardMarkup:
@@ -651,22 +918,108 @@ def user_result_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def quick_actions_keyboard() -> InlineKeyboardMarkup:
-    """The one-tap LiveOps row from requirement 51."""
-    return rows(
-        (
-            button("+100 💰", COIN_PRESET, 100),
-            button("+1K 💰", COIN_PRESET, 1000),
-        ),
-        (
-            button("+10K 💰", COIN_PRESET, 10000),
-            button("+10 🎰", ROLL_PRESET, 10),
-        ),
-        (
-            button("+500 ✨", XP_PRESET, 500),
-            button("PRO 30д ⭐", PREMIUM_PRESET, 30),
-        ),
-        (button("⬅️ Назад", HOME),),
+def prefix_routes() -> dict[str, str]:
+    """Route codes matched with ``startswith`` instead of exact equality.
+
+    Any *shorter* route code that shares one of these prefixes would be stolen by
+    the broader filter, so the panel's route table is validated against this in
+    ``bot/tests/test_admin_routing.py``. ``USER_PAGE`` is deliberately absent: it is
+    pinned to ``a:up:<digits>`` by a regular expression precisely because ``up`` is a
+    prefix of ``upg``/``upi``/``upl``/``url``.
+    """
+    return {
+        USER_OPEN: f"{PREFIX}:{USER_OPEN}:",
+        USER_PLATES_PAGE: f"{PREFIX}:{USER_PLATES_PAGE}:",
+        COIN_PRESET: f"{PREFIX}:{COIN_PRESET}:",
+        ROLL_PRESET: f"{PREFIX}:{ROLL_PRESET}:",
+        LAB_MODE: f"{PREFIX}:{LAB_MODE}:",
+        LAB_CATEGORY: f"{PREFIX}:{LAB_CATEGORY}:",
+        LAB_REGION: f"{PREFIX}:{LAB_REGION}:",
+        LAB_RARITY: f"{PREFIX}:{LAB_RARITY}:",
+        LAB_PRESET: f"{PREFIX}:{LAB_PRESET}:",
+        LAB_TRAIT: f"{PREFIX}:{LAB_TRAIT}:",
+        LAB_SEARCH: f"{PREFIX}:{LAB_SEARCH}:",
+        LAB_SEARCH_PAGE: f"{PREFIX}:{LAB_SEARCH_PAGE}:",
+        PLATE_SORT: f"{PREFIX}:{PLATE_SORT}:",
+        PLATE_PAGE: f"{PREFIX}:{PLATE_PAGE}:",
+        PLATE_OPEN: f"{PREFIX}:{PLATE_OPEN}:",
+        PLATE_GRANT: f"{PREFIX}:{PLATE_GRANT}:",
+        PLATE_FIRST: f"{PREFIX}:{PLATE_FIRST}:",
+        PLATE_COUNTRY_FILTER: f"{PREFIX}:{PLATE_COUNTRY_FILTER}:",
+        PLATE_CATEGORY_FILTER: f"{PREFIX}:{PLATE_CATEGORY_FILTER}:",
+        PLATE_RARITY_FILTER: f"{PREFIX}:{PLATE_RARITY_FILTER}:",
+        RANK_CATEGORY: f"{PREFIX}:{RANK_CATEGORY}:",
+        RANK_PERIOD: f"{PREFIX}:{RANK_PERIOD}:",
+        RANK_OPEN: f"{PREFIX}:{RANK_OPEN}:",
+        ANALYTICS_PERIOD: f"{PREFIX}:{ANALYTICS_PERIOD}:",
+        AUDIT_SCOPE: f"{PREFIX}:{AUDIT_SCOPE}:",
+        AUDIT_PAGE: f"{PREFIX}:{AUDIT_PAGE}:",
+        COUNTRY_TOGGLE: f"{PREFIX}:{COUNTRY_TOGGLE}:",
+        EVENT_TOGGLE: f"{PREFIX}:{EVENT_TOGGLE}:",
+        SYSTEM: f"{PREFIX}:{SYSTEM}",
+        LEDGER: f"{PREFIX}:{LEDGER}",
+        MISSION_PROGRESS: f"{PREFIX}:{MISSION_PROGRESS}:",
+        MISSION_COMPLETE: f"{PREFIX}:{MISSION_COMPLETE}:",
+        MISSION_RESET: f"{PREFIX}:{MISSION_RESET}:",
+        ACHIEVEMENT_GRANT: f"{PREFIX}:{ACHIEVEMENT_GRANT}:",
+        COSMETIC_GRANT: f"{PREFIX}:{COSMETIC_GRANT}:",
+        COSMETIC_EQUIP: f"{PREFIX}:{COSMETIC_EQUIP}:",
+        COSMETIC_UNEQUIP: f"{PREFIX}:{COSMETIC_UNEQUIP}:",
+        REWARD_KIND: f"{PREFIX}:{REWARD_KIND}:",
+        XP_PRESET: f"{PREFIX}:{XP_PRESET}:",
+        STREAK_VALUE: f"{PREFIX}:{STREAK_VALUE}:",
+        PREMIUM_PRESET: f"{PREFIX}:{PREMIUM_PRESET}:",
+        USER_BAN: f"{PREFIX}:{USER_BAN}:",
+        CONFIRM: f"{PREFIX}:{CONFIRM}:",
+        CANCEL: f"{PREFIX}:{CANCEL}",
+    }
+
+
+def exact_routes() -> frozenset[str]:
+    """Route codes answered by an equality check only.
+
+    Anything in here must never appear in a button as ``a:<code>:<argument>``: an
+    equality filter would not match it and the button would answer "Unknown action".
+    The test-lab pickers that do carry a value are deliberately *absent* and
+    belong in :func:`prefix_routes` instead.
+    """
+    return frozenset(
+        {
+            HOME,
+            BACK,
+            REFRESH,
+            NOOP,
+            USERS,
+            ECONOMY,
+            TESTLAB,
+            PLATES,
+            RANKS,
+            REWARDS,
+            COSMETICS,
+            COUNTRIES,
+            EVENTS,
+            ANALYTICS,
+            AUDIT,
+            USER_SEARCH,
+            USER_RECENT,
+            USER_SNAPSHOT,
+            USER_ECONOMY,
+            USER_PROGRESSION,
+            USER_MISSIONS,
+            USER_ACHIEVEMENTS,
+            USER_PREMIUM,
+            USER_COSMETICS,
+            USER_REWARDS,
+            USER_ROLLS,
+            USER_PLATES,
+            USER_PROFILE,
+            COIN_BALANCE,
+            COIN_CUSTOM,
+            COIN_SUBTRACT,
+            ROLL_CUSTOM,
+            PLATE_SEARCH,
+            COSMETIC_SEARCH,
+        }
     )
 
 

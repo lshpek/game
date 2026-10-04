@@ -40,6 +40,7 @@ class TestStartCommand:
         # Exactly one bot message survives, and it carries the Play button.
         assert len(session.of(SendMessage)) == 1
         welcome = session.of(SendMessage)[0]
+        assert "NUMORA" in str(welcome.text)
         assert "Number Collector" in str(welcome.text)
         assert welcome.reply_markup is not None
         keyboard = welcome.reply_markup.inline_keyboard

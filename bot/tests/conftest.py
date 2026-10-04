@@ -56,7 +56,14 @@ class RecordingSession:
         if isinstance(method, SetMyCommands):
             return SetMyCommands(ok=True, result=True, commands=method.commands)
         if isinstance(method, AnswerCallbackQuery):
-            return AnswerCallbackQuery(ok=True)
+            # ``callback_query_id`` is mandatory: returning an incomplete object used
+            # to raise a pydantic ValidationError inside aiogram, which every test
+            # calling ``answer()``/``toast()`` then reported as a panel failure.
+            return AnswerCallbackQuery(
+                ok=True,
+                result=True,
+                callback_query_id=getattr(method, "callback_query_id", "unknown"),
+            )
         raise AssertionError(f"unexpected method {type(method).__name__}")
 
 
@@ -86,6 +93,38 @@ def bot() -> Bot:
 
 
 @pytest.fixture(autouse=True)
+def _reset_admin_http_pool() -> None:
+    """Drop the shared admin HTTP pool between tests.
+
+    The pool is process-wide on purpose (one set of connections for the whole bot),
+    but pytest-asyncio gives every test its own event loop, and an ``httpx`` client
+    bound to a closed loop raises on reuse. Clearing it here keeps the pooling
+    behaviour honest without weakening the production code path.
+    """
+    from bot.admin import client as admin_client
+
+    admin_client._CLIENTS.clear()
+    yield
+    admin_client._CLIENTS.clear()
+
+
+@pytest.fixture(autouse=True)
+def _offline_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No admin handler may reach the network, even by accident.
+
+    Tests that need the panel to render something inject their own client by
+    patching ``bot.admin.common.get_client``; anything else would silently build a
+    real connection to ``BACKEND_URL``, which is why this is enforced globally.
+    """
+    from bot.admin import client as admin_client
+
+    def _refuse(timeout: float) -> Any:
+        raise AssertionError("the admin panel attempted a real backend call")
+
+    monkeypatch.setattr(admin_client, "_shared_client", _refuse)
+
+
+@pytest.fixture(autouse=True)
 def _offline_telegram(monkeypatch: pytest.MonkeyPatch, session: RecordingSession) -> None:
     """No test may reach the real Telegram API, and none may leak state."""
     monkeypatch.setattr(AiohttpSession, "make_request", session.make_request)
@@ -102,6 +141,10 @@ def _offline_telegram(monkeypatch: pytest.MonkeyPatch, session: RecordingSession
 def _pinned_admin_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin the admin list for the panel tests.
 
+    Two operators are pinned on purpose: the audit viewer's "mine" scope is only
+    correct when it uses the *current* actor, and that is only provable with more
+    than one admin in the allow list.
+
     The workspace runs both suites in one process, and the backend suite rewrites
     ``ADMIN_TELEGRAM_IDS`` while it boots. Pinning the value here keeps the bot
     tests deterministic no matter which suite ran first.
@@ -113,7 +156,7 @@ def _pinned_admin_config(monkeypatch: pytest.MonkeyPatch) -> None:
         common,
         "config",
         AdminConfig(
-            admin_ids=frozenset({1604952820}),
+            admin_ids=frozenset({1604952820, 1604952821}),
             service_token="test-service-token",
             backend_url="http://backend.test",
         ),

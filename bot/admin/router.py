@@ -3,6 +3,10 @@
 Registered behind :func:`bot.admin.common.guard`, so authorisation is enforced
 for every single event - command, callback or text message - independently of how
 the panel was opened.
+
+Routing order is owned by :mod:`bot.admin.routing`: specific handlers always win
+and the reject-everything fallback is attached last, so a valid admin callback can
+never degrade into "Unknown action".
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from bot.admin.formatters import (
     user_line,
 )
 from bot.admin.players import router as players_router
+from bot.admin.routing import attach_fallback, handled_routes
 from bot.admin.states import (
     AdminStates,
     set_selected_user,
@@ -70,12 +75,26 @@ async def handle_start(message: Message, command: CommandObject) -> None:
     await open_panel(message, answer=True)
 
 
-async def open_panel(message: Message, *, answer: bool = False) -> None:
-    """Render the home dashboard, editing the current message when possible."""
-    from bot.admin.common import get_client
+async def open_panel(
+    message: Message | CallbackQuery,
+    *,
+    answer: bool = False,
+    actor_id: int | None = None,
+) -> None:
+    """Render the home dashboard, editing the current message when possible.
 
+    ``actor_id`` is the operator who pressed the button. It is threaded explicitly
+    instead of being read from the message, because the panel message itself has no
+    reliable author (and none at all in a channel).
+    """
+    from bot.admin.common import actor_of, get_client
+
+    actor = actor_id if actor_id is not None else actor_of(message)
+    if actor is None:
+        logger.error("cannot render the panel: the acting admin is unknown")
+        return
     try:
-        data = await get_client().dashboard(_telegram_id(message))
+        data = await get_client().dashboard(actor)
     except Exception as exc:
         await render_error(message, exc)
         return
@@ -89,7 +108,9 @@ async def open_panel(message: Message, *, answer: bool = False) -> None:
 
 
 def _telegram_id(target: Message | CallbackQuery) -> int:
-    return int(target.from_user.id)
+    from bot.admin.common import telegram_id
+
+    return telegram_id(target)
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +121,7 @@ def _telegram_id(target: Message | CallbackQuery) -> int:
 async def go_home(callback: CallbackQuery, context: FSMContext) -> None:
     await context.set_state(None)
     await ops.clear(context)
-    await open_panel(callback.message)
+    await open_panel(callback, actor_id=_telegram_id(callback))
 
 
 @router.callback_query(F.data == kb.pack(kb.BACK))
@@ -109,7 +130,7 @@ async def go_back(callback: CallbackQuery, context: FSMContext) -> None:
     """Back is state-driven: it always returns to the screen you came from."""
     await context.set_state(None)
     await ops.clear(context)
-    await open_panel(callback.message)
+    await open_panel(callback, actor_id=_telegram_id(callback))
 
 
 @router.callback_query(F.data == kb.pack(kb.REFRESH))
@@ -125,14 +146,6 @@ async def refresh(callback: CallbackQuery, context: FSMContext) -> None:
 @guard
 async def noop(callback: CallbackQuery) -> None:
     await callback.answer()
-
-
-@router.callback_query(F.data.startswith(kb.PREFIX + ":"))
-@guard
-async def unknown_route(callback: CallbackQuery) -> None:
-    """Any callback the panel does not know about is rejected, not executed."""
-    logger.warning("unknown admin callback rejected: %s", callback.data)
-    await toast(callback, "Unknown action.")
 
 
 # ---------------------------------------------------------------------------
@@ -173,9 +186,15 @@ async def users_search_prompt(callback: CallbackQuery, context: FSMContext) -> N
     )
 
 
-@router.callback_query(F.data.startswith(kb.pack(kb.USER_PAGE)))
+@router.callback_query(F.data.regexp(rf"^{kb.PREFIX}:{kb.USER_PAGE}:\d+$"))
 @guard
 async def users_page(callback: CallbackQuery, context: FSMContext) -> None:
+    """Paginate the user search results.
+
+    The route code is pinned to a numeric page on purpose: ``up`` is a prefix of
+    ``upg`` / ``upi`` / ``upl`` / ``url`` (progression, profile, numbers, rolls), so
+    a plain ``startswith`` filter would steal every one of those sub-routes.
+    """
     from bot.admin.common import get_client
 
     parts = kb.unpack(callback.data or "")
@@ -250,7 +269,7 @@ async def user_open(callback: CallbackQuery, context: FSMContext) -> None:
         await toast(callback, "Bad request.")
         return
     await set_selected_user(context, int(parts[2]))
-    await _render_user(callback, context, int(parts[2]))
+    await _render_user(callback, context, int(parts[2]), actor_id=_telegram_id(callback))
 
 
 @router.callback_query(F.data == kb.pack(kb.USER_PLATES))
@@ -278,29 +297,92 @@ async def user_snapshot(callback: CallbackQuery, context: FSMContext) -> None:
 
 
 # ---------------------------------------------------------------------------
+# panel-wide sections that are not tied to one player
+# ---------------------------------------------------------------------------
+@router.callback_query(F.data == kb.pack(kb.COSMETICS))
+@guard
+async def cosmetics_menu(callback: CallbackQuery, context: FSMContext) -> None:
+    """Global cosmetic catalogue: the section behind the home screen button."""
+    from bot.admin.common import get_client
+
+    await context.update_data(cosmetics_query=None)
+    try:
+        data = await get_client().cosmetics(_telegram_id(callback))
+    except Exception as exc:
+        await render_error(callback, exc)
+        return
+    from bot.admin.formatters import cosmetics as fmt_cosmetics
+
+    items = data.get("items") or []
+    await render(
+        callback.message,
+        fmt_cosmetics(data, []),
+        kb.cosmetics_catalogue_keyboard(items) if items else kb.cosmetics_keyboard(),
+    )
+
+
+@router.callback_query(F.data == kb.pack(kb.COSMETIC_SEARCH))
+@guard
+async def cosmetics_catalogue_search(callback: CallbackQuery, context: FSMContext) -> None:
+    await context.set_state(AdminStates.cosmetic_code)
+    await render(
+        callback.message,
+        "🔍 <b>КОСМЕТИКА</b>\n━━━━━━━━━━\n\nВведите код косметики или её название.",
+        kb.prompt_keyboard(),
+    )
+
+
+@router.callback_query(F.data == kb.pack(kb.REWARDS))
+@guard
+async def rewards_catalogue(callback: CallbackQuery, context: FSMContext) -> None:
+    """Fixed-value reward catalogue: what an operator can hand out at all."""
+    from bot.admin.common import get_client
+
+    try:
+        data = await get_client().get("/rewards/catalog", admin_telegram_id=_telegram_id(callback))
+    except Exception as exc:
+        await render_error(callback, exc)
+        return
+    from bot.admin.formatters import rewards as fmt_rewards
+
+    await render(
+        callback.message,
+        fmt_rewards(data),
+        kb.rewards_catalogue_keyboard(data.get("items") or []),
+    )
+
+
+# ---------------------------------------------------------------------------
 # user card
 # ---------------------------------------------------------------------------
 async def _render_user(
     target: CallbackQuery | Message,
     context: FSMContext,
     user_id: int | None = None,
+    *,
+    actor_id: int | None = None,
 ) -> None:
-    from bot.admin.common import get_client
+    from bot.admin.common import actor_of, get_client
 
     user_id = user_id or await require_user(context, target)
     if user_id is None:
         return
+    actor = actor_id if actor_id is not None else actor_of(target)
+    if actor is None:
+        logger.error("cannot open a player card: the acting admin is unknown")
+        return
     try:
-        data = await get_client().user_detail(_telegram_id(target), user_id)
+        data = await get_client().user_detail(actor, user_id)
     except Exception as exc:
         await render_error(target, exc)
         return
     await render(target, user_card(data), kb.user_keyboard())
 
 
-# Sub-routers are attached last so the generic navigation handlers above (Home,
-# Back, Refresh, unknown route) always win the callback lookup.
+# Sub-routers are attached in a fixed, documented order and the reject-everything
+# fallback goes last - see :mod:`bot.admin.routing` for why that is not optional.
 router.include_router(world_router)
 router.include_router(players_router)
+attach_fallback(router)
 
-__all__ = ["open_panel", "router"]
+__all__ = ["handled_routes", "open_panel", "router"]

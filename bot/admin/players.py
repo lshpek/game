@@ -60,7 +60,12 @@ from bot.admin.formatters import (
 )
 from bot.admin.states import (
     KEY_AMOUNT,
+    KEY_COUNTRY,
     KEY_KIND,
+    KEY_PRESET,
+    KEY_RARITY,
+    KEY_SELECTED_USER,
+    KEY_TRAIT,
     AdminStates,
     clear_flow_data,
     selected_user_id,
@@ -69,6 +74,32 @@ from bot.admin.states import (
 logger = logging.getLogger("bot.admin.players")
 
 router = Router(name="admin-players")
+
+#: Actions that require a selected player. Everything else in the reason
+#: dispatcher targets the world catalogue or the test lab and may run without one.
+PLAYER_SCOPED_ACTIONS: frozenset[str] = frozenset(
+    {
+        kb.ACT_COINS,
+        kb.ACT_BALANCE,
+        kb.ACT_ROLLS,
+        kb.ACT_ROLLS_RESET,
+        kb.ACT_XP,
+        kb.ACT_LEVEL,
+        kb.ACT_STREAK,
+        kb.ACT_PROG_RESET,
+        kb.ACT_MISSION,
+        kb.ACT_ACHIEVEMENT,
+        kb.ACT_COSMETIC,
+        kb.ACT_TITLE,
+        kb.ACT_PREMIUM,
+        kb.ACT_PREMIUM_REVOKE,
+        kb.ACT_BAN,
+        kb.ACT_UNBAN,
+        kb.ACT_REWARD,
+        kb.ACT_PLATE_GRANT,
+        kb.ACT_FIRST_DISCOVERY,
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +132,36 @@ async def economy_menu(callback: CallbackQuery, context: FSMContext) -> None:
     if user_id is None:
         return
     await _render_economy(callback, user_id)
+
+
+@router.callback_query(F.data == kb.pack(kb.USER_ECONOMY))
+@guard
+async def user_economy_menu(callback: CallbackQuery, context: FSMContext) -> None:
+    """The player card's own "Economy" button.
+
+    It used to be a dead route - the card rendered the button and nothing answered
+    it, so an operator tapping "💰 Экономика" got "Unknown action".
+    """
+    user_id = await require_user(context, callback)
+    if user_id is None:
+        return
+    await _render_economy(callback, user_id)
+
+
+@router.callback_query(F.data == kb.pack(kb.ROLL_CUSTOM))
+@guard
+async def roll_custom_prompt(callback: CallbackQuery, context: FSMContext) -> None:
+    """Custom roll amount. Previously a dead button on the rolls screen."""
+    user_id = await require_user(context, callback)
+    if user_id is None:
+        return
+    await context.set_state(AdminStates.roll_count)
+    await render(
+        callback.message,
+        f"🎰 <b>РОЛЛЫ</b>\n━━━━━━━━━━\n\nигрок: <code>{user_id}</code>\n\n"
+        "Сколько роллов выдать? Введите число.",
+        kb.prompt_keyboard(),
+    )
 
 
 @router.callback_query(F.data == kb.pack(kb.COIN_BALANCE))
@@ -317,22 +378,25 @@ async def _stage_economy(
         await render(target, "⚠️ Изменение равно нулю.", None)
         return
 
+    rows = [
+        f"игрок: {await _user_label(target, context, user_id)}",
+        f"текущий баланс: <b>{num(balance)} NUMORA</b>",
+        f"изменение: <b>{'+' if delta >= 0 else ''}{num(delta)} NUMORA</b>",
+        f"новый баланс: <b>{num(new_balance)} NUMORA</b>",
+        "",
+        f"📝 причина: {esc(reason)}",
+    ]
     operation_id = await stage(
         context,
         kind,
         {"user_id": user_id, "amount": amount, "delta": delta, "reason": reason},
         title,
-        [
-            f"игрок: {await _user_label(target, context, user_id)}",
-            f"текущий баланс: <b>{num(balance)} NUMORA</b>",
-            f"изменение: <b>{'+' if delta >= 0 else ''}{num(delta)} NUMORA</b>",
-            f"новый баланс: <b>{num(new_balance)} NUMORA</b>",
-            "",
-            f"📝 причина: {esc(reason)}",
-        ],
+        rows,
     )
 
-    await render(target, confirm(title, []), kb.confirm_keyboard(operation_id))
+    # The confirmation screen must show the same rows that were staged, otherwise
+    # the operator confirms an amount and a reason they cannot see.
+    await render(target, confirm(title, rows), kb.confirm_keyboard(operation_id))
 
 
 # ---------------------------------------------------------------------------
@@ -574,22 +638,26 @@ async def _stage_simple(
     *,
     payload: dict[str, Any] | None = None,
 ) -> None:
+    """Stage an action that needs no free-text reason.
+
+    Used where the operation itself already spells out everything that matters
+    (a preset amount, a duration, a streak value): asking for a reason here would
+    only add friction, and the audit row still records the actor, the target and
+    the exact payload.
+    """
     user_id = await require_user(context, target)
     if user_id is None:
         return
-    await context.set_state(AdminStates.reason)
-    await context.update_data(kind=action, user_id=user_id)
-    await stage(context, action, {"user_id": user_id, **(payload or {})}, title, rows)
-
-    operation_id = await stage(
-        context,
-        action,
-        {"user_id": user_id, **(payload or {})},
-        title,
-        rows,
+    await context.set_state(None)
+    await context.update_data(kind=None)
+    operation_id = await stage(context, action, {"user_id": user_id, **(payload or {})}, title, rows)
+    await clear_flow_data(context)
+    await render(
+        target,
+        confirm(title, rows),
+        kb.confirm_keyboard(operation_id),
+        answer=isinstance(target, Message),
     )
-    del operation_id
-    await render(target, confirm(title, rows), kb.prompt_keyboard())
 
 
 @router.message(AdminStates.xp_amount)
@@ -859,6 +927,65 @@ async def premium_days_input(message: Message, context: FSMContext) -> None:
 # ---------------------------------------------------------------------------
 # cosmetics / rewards
 # ---------------------------------------------------------------------------
+@router.callback_query(F.data == kb.pack(kb.USER_PLATES))
+@guard
+async def user_plates(callback: CallbackQuery, context: FSMContext) -> None:
+    user_id = await require_user(context, callback)
+    if user_id is None:
+        return
+    try:
+        data = await get_client().user_plates(telegram_id(callback), user_id, page=1, limit=10)
+    except Exception as exc:
+        await render_error(callback, exc)
+        return
+    from bot.admin.formatters import plate_card
+
+    await render(
+        callback.message,
+        plate_card(data),
+        kb.user_plates_keyboard(user_id, page=int(data.get("page", 1)), has_more=bool(data.get("has_more"))),
+    )
+
+
+@router.callback_query(F.data.startswith(kb.pack(kb.USER_PLATES_PAGE)))
+@guard
+async def user_plates_page(callback: CallbackQuery, context: FSMContext) -> None:
+    user_id = await require_user(context, callback)
+    if user_id is None:
+        return
+    parts = kb.unpack(callback.data or "")
+    page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
+    try:
+        data = await get_client().user_plates(telegram_id(callback), user_id, page=page, limit=10)
+    except Exception as exc:
+        await render_error(callback, exc)
+        return
+    from bot.admin.formatters import plate_card
+
+    await render(
+        callback.message,
+        plate_card(data),
+        kb.user_plates_keyboard(user_id, page=int(data.get("page", page)), has_more=bool(data.get("has_more"))),
+    )
+
+
+@router.callback_query(F.data == kb.pack(kb.USER_PROFILE))
+@guard
+async def user_profile_menu(callback: CallbackQuery, context: FSMContext) -> None:
+    """The player's own collector identity, as an operator sees it."""
+    user_id = await require_user(context, callback)
+    if user_id is None:
+        return
+    from bot.admin.formatters import user_profile
+
+    try:
+        data = await get_client().user_detail(telegram_id(callback), user_id)
+    except Exception as exc:
+        await render_error(callback, exc)
+        return
+    await render(callback.message, user_profile(data), kb.user_plates_keyboard(user_id))
+
+
 @router.callback_query(F.data == kb.pack(kb.USER_COSMETICS))
 @guard
 async def cosmetics_menu(callback: CallbackQuery, context: FSMContext) -> None:
@@ -1081,6 +1208,13 @@ async def ban_toggle(callback: CallbackQuery, context: FSMContext) -> None:
 
 # ---------------------------------------------------------------------------
 # generic reason input -> stage every remaining mutation
+#
+# This is the *single* authoritative ``AdminStates.reason`` dispatcher. Every
+# staged action - player mutations from this module and the world/test-lab actions
+# from :mod:`bot.admin.world` - declares its action type in ``KEY_KIND`` and is
+# turned into exactly one pending operation here. No other module may register a
+# handler for this state: a competing catch-all used to swallow every reason the
+# moment the world router was attached before this one.
 # ---------------------------------------------------------------------------
 @router.message(AdminStates.reason)
 @guard
@@ -1090,10 +1224,85 @@ async def reason_input(message: Message, context: FSMContext) -> None:
         await message.answer("⚠️ Нужна причина (минимум 1 символ).", reply_markup=kb.prompt_keyboard())
         return
     kind = await data_of(context, KEY_KIND)
-    user_id = await require_user(context, message)
-    if not kind or user_id is None:
+    if not kind:
+        # A stale state with no staged action: leave the operator in control.
         await context.set_state(None)
+        await clear_flow_data(context)
+        await message.answer(
+            "⚠️ Действие потеряно. Начните заново.",
+            reply_markup=kb.prompt_keyboard(),
+        )
         return
+
+    player_scoped = kind in PLAYER_SCOPED_ACTIONS
+    user_id = await require_user(context, message) if player_scoped else None
+    if player_scoped and user_id is None:
+        return
+
+    # --- world / test-lab actions target no player -------------------------------
+    if kind == kb.ACT_COUNTRY:
+        await _finalise_world(
+            message,
+            context,
+            kind,
+            {"country_id": int(await data_of(context, "country_id") or 0), "active": bool(await data_of(context, "activate"))},
+            reason,
+            "🌍 СТРАНА",
+            user_id,
+        )
+        return
+    if kind == kb.ACT_EVENT:
+        await _finalise_world(
+            message,
+            context,
+            kind,
+            {"event_id": int(await data_of(context, "event_id") or 0), "active": bool(await data_of(context, "activate"))},
+            reason,
+            "🎯 ИВЕНТ",
+            user_id,
+        )
+        return
+    if kind == kb.ACT_SEASON:
+        await _finalise_world(
+            message,
+            context,
+            kind,
+            {"code": str(await data_of(context, "season_code") or ""), "active": bool(await data_of(context, "activate"))},
+            reason,
+            "🗓 СЕЗОН",
+            user_id,
+        )
+        return
+    if kind == kb.ACT_LIVE_ROLL:
+        await _finalise_world(
+            message,
+            context,
+            kind,
+            {"user_id": int(await data_of(context, KEY_SELECTED_USER) or 0), **(await _lab_payload(context))},
+            reason,
+            "🔴 LIVE ТЕСТ-РОЛЛ",
+            user_id,
+        )
+        return
+    if kind == kb.ACT_FORCE_PLATE:
+        await _finalise_world(
+            message,
+            context,
+            kind,
+            {
+                "user_id": int(await data_of(context, KEY_SELECTED_USER) or 0),
+                "plate_text": str(await data_of(context, "plate_text") or "")[:32],
+                "country_code": await data_of(context, KEY_COUNTRY),
+                "region_code": await data_of(context, "region_code"),
+                "template_code": await data_of(context, "template_code"),
+            },
+            reason,
+            "🔤 НОМЕР ВРУЧНУЮ",
+            user_id,
+        )
+        return
+
+    # --- player-scoped actions ---------------------------------------------------
     amount = await data_of(context, KEY_AMOUNT)
     extra: dict[str, Any] = {}
 
@@ -1162,7 +1371,11 @@ async def reason_input(message: Message, context: FSMContext) -> None:
             message,
             context,
             kb.ACT_MISSION,
-            {"code": code, "action": await data_of(context, "mission_action") or "progress"},
+            {
+                "code": code,
+                "action": await data_of(context, "mission_action") or "progress",
+                "amount": int(await data_of(context, "mission_amount") or 1),
+            },
             reason,
             "ЗАДАНИЕ",
             [],
@@ -1246,8 +1459,62 @@ async def reason_input(message: Message, context: FSMContext) -> None:
             user_id,
         )
         return
+    if kind == kb.ACT_PLATE_GRANT:
+        await _finalise(
+            message,
+            context,
+            kind,
+            {"plate_id": int(await data_of(context, "plate_id") or 0)},
+            reason,
+            "🎁 ВЫДАТЬ НОМЕР",
+            [],
+            user_id,
+        )
+        return
+    if kind == kb.ACT_FIRST_DISCOVERY:
+        await _finalise(
+            message,
+            context,
+            kind,
+            {
+                "plate_id": int(await data_of(context, "plate_id") or 0),
+                "user_id": user_id,
+                "override": bool(await data_of(context, "override_first")),
+            },
+            reason,
+            "🥇 ПЕРВАЯ НАХОДКА",
+            [],
+            user_id,
+        )
+        return
     await context.set_state(None)
+    await clear_flow_data(context)
     await message.answer("⚠️ Неизвестное действие.", reply_markup=kb.prompt_keyboard())
+
+
+async def _finalise_world(
+    target: CallbackQuery | Message,
+    context: FSMContext,
+    action: str,
+    payload: dict[str, Any],
+    reason: str,
+    title: str,
+    user_id: int | None,
+) -> None:
+    """Stage a world/test-lab operation with a player context when there is one."""
+    body = [f"📝 причина: {esc(reason)}"]
+    if user_id is not None:
+        body.insert(0, f"игрок: {await _user_label(target, context, user_id)}")
+    operation_id = await stage(context, action, {**payload, "reason": reason}, title, body)
+    await context.set_state(None)
+    await clear_flow_data(context)
+
+    await render(
+        target,
+        confirm(title, body),
+        kb.confirm_keyboard(operation_id),
+        answer=isinstance(target, Message),
+    )
 
 
 async def _finalise(
@@ -1284,7 +1551,14 @@ async def _finalise(
 @router.callback_query(F.data.startswith(kb.pack(kb.CONFIRM)))
 @guard
 async def confirm_operation(callback: CallbackQuery, context: FSMContext) -> None:
-    """Execute a staged operation exactly once."""
+    """Execute a staged operation exactly once.
+
+    The ``operation_id`` from the callback **is** the id created when the action was
+    staged. It travels to the backend unchanged, so the audit row, the wallet
+    idempotency key and any game-side reference all point at one id. Generating a
+    second id here used to break exactly that chain, which meant a duplicated
+    Telegram callback produced a *new* operation instead of a replay.
+    """
     parts = kb.unpack(callback.data or "")
     if len(parts) < 3:
         await toast(callback, "Bad request.")
@@ -1292,11 +1566,12 @@ async def confirm_operation(callback: CallbackQuery, context: FSMContext) -> Non
     operation_id = parts[2]
     operation = await ops.pop(context, operation_id)
     if operation is None:
+        # Replayed or stale button: nothing was staged under this id any more.
         await toast(callback, "Operation expired or already used.")
         return
     await callback.answer("Выполняю…")
     try:
-        await _execute(callback, operation)
+        await _execute(callback, operation, operation_id)
     except Exception as exc:
         await render_error(callback, exc)
 
@@ -1313,15 +1588,19 @@ async def cancel_operation(callback: CallbackQuery, context: FSMContext) -> None
     await render(
         callback.message,
         "🚫 <b>ОТМЕНЕНО</b>\n━━━━━━━━━━\n\nОперация не выполнялась.",
-        kb.back_row(),
+        kb.rows(kb.back_row()),
     )
 
 
-async def _execute(callback: CallbackQuery, operation: dict[str, Any]) -> None:
+async def _execute(callback: CallbackQuery, operation: dict[str, Any], operation_id: str) -> None:
+    """Run one staged operation.
+
+    ``operation_id`` is the staged id, passed in by :func:`confirm_operation`. It is
+    used verbatim for every backend call so the idempotency chain is unbroken.
+    """
     action = str(operation.get("action"))
     payload = dict(operation.get("payload") or {})
     reason = str(payload.pop("reason", "") or "admin panel")
-    operation_id = ops.new_operation_id()
     client = get_client()
     user_id = payload.get("user_id")
 
@@ -1486,11 +1765,106 @@ async def _execute(callback: CallbackQuery, operation: dict[str, Any]) -> None:
             amount=int(payload.get("amount", 0) or 0),
             code=payload.get("code", ""),
         )
+    elif action == kb.ACT_PLATE_GRANT:
+        result = await client.mutate(
+            "/numbers/grant",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            user_id=user_id,
+            collectible_id=int(payload.get("plate_id") or 0),
+        )
+    elif action == kb.ACT_FIRST_DISCOVERY:
+        result = await client.mutate(
+            "/numbers/first-discovery",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            user_id=int(payload.get("user_id") or 0),
+            collectible_id=int(payload.get("plate_id") or 0),
+            override=bool(payload.get("override")),
+        )
+    elif action == kb.ACT_COUNTRY:
+        result = await client.mutate(
+            "/countries/toggle",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            country_id=int(payload.get("country_id") or 0),
+            active=bool(payload.get("active")),
+        )
+    elif action == kb.ACT_EVENT:
+        result = await client.mutate(
+            "/events/toggle",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            event_id=int(payload.get("event_id") or 0),
+            active=bool(payload.get("active")),
+        )
+    elif action == kb.ACT_SEASON:
+        result = await client.mutate(
+            "/seasons/toggle",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            code=str(payload.get("code") or ""),
+            active=bool(payload.get("active")),
+        )
+    elif action == kb.ACT_LIVE_ROLL:
+        result = await client.mutate(
+            "/testlab/live",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            **_lab_body(payload),
+        )
+    elif action == kb.ACT_FORCE_PLATE:
+        result = await client.mutate(
+            "/testlab/force-plate",
+            admin_telegram_id=telegram_id(callback),
+            operation_id=operation_id,
+            reason=reason,
+            **_lab_body(payload),
+            plate_text=str(payload.get("plate_text") or ""),
+        )
     else:
-        await render(callback.message, "⚠️ Неизвестная операция.", kb.back_row())
+        await render(callback.message, "⚠️ Неизвестная операция.", kb.rows(kb.back_row()))
         return
 
     await _show_result(callback, result, user_id)
+
+
+def _lab_body(payload: dict[str, Any]) -> dict[str, Any]:
+    """The test-lab fields the backend's ``TestRollRequest`` accepts."""
+    body: dict[str, Any] = {}
+    if payload.get("user_id"):
+        body["user_id"] = int(payload["user_id"])
+    for source, target in (
+        ("country_code", "country_code"),
+        ("region_code", "region_code"),
+        ("template_code", "template_code"),
+        ("rarity", "rarity"),
+        ("preset", "preset"),
+        ("require_trait", "require_trait"),
+    ):
+        value = payload.get(source)
+        if value:
+            body[target] = value
+    return body
+
+
+async def _lab_payload(context: FSMContext) -> dict[str, Any]:
+    """Test-lab selection stored in the FSM, shaped like the backend request."""
+    payload = {
+        "country_code": await data_of(context, KEY_COUNTRY),
+        "region_code": await data_of(context, "region_code"),
+        "template_code": await data_of(context, "template_code"),
+        "rarity": await data_of(context, KEY_RARITY),
+        "preset": await data_of(context, KEY_PRESET),
+        "require_trait": await data_of(context, KEY_TRAIT),
+    }
+    return {key: value for key, value in payload.items() if value}
 
 
 def data_of_flag(payload: dict[str, Any], key: str) -> bool:
@@ -1512,7 +1886,7 @@ async def _show_wallet_result(callback: CallbackQuery, result: dict[str, Any]) -
     await render(
         callback.message,
         result_ok("💰 ГОТОВО", [*rows, f"audit: {result.get('audit_id', '—')}"]),
-        kb.back_row(),
+        kb.rows(kb.back_row()),
     )
 
 
@@ -1551,4 +1925,4 @@ async def _show_result(
     if result.get("replayed"):
         rows.append("<i>повтор запроса — операция уже была выполнена</i>")
     rows.append(f"audit: <code>{result.get('audit_id', '—')}</code>")
-    await render(callback.message, result_ok("✅ ГОТОВО", rows), kb.back_row())
+    await render(callback.message, result_ok("✅ ГОТОВО", rows), kb.rows(kb.back_row()))
