@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
-from app.core.timeutils import utcnow
+from app.core.timeutils import as_aware, utcnow
 from app.game.plate_generator import GeneratedPlate
 from app.game.plate_stories import build_plate_story
 from app.game.plate_visuals import serialize_visual
@@ -377,6 +377,167 @@ class PlateService:
             .select_from(UserPlate)
         )
         return int(self.db.execute(query).scalar_one() or 0)
+
+    # --- first discovery -------------------------------------------------
+    def set_first_discoverer(
+        self,
+        plate: Plate,
+        user: User,
+        *,
+        source: str = "ADMIN",
+        override: bool = False,
+    ) -> dict[str, object]:
+        """Move (or create) the world-first discovery record of a plate.
+
+        Consistency rules enforced here, not by the caller:
+
+        * a plate has at most one first discoverer - reassigning demotes the old
+          ``PlateDiscovery`` row instead of creating a contradictory second one;
+        * the cached ``first_discoveries_count`` of both the previous and the new
+          discoverer is recomputed from ``plate_discoveries``;
+        * the discovery counter never shrinks.
+        """
+        previous_id = plate.first_discovered_by_id
+        if previous_id is not None and previous_id == user.id:
+            return {
+                "plate_id": plate.id,
+                "first_discoverer_id": previous_id,
+                "previous_discoverer_id": previous_id,
+                "changed": False,
+                "demoted_user_id": None,
+            }
+        if previous_id is not None and not override:
+            raise ConflictError(
+                "This plate already has a first discoverer.",
+                code="FIRST_DISCOVERY_TAKEN",
+                details={"plate_id": plate.id},
+            )
+
+        demoted: int | None = None
+        if previous_id is not None:
+            demoted = int(previous_id)
+            for row in self.db.execute(
+                select(PlateDiscovery).where(
+                    PlateDiscovery.plate_id == plate.id,
+                    PlateDiscovery.is_first_discovery.is_(True),
+                )
+            ).scalars():
+                row.is_first_discovery = False
+
+        now = utcnow()
+        existing = self.db.execute(
+            select(PlateDiscovery).where(PlateDiscovery.plate_id == plate.id, PlateDiscovery.user_id == user.id)
+        ).scalar_one_or_none()
+        if existing is None:
+            self.db.add(
+                PlateDiscovery(
+                    plate_id=plate.id,
+                    user_id=user.id,
+                    is_first_discovery=True,
+                    source=source[:16],
+                    created_at=now,
+                )
+            )
+            plate.discovery_count = int(plate.discovery_count) + 1
+        else:
+            existing.is_first_discovery = True
+            existing.source = source[:16]
+
+        plate.first_discovered_by_id = user.id
+        plate.first_discovered_at = now
+        plate.story = build_plate_story(
+            traits=list(plate.traits or []),
+            country_code=plate.country_code,
+            rarity=plate.rarity,
+            is_secret=bool(plate.is_secret),
+            is_first_discovery=True,
+        )
+        plate.story_ru = build_plate_story(
+            traits=list(plate.traits or []),
+            country_code=plate.country_code,
+            rarity=plate.rarity,
+            is_secret=bool(plate.is_secret),
+            is_first_discovery=True,
+            lang="ru",
+        )
+        self.db.flush()
+
+        # Keep the cached counters honest for both sides of the move.
+        touched = {int(user.id)}
+        if demoted is not None:
+            touched.add(demoted)
+        for user_id in touched:
+            self.sync_first_discoveries(user_id)
+
+        return {
+            "plate_id": plate.id,
+            "first_discoverer_id": int(user.id),
+            "previous_discoverer_id": demoted,
+            "changed": True,
+            "demoted_user_id": demoted,
+        }
+
+    def sync_first_discoveries(self, user_id: int) -> int:
+        """Recount ``first_discoveries_count`` for one player from the truth."""
+        total = int(
+            self.db.execute(
+                select(func.count(func.distinct(PlateDiscovery.plate_id))).where(
+                    PlateDiscovery.user_id == user_id,
+                    PlateDiscovery.is_first_discovery.is_(True),
+                )
+            ).scalar_one()
+            or 0
+        )
+        user = self.db.get(User, user_id)
+        if user is not None:
+            user.first_discoveries_count = total
+            self.db.flush()
+        return total
+
+    def plate_owners(self, plate_id: int, limit: int = 10) -> list[dict[str, object]]:
+        """Who owns a plate - read-only ownership inspection."""
+        rows = self.db.execute(
+            select(UserPlate, User)
+            .join(User, User.id == UserPlate.user_id)
+            .where(UserPlate.plate_id == plate_id)
+            .order_by(UserPlate.first_acquired_at)
+            .limit(max(1, min(limit, 50)))
+        ).all()
+        return [
+            {
+                "user_id": user.id,
+                "telegram_id": int(user.telegram_id),
+                "username": user.username,
+                "display_name": user.display_name,
+                "duplicate_count": int(owned.duplicate_count),
+                "copies_sold": int(owned.copies_sold),
+                "acquired_at": as_aware(owned.first_acquired_at).isoformat()
+                if owned.first_acquired_at
+                else None,
+            }
+            for owned, user in rows
+        ]
+
+    def discovery_history(self, plate_id: int, limit: int = 10) -> list[dict[str, object]]:
+        """Who found a plate and when - read-only discovery inspection."""
+        rows = self.db.execute(
+            select(PlateDiscovery, User)
+            .join(User, User.id == PlateDiscovery.user_id)
+            .where(PlateDiscovery.plate_id == plate_id)
+            .order_by(PlateDiscovery.id.desc())
+            .limit(max(1, min(limit, 50)))
+        ).all()
+        return [
+            {
+                "user_id": user.id,
+                "telegram_id": int(user.telegram_id),
+                "username": user.username,
+                "is_first_discovery": bool(row.is_first_discovery),
+                "source": row.source,
+                "created_at": as_aware(row.created_at).isoformat() if row.created_at else None,
+            }
+            for row, user in rows
+        ]
 
 
 __all__ = ["PlateGrant", "PlateService"]

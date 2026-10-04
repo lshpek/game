@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.timeutils import utcnow
@@ -186,6 +186,96 @@ class MissionService:
 
     def serialize(self, outcomes: list[MissionOutcome]) -> list[dict[str, object]]:
         return [item.to_dict() for item in outcomes]
+
+    # --- admin overrides -------------------------------------------------
+    # Used by the internal tooling only. They reuse ``_pay`` so a mission reward
+    # can never be paid twice, no matter how often a mission is completed.
+
+    def _outcome(self, mission: Mission, row: UserMission) -> MissionOutcome:
+        return MissionOutcome(
+            code=mission.code,
+            name_en=mission.name_en,
+            name_ru=mission.name_ru,
+            progress=int(row.progress),
+            target=int(mission.target),
+            completed=row.completed_at is not None,
+            reward_coins=int(mission.reward_coins),
+            reward_rolls=int(mission.reward_rolls),
+            reward_xp=int(mission.reward_xp),
+        )
+
+    def find(self, code: str) -> Mission:
+        """Resolve a mission by code, case-insensitively (codes ship lower-case)."""
+        wanted = str(code).strip()
+        mission = self.db.execute(
+            select(Mission).where(func.upper(Mission.code) == wanted.upper())
+        ).scalar_one_or_none()
+        if mission is None:
+            from app.core.errors import NotFoundError
+
+            raise NotFoundError("Mission not found.", code="MISSION_NOT_FOUND")
+        return mission
+
+    def add_progress(self, user: User, code: str, delta: int, *, day=None) -> MissionOutcome:
+        """Advance one mission without paying until the target is reached."""
+        mission = self.find(code)
+        row = self._row(user.id, mission, day or utcnow().date())
+        row.progress = min(int(mission.target), int(row.progress) + max(0, int(delta)))
+        paid_now = False
+        if row.progress >= int(mission.target) and row.completed_at is None:
+            row.completed_at = utcnow()
+            paid_now = not bool(row.reward_paid)
+            self._pay(user, mission, row)
+        self.db.flush()
+        outcome = self._outcome(mission, row)
+        outcome.just_completed = paid_now
+        return outcome
+
+    def complete(self, user: User, code: str, *, day=None) -> MissionOutcome:
+        """Force a mission to its target and pay its reward exactly once."""
+        mission = self.find(code)
+        row = self._row(user.id, mission, day or utcnow().date())
+        row.progress = int(mission.target)
+        paid_now = False
+        if row.completed_at is None:
+            row.completed_at = utcnow()
+            paid_now = not bool(row.reward_paid)
+            self._pay(user, mission, row)
+        self.db.flush()
+        outcome = self._outcome(mission, row)
+        outcome.just_completed = paid_now
+        return outcome
+
+    def reset(self, user: User, code: str, *, day=None) -> MissionOutcome:
+        """Clear today's progress for one mission."""
+        mission = self.find(code)
+        row = self._row(user.id, mission, day or utcnow().date())
+        row.progress = 0
+        row.completed_at = None
+        row.reward_paid = False
+        self.db.flush()
+        return self._outcome(mission, row)
+
+    def board(self, user: User, *, day=None) -> list[MissionOutcome]:
+        """Today's board with the raw ``reward_paid`` flag preserved."""
+        day = day or utcnow().date()
+        results: list[MissionOutcome] = []
+        for mission in self.definitions():
+            row = self._row(user.id, mission, day)
+            outcome = self._outcome(mission, row)
+            results.append(outcome)
+        self.db.flush()
+        return results
+
+    def reward_paid_flags(self, user_id: int, *, day=None) -> dict[str, bool]:
+        """``{mission_code: reward_paid}`` for today's board."""
+        day = day or utcnow().date()
+        rows = self.db.execute(
+            select(Mission.code, UserMission.reward_paid)
+            .join(UserMission, UserMission.mission_id == Mission.id)
+            .where(UserMission.user_id == user_id, UserMission.mission_date == day)
+        ).all()
+        return {str(code): bool(paid) for code, paid in rows}
 
 
 __all__ = ["EVENT_METRICS", "MissionOutcome", "MissionService"]

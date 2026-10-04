@@ -149,6 +149,17 @@ def rarity_rank(rarity: str | Rarity) -> int:
     return RARITY_RANK.get(value, 0)
 
 
+def rarity_case(column):
+    """SQL ``CASE`` mapping a rarity column onto its numeric rank.
+
+    Lets a single aggregate query sort or bucket by rarity without pulling rows
+    into Python. Unknown codes fall back to ``COMMON``.
+    """
+    from sqlalchemy import case
+
+    return case(RARITY_RANK, value=column, else_=0)
+
+
 def max_rarity(*rarities: str | Rarity) -> Rarity:
     """Return the most prestigious rarity of the arguments."""
     best = Rarity.COMMON
@@ -274,6 +285,7 @@ __all__ = [
     "max_rarity",
     "natural_rarity",
     "pity_weights",
+    "rarity_case",
     "rarity_rank",
     "resolve_final_rarity",
     "score_rarity",

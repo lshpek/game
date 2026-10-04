@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
+from uuid import uuid4
 
 TEST_SECRET_KEY = "test-secret-key-0123456789abcdefghij"
 TEST_ADMIN_TELEGRAM_ID = 900001
+TEST_SERVICE_TOKEN = "test-service-token-abcdef0123456789"
 _TMP_DIR = tempfile.mkdtemp(prefix="numbergame-tests-")
 
 os.environ.update(
@@ -25,7 +27,10 @@ os.environ.update(
         "AUTO_SEED": "false",
         "ALLOW_DEV_LOGIN": "true",
         "ADMIN_TELEGRAM_IDS": str(TEST_ADMIN_TELEGRAM_ID),
+        "SERVICE_TOKEN": TEST_SERVICE_TOKEN,
         "RATE_LIMIT_ENABLED": "true",
+        "RATE_LIMIT_ADMIN_BOT": "10000",
+        "RATE_LIMIT_ADMIN_READ": "10000",
         "PAYMENT_PROVIDER": "mock",
         "TELEGRAM_BOT_USERNAME": "test_bot",
         "BACKEND_URL": "http://localhost:8000",
@@ -122,3 +127,57 @@ def authed(client: TestClient):
 @pytest.fixture
 def admin_authed(client: TestClient) -> dict:
     return login(client, TEST_ADMIN_TELEGRAM_ID, username="admin")
+
+
+def admin_bot_headers(admin_telegram_id: int | None = None) -> dict[str, str]:
+    """Service-to-service headers for ``/api/admin/bot/*``."""
+    return {
+        "X-Service-Token": TEST_SERVICE_TOKEN,
+        "X-Admin-Telegram-Id": str(
+            TEST_ADMIN_TELEGRAM_ID if admin_telegram_id is None else admin_telegram_id
+        ),
+    }
+
+
+@pytest.fixture
+def admin_bot(client: TestClient):
+    """Callable wrapper: ``admin_bot.get(path, **params)`` with auth attached."""
+
+    class AdminBotApi:
+        def request(self, method: str, path: str, **kwargs):
+            headers = dict(admin_bot_headers())
+            headers.update(kwargs.pop("headers", {}))
+            return client.request(method, f"/api/admin/bot{path}", headers=headers, **kwargs)
+
+        def get(self, path: str, **kwargs):
+            return self.request("GET", path, **kwargs)
+
+        def post(self, path: str, **kwargs):
+            return self.request("POST", path, **kwargs)
+
+    return AdminBotApi()
+
+
+@pytest.fixture
+def op() -> Callable[[], str]:
+    """Globally unique operation ids.
+
+    Uniqueness matters: the backend enforces idempotency with a *unique* index on
+    ``admin_audit_logs.operation_id``, so two tests must never mint the same id.
+    """
+    def _next() -> str:
+        return f"op-{uuid4().hex[:16]}"
+
+    return _next
+
+
+@pytest.fixture
+def player(client: TestClient):
+    """Factory creating a real (non-admin) player plus the service that owns it."""
+
+    def _factory(telegram_id: int, username: str = "player", first_name: str = "Player"):
+        session = login(client, telegram_id, username=username, first_name=first_name)
+        return int(session["user"]["id"])
+
+    return _factory
+

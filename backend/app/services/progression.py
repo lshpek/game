@@ -76,6 +76,17 @@ def xp_for_level(level: int) -> int:
     return int(120 * max(0, level) ** 1.55)
 
 
+def xp_floor_for_level(level: int) -> int:
+    """Cumulative XP at which :func:`level_for_xp` first reports ``level``.
+
+    ``level_for_xp`` returns ``n`` while ``xp < 120 * n ** 1.55``, so level ``n``
+    is *reached* at ``120 * (n - 1) ** 1.55``. Used when an admin forces a level:
+    the XP is placed exactly on that floor, which keeps
+    ``level_for_xp(xp) == level`` true.
+    """
+    return int(120 * max(0, int(level) - 1) ** 1.55)
+
+
 def title_for_level(level: int) -> tuple[str, str]:
     current = (1, LEVEL_TITLES[0][1], LEVEL_TITLES[0][2])
     for threshold, en, ru in LEVEL_TITLES:
@@ -161,6 +172,63 @@ class ProgressionService:
             progress=round(progress, 4),
         )
 
+    # --- admin overrides -------------------------------------------------
+    # These keep the ``xp``/``level`` invariant enforced by the shared formulas
+    # instead of letting a caller write an impossible combination directly.
+
+    def set_xp(self, user: User, xp: int) -> int:
+        """Force the exact XP total and derive the level from it."""
+        value = max(0, int(xp))
+        user.collection_xp = value
+        user.collector_level = level_for_xp(value)
+        self.db.flush()
+        return int(user.collector_level)
+
+    def set_level(self, user: User, level: int) -> int:
+        """Force a level by moving XP to that level's exact floor.
+
+        Placing XP on ``xp_floor_for_level`` (rather than arbitrarily) keeps the
+        invariant ``level_for_xp(user.collection_xp) == user.collector_level``
+        true, so a forced level never disagrees with the shared formula.
+        """
+        value = max(1, int(level))
+        user.collection_xp = xp_floor_for_level(value)
+        user.collector_level = level_for_xp(user.collection_xp)
+        self.db.flush()
+        return int(user.collector_level)
+
+    def set_streak(self, user: User, *, current: int | None = None, longest: int | None = None) -> dict[str, int]:
+        """Set the current and/or longest streak, keeping longest >= current."""
+        before = {"current_streak": int(user.current_streak), "longest_streak": int(user.longest_streak)}
+        if current is not None:
+            user.current_streak = max(0, int(current))
+        if longest is not None:
+            user.longest_streak = max(0, int(longest))
+        user.longest_streak = max(int(user.longest_streak), int(user.current_streak))
+        self.db.flush()
+        return before
+
+    def reset(self, user: User) -> dict[str, int]:
+        """Wipe progression back to a brand-new collector (dangerous, audited)."""
+        before = {
+            "collection_xp": int(user.collection_xp),
+            "collector_level": int(user.collector_level),
+            "current_streak": int(user.current_streak),
+            "longest_streak": int(user.longest_streak),
+            "pity_rare_streak": int(user.pity_rare_streak),
+            "pity_epic_streak": int(user.pity_epic_streak),
+            "pity_legendary_streak": int(user.pity_legendary_streak),
+        }
+        user.collection_xp = 0
+        user.collector_level = 1
+        user.current_streak = 0
+        user.longest_streak = 0
+        user.pity_rare_streak = 0
+        user.pity_epic_streak = 0
+        user.pity_legendary_streak = 0
+        self.db.flush()
+        return before
+
 
 __all__ = [
     "LEVEL_TITLES",
@@ -168,5 +236,6 @@ __all__ = [
     "ProgressionService",
     "level_for_xp",
     "title_for_level",
+    "xp_floor_for_level",
     "xp_for_level",
 ]

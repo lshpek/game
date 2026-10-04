@@ -126,6 +126,17 @@ class VerifiedInitData:
     raw: dict[str, str] = field(default_factory=dict)
 
 
+def hash_secret(secret: str, *, length: int = 32) -> str:
+    """Non-reversible fingerprint of a secret.
+
+    Used by internal tooling that must prove a credential *is configured* (and
+    that two services agree) without ever revealing the credential itself.
+    """
+    import hashlib
+
+    return hashlib.sha256(str(secret).encode("utf-8")).hexdigest()[: max(8, min(length, 64))]
+
+
 def _build_data_check_string(pairs: dict[str, str]) -> str:
     return "\n".join(f"{key}={pairs[key]}" for key in sorted(pairs) if key != "hash")
 

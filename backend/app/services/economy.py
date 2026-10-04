@@ -13,7 +13,12 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.errors import InsufficientFundsError, NotFoundError
+from app.core.errors import (
+    ConflictError,
+    InsufficientFundsError,
+    NotFoundError,
+    ValidationError,
+)
 from app.core.timeutils import utcnow
 from app.models.enums import TransactionType
 from app.models.user import Wallet, WalletTransaction
@@ -146,9 +151,30 @@ class EconomyService:
         self.db.flush()
         return tx
 
-    def admin_adjust(self, user_id: int, delta: int, *, reason: str, admin_telegram_id: int) -> WalletTransaction:
-        """Manual balance correction by an administrator (fully audited)."""
-        meta = {"reason": reason, "admin_telegram_id": admin_telegram_id}
+    def admin_adjust(
+        self,
+        user_id: int,
+        delta: int,
+        *,
+        reason: str,
+        admin_telegram_id: int,
+        source: str = "admin_api",
+        operation_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> WalletTransaction:
+        """Manual balance correction by an administrator (fully audited).
+
+        The ledger row is always written - a balance is never created without a
+        matching entry - and the metadata names the admin, the reason, the source
+        surface and the operation id used for replay protection.
+        """
+        meta: dict[str, Any] = {
+            "reason": reason,
+            "admin_telegram_id": admin_telegram_id,
+            "source": source,
+        }
+        if operation_id:
+            meta["operation_id"] = operation_id
         if delta >= 0:
             return self.credit(
                 user_id,
@@ -156,6 +182,7 @@ class EconomyService:
                 TransactionType.ADMIN_ADJUSTMENT,
                 reference_type="admin",
                 reference_id=str(admin_telegram_id),
+                idempotency_key=idempotency_key,
                 meta=meta,
             )
         return self.debit(
@@ -164,5 +191,40 @@ class EconomyService:
             TransactionType.ADMIN_ADJUSTMENT,
             reference_type="admin",
             reference_id=str(admin_telegram_id),
+            idempotency_key=idempotency_key,
             meta=meta,
+        )
+
+    def set_balance(
+        self,
+        user_id: int,
+        target: int,
+        *,
+        reason: str,
+        admin_telegram_id: int,
+        source: str = "admin_api",
+        operation_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> WalletTransaction:
+        """Force an exact balance by writing the difference to the ledger.
+
+        The wallet row is locked first, so two concurrent "set to 50 000"
+        requests can never both compute the same delta.
+        """
+        target = int(target)
+        if target < 0:
+            raise ValidationError("Balance cannot be negative.", code="INVALID_BALANCE")
+
+        wallet = self.get_wallet(user_id, for_update=True)
+        delta = target - int(wallet.coins)
+        if delta == 0:
+            raise ConflictError("Balance already equals the target.", code="BALANCE_UNCHANGED")
+        return self.admin_adjust(
+            user_id,
+            delta,
+            reason=reason,
+            admin_telegram_id=admin_telegram_id,
+            source=source,
+            operation_id=operation_id,
+            idempotency_key=idempotency_key,
         )

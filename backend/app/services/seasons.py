@@ -68,3 +68,50 @@ class SeasonService:
             "special_numbers": list(season.special_numbers or []),
             "rewards": dict(season.rewards or {}),
         }
+
+    # --- season pass -----------------------------------------------------
+    def grant_season_pass(self, user, code: str | None = None) -> dict[str, object]:
+        """Give the player a season pass for ``code`` (defaults to active)."""
+        from app.models.numora import SeasonProgress
+
+        target = self.get(code) if code else self.active()
+        if target is None:
+            raise NotFoundError("No active season.", code="SEASON_NOT_FOUND")
+
+        user.season_pass_active = True
+        progress = self.db.execute(
+            select(SeasonProgress).where(
+                SeasonProgress.user_id == user.id, SeasonProgress.season_code == target.code
+            )
+        ).scalar_one_or_none()
+        if progress is None:
+            progress = SeasonProgress(
+                user_id=user.id,
+                season_code=target.code,
+                xp=0,
+                tier=0,
+                claimed_tiers=[],
+                has_pass=True,
+                updated_at=utcnow(),
+            )
+            self.db.add(progress)
+        else:
+            progress.has_pass = True
+        self.db.flush()
+        return {"season_code": target.code, "has_pass": True}
+
+    def revoke_season_pass(self, user) -> dict[str, object]:
+        """Remove every season pass the player holds."""
+        from app.models.numora import SeasonProgress
+
+        user.season_pass_active = False
+        rows = self.db.execute(
+            select(SeasonProgress).where(SeasonProgress.user_id == user.id)
+        ).scalars()
+        removed = 0
+        for row in rows:
+            if row.has_pass:
+                row.has_pass = False
+                removed += 1
+        self.db.flush()
+        return {"season_code": None, "has_pass": False, "revoked": removed}

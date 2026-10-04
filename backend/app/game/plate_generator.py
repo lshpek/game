@@ -39,6 +39,10 @@ from app.game.rng import weighted_choice
 # (a handful of times) before falling back to the last candidate.
 MAX_GENERATION_ATTEMPTS = 8
 
+# Upper bound for a targeted admin-test generation. Bounded on purpose: the test
+# lab must never spin, even when the requested outcome is statistically absurd.
+TARGETED_MAX_ATTEMPTS = 40
+
 
 @dataclass(frozen=True, slots=True)
 class RegionOption:
@@ -202,6 +206,117 @@ def display_segments(styles: list[dict[str, str]]) -> list[str]:
     return [style["text"] for style in styles]
 
 
+def styles_for_text(plate_text: str, region_code: str | None = None) -> list[dict[str, str]]:
+    """Per-segment kind hints for an *authored* plate (used by the admin lab).
+
+    Mirrors what :func:`render_template` produces while generating, so a plate an
+    admin types by hand renders in the client exactly like a rolled one.
+    """
+    styles: list[dict[str, str]] = []
+    if region_code:
+        start = plate_text.find(region_code)
+        if start >= 0:
+            styles.append({"kind": "region", "text": region_code})
+            consumed = start + len(region_code)
+            plate_text = plate_text[:start] + " " * len(region_code) + plate_text[consumed:]
+    for char in plate_text:
+        if char.isalpha():
+            styles.append({"kind": "letter", "text": char})
+        elif char.isdigit():
+            styles.append({"kind": "digit", "text": char})
+    return [style for style in styles if style["text"]]
+
+
+def build_generated_plate(
+    *,
+    plate_text: str,
+    country: CountryDef,
+    region: RegionOption | None,
+    template: TemplateOption,
+    luck: Rarity,
+    styles: list[dict[str, str]],
+    event_multipliers: dict[str, float] | None = None,
+    discovery_count: int = 0,
+    force_secret: bool = False,
+    season_code: str | None = None,
+) -> GeneratedPlate:
+    """Score, price and package one already-rendered plate.
+
+    Single source of truth for "plate text in, collectible out": the roll engine
+    and the admin test lab both go through here, so a forced plate is scored by
+    exactly the same rules as a real one.
+    """
+    multipliers = event_multipliers or {}
+    parsed_region = region.code if region else None
+    analysis = analyze_plate(
+        plate_text,
+        region_code=parsed_region,
+        rarity_floor=template.rarity_floor,
+        plate_type=template.plate_type,
+        country_tag=country.tag,
+        is_secret=False,
+        season_code=season_code,
+    )
+
+    raw_event = float(multipliers.get(country.code, 1.0))
+    event_modifier = 1.0 + min(0.35, max(0.0, raw_event - 1.0) * 0.2)
+
+    score = compute_rarity_score(
+        analysis,
+        country_modifier=country.rarity_modifier,
+        template_multiplier=template.multiplier,
+        event_modifier=event_modifier,
+        novelty_bonus=6.0 if discovery_count == 0 else 0.0,
+    )
+
+    nat = natural_rarity(analysis)
+    rarity = resolve_final_rarity(
+        natural=nat,
+        luck=luck,
+        score=score,
+        traits=analysis.traits,
+        template_floor=template.rarity_floor,
+        force_secret=force_secret,
+    )
+
+    dealer_value, collector_value = value_for_analysis(
+        rarity,
+        analysis,
+        discovery_count=discovery_count,
+        country_multiplier=country.rarity_modifier,
+        region_multiplier=1.12 if "region_match" in analysis.traits else 1.0,
+        template_multiplier=template.multiplier,
+        country_value_scale=country.value_scale,
+    )
+
+    return GeneratedPlate(
+        plate_text=plate_text,
+        normalized_text=normalize_plate(plate_text),
+        display_segments=display_segments(styles),
+        country=country,
+        region_code=parsed_region,
+        region_name_en=region.name_en if region else "",
+        region_name_ru=region.name_ru if region else "",
+        template_code=template.code,
+        template_pattern=template.pattern,
+        plate_type=template.plate_type,
+        analysis=analysis,
+        rarity=rarity,
+        natural_rarity=nat,
+        luck_rarity=luck,
+        rarity_score=score,
+        collector_value=collector_value,
+        dealer_value=dealer_value,
+        currency_code=country.currency_code,
+        currency_symbol=country.currency_symbol,
+        reasons=list(analysis.reasons)[:4],
+        display_letters=list(analysis.letters),
+        display_numbers=list(analysis.digits),
+        segment_styles=styles,
+        is_secret=rarity is Rarity.SECRET,
+    )
+
+
 class PlateGenerator:
     """Turns RNG draws into a fully-resolved :class:`GeneratedPlate`."""
 
@@ -217,6 +332,7 @@ class PlateGenerator:
         luck: Rarity,
         *,
         discovery_count: int = 0,
+        force_secret: bool = False,
     ) -> GeneratedPlate:
         parsed = parse_template(template.pattern)
         plate_text, styles = render_template(
@@ -225,75 +341,17 @@ class PlateGenerator:
             region_code=region.code if region else None,
             rng=self.rng,
         )
-        region_code = region.code if region else None
-
-        analysis = analyze_plate(
-            plate_text,
-            region_code=region_code,
-            rarity_floor=template.rarity_floor,
-            plate_type=template.plate_type,
-            country_tag=country.tag,
-            is_secret=False,
-            season_code=self.ctx.season_code,
-        )
-
-        # Events nudge the score slightly, but can never dominate the patterns.
-        raw_event = float(self.ctx.event_multipliers.get(country.code, 1.0))
-        event_modifier = 1.0 + min(0.35, max(0.0, raw_event - 1.0) * 0.2)
-
-        score = compute_rarity_score(
-            analysis,
-            country_modifier=country.rarity_modifier,
-            template_multiplier=template.multiplier,
-            event_modifier=event_modifier,
-            novelty_bonus=6.0 if discovery_count == 0 else 0.0,
-        )
-
-        nat = natural_rarity(analysis)
-        rarity = resolve_final_rarity(
-            natural=nat,
-            luck=luck,
-            score=score,
-            traits=analysis.traits,
-            template_floor=template.rarity_floor,
-        )
-
-        dealer_value, collector_value = value_for_analysis(
-            rarity,
-            analysis,
-            discovery_count=discovery_count,
-            country_multiplier=country.rarity_modifier,
-            region_multiplier=1.12 if "region_match" in analysis.traits else 1.0,
-            template_multiplier=template.multiplier,
-            country_value_scale=country.value_scale,
-        )
-
-        reasons = list(analysis.reasons)
-        return GeneratedPlate(
+        return build_generated_plate(
             plate_text=plate_text,
-            normalized_text=normalize_plate(plate_text),
-            display_segments=display_segments(styles),
             country=country,
-            region_code=region_code,
-            region_name_en=region.name_en if region else "",
-            region_name_ru=region.name_ru if region else "",
-            template_code=template.code,
-            template_pattern=template.pattern,
-            plate_type=template.plate_type,
-            analysis=analysis,
-            rarity=rarity,
-            natural_rarity=nat,
-            luck_rarity=luck,
-            rarity_score=score,
-            collector_value=collector_value,
-            dealer_value=dealer_value,
-            currency_code=country.currency_code,
-            currency_symbol=country.currency_symbol,
-            reasons=reasons[:4],
-            display_letters=list(analysis.letters),
-            display_numbers=list(analysis.digits),
-            segment_styles=styles,
-            is_secret=rarity is Rarity.SECRET,
+            region=region,
+            template=template,
+            luck=luck,
+            styles=styles,
+            event_multipliers=self.ctx.event_multipliers,
+            discovery_count=discovery_count,
+            force_secret=force_secret,
+            season_code=self.ctx.season_code,
         )
 
     def generate(
@@ -324,16 +382,111 @@ class PlateGenerator:
         # candidate is better than failing the roll.
         return last  # type: ignore[return-value]
 
+    # --- admin test lab --------------------------------------------------
+    def generate_targeted(
+        self,
+        *,
+        country_code: str | None = None,
+        region_code: str | None = None,
+        template_code: str | None = None,
+        luck: Rarity = Rarity.COMMON,
+        target_rarity: Rarity | None = None,
+        require_trait: str | None = None,
+        max_attempts: int = TARGETED_MAX_ATTEMPTS,
+    ) -> GeneratedPlate:
+        """Deterministic generation for the internal test lab.
+
+        This is an *isolated* path: it never touches the rarity weights, the
+        country weights or any global state. It picks the country/template by
+        *code* out of the very same catalogue snapshot the roll engine uses, and
+        simply keeps drawing until the requested outcome is reached (bounded, so
+        it can never spin forever).
+
+        ``target_rarity`` is honoured by feeding it in as ``luck`` - the engine's
+        own resolver takes the most prestigious of natural/luck/score - so the
+        production RNG configuration is never modified to satisfy a test.
+        """
+        countries = self.ctx.countries
+        if country_code:
+            wanted = country_code.upper()
+            countries = tuple(c for c in countries if c.code == wanted)
+            if not countries:
+                raise ValueError(f"Unknown country code: {wanted}")
+        country = countries[0]
+
+        region = self._pick_region(country, region_code)
+        template = self._pick_template(country, region, template_code)
+        wanted_rarity = target_rarity or luck
+        force_secret = wanted_rarity is Rarity.SECRET
+
+        last: GeneratedPlate | None = None
+        for _ in range(max(1, max_attempts)):
+            plate = self._attempt(
+                country,
+                region,
+                template,
+                wanted_rarity,
+                force_secret=force_secret,
+            )
+            last = plate
+            if plate.rarity is wanted_rarity and (
+                require_trait is None or require_trait in plate.analysis.traits
+            ):
+                return plate
+            if require_trait is None and target_rarity is None:
+                return plate
+
+        if last is None:  # pragma: no cover - max_attempts >= 1 guarantees this
+            raise ValueError("Targeted generation produced nothing.")
+        return last
+
+    def _pick_region(self, country: CountryDef, region_code: str | None) -> RegionOption | None:
+        options = self.ctx.regions_by_country.get(country.code, ())
+        if not options:
+            return None
+        if region_code:
+            wanted = region_code.upper()
+            for option in options:
+                if option.code.upper() == wanted:
+                    return option
+            raise ValueError(f"Unknown region code {wanted} for {country.code}")
+        return pick_region(self.ctx, country, self.rng)
+
+    def _pick_template(
+        self,
+        country: CountryDef,
+        region: RegionOption | None,
+        template_code: str | None,
+    ) -> TemplateOption:
+        usable = [
+            option
+            for option in self.ctx.templates_by_country.get(country.code, ())
+            if region is not None or not option.requires_region
+        ]
+        if not usable:
+            raise ValueError(f"No usable templates for country {country.code}")
+        if template_code:
+            wanted = template_code.upper()
+            for option in usable:
+                if option.code.upper() == wanted:
+                    return option
+            raise ValueError(f"Unknown template {wanted} for {country.code}")
+        return pick_template(self.ctx, country, region, self.rng)
+
 
 __all__ = [
+    "MAX_GENERATION_ATTEMPTS",
+    "TARGETED_MAX_ATTEMPTS",
     "GeneratedPlate",
     "GenerationContext",
     "PlateGenerator",
     "RegionOption",
     "TemplateOption",
+    "build_generated_plate",
     "display_segments",
     "pick_country",
     "pick_region",
     "pick_template",
     "render_template",
+    "styles_for_text",
 ]

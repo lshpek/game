@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin,
+    admin_bot,
     analytics,
     auth,
     challenges,
@@ -34,5 +35,8 @@ api_router.include_router(ranking.router)
 api_router.include_router(payments.router)
 api_router.include_router(analytics.router)
 api_router.include_router(admin.router)
+# Service-to-surface control API used by the Telegram admin panel. Kept apart
+# from the player-JWT ``/api/admin`` routes so the two auth paths stay separate.
+api_router.include_router(admin_bot.router)
 
 __all__ = ["api_router"]

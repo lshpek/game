@@ -1,8 +1,11 @@
 """ORM model package - importing it registers every table on ``Base.metadata``."""
 
+from app.models.admin import AdminAuditLog
 from app.models.analytics import AnalyticsEvent, IdempotencyRecord
 from app.models.container import Container, ContainerOpening
 from app.models.enums import (
+    AdminAction,
+    AdminCategory,
     AnalyticsEventName,
     ChallengeStatus,
     EntitlementTier,
@@ -47,6 +50,9 @@ from app.models.user import User, Wallet, WalletTransaction
 
 __all__ = [
     "Achievement",
+    "AdminAction",
+    "AdminAuditLog",
+    "AdminCategory",
     "Album",
     "AlbumProgress",
     "AnalyticsEvent",

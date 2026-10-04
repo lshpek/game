@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hmac
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from fastapi import Depends, Header, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, settings
@@ -14,6 +17,7 @@ from app.core.rate_limit import SlidingWindowRateLimiter
 from app.core.security import TokenError, decode_access_token
 from app.db.session import get_db
 from app.models.user import User
+from app.services.admin import AdminActor
 
 bearer_scheme = HTTPBearer(auto_error=False)
 rate_limiter = SlidingWindowRateLimiter(enabled=settings.rate_limit_enabled)
@@ -110,3 +114,61 @@ def idempotency_key(header: str | None = Header(default=None, alias="Idempotency
     if len(cleaned) > 128:
         raise AuthError("Idempotency-Key is too long.", code="BAD_IDEMPOTENCY_KEY")
     return cleaned
+
+
+def verify_service_token(provided: str | None) -> None:
+    """Constant-time check of the internal service token.
+
+    Rejects placeholders so a deployment that forgot to rotate ``SERVICE_TOKEN``
+    cannot be reached with a publicly known value.
+    """
+    configured = settings.service_token
+    if not provided or not configured or configured == "CHANGE_ME":
+        raise AuthError("Invalid service credentials.", code="SERVICE_UNAUTHORIZED")
+    if not hmac.compare_digest(str(provided), str(configured)):
+        raise AuthError("Invalid service credentials.", code="SERVICE_UNAUTHORIZED")
+
+
+@dataclass(frozen=True, slots=True)
+class AdminBotContext:
+    """A verified service-to-service admin caller."""
+
+    actor: AdminActor
+    request_id: str | None
+
+
+def get_admin_bot_context(
+    x_service_token: str | None = Header(default=None, alias="X-Service-Token"),
+    x_admin_telegram_id: str | None = Header(default=None, alias="X-Admin-Telegram-Id"),
+    x_request_id: str | None = Header(default=None, alias="X-Request-ID"),
+    db: Session = Depends(get_db),
+) -> AdminBotContext:
+    """Authorise an internal admin-tool request.
+
+    Two independent checks, both mandatory:
+
+    1. a valid internal service token (constant-time comparison);
+    2. the claimed Telegram id must appear in ``settings.admin_telegram_ids``.
+
+    The id in the header is never trusted on its own - it is *verified* against
+    the server-side allow list, so neither a leaked token nor a spoofed header can
+    grant admin access.
+    """
+    verify_service_token(x_service_token)
+
+    raw = (x_admin_telegram_id or "").strip()
+    if not raw.isdigit():
+        raise PermissionDeniedError("Administrator access required.", code="ADMIN_REQUIRED")
+    telegram_id = int(raw)
+    allowed = {int(value) for value in settings.admin_telegram_ids}
+    if telegram_id not in allowed:
+        raise PermissionDeniedError("Administrator access required.", code="ADMIN_REQUIRED")
+
+    admin_user = db.execute(select(User).where(User.telegram_id == telegram_id)).scalar_one_or_none()
+    return AdminBotContext(
+        actor=AdminActor(
+            telegram_id=telegram_id,
+            user_id=int(admin_user.id) if admin_user is not None else None,
+        ),
+        request_id=(x_request_id or None),
+    )

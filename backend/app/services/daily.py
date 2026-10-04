@@ -78,6 +78,19 @@ class DailyService:
         user.bonus_rolls = int(user.bonus_rolls) + max(0, amount)
         self.db.flush()
 
+    def reset_daily_usage(self, user: User) -> int:
+        """Refund today's spent rolls.
+
+        Admin-only escape hatch used when a player is wrongly blocked. It only
+        touches today's counter - the configured daily allowance itself is never
+        changed, and bonus rolls are left alone.
+        """
+        used = int(user.daily_rolls_used)
+        user.daily_rolls_used = 0
+        user.daily_reset_at = next_utc_midnight()
+        self.db.flush()
+        return used
+
     def can_claim(self, user: User) -> bool:
         claimed_at = as_aware(user.last_daily_claim_at)
         if claimed_at is None:

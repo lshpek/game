@@ -92,6 +92,10 @@ class Settings(BaseSettings):
     rate_limit_referral: int = 10
     rate_limit_payment: int = 10
     rate_limit_admin: int = 60
+    # Internal control surfaces (Telegram admin panel) get their own bucket so a
+    # burst of panel taps can never exhaust the interactive admin API quota.
+    rate_limit_admin_bot: int = 120
+    rate_limit_admin_read: int = 240
 
     # --- Payments -------------------------------------------------------
     payment_provider: Literal["telegram_stars", "mock"] = "mock"
