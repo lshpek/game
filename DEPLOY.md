@@ -12,6 +12,38 @@ npm i -g @railway/cli
 railway login
 ```
 
+## Where NUMORA lives today
+
+| Piece | URL |
+|---|---|
+| Bot | https://t.me/NumoraAppBot |
+| Mini App | https://frontend-production-d8fc.up.railway.app/numora |
+| API | https://backend-production-74fd.up.railway.app |
+| Repo | https://github.com/lshpek/game |
+
+## Deploying an update (the order matters)
+
+`VITE_API_BASE_URL` is **inlined at build time**, so the frontend must be rebuilt
+after the backend domain is known. Railway services are not guaranteed to
+auto-deploy on push here, so push `railway up` explicitly.
+
+```bash
+railway up backend                      # applies migrations (AUTO_MIGRATE=true)
+railway up bot                          # picks up backend changes immediately
+railway variables set --service frontend \
+  VITE_API_BASE_URL=https://backend-production-74fd.up.railway.app
+railway up frontend                     # rebuilds with the current API base
+```
+
+Afterwards:
+
+1. Reopen the Mini App from a closed chat, or from another client - Telegram and
+   the browser cache the previous JS bundle aggressively.
+2. Send `/panelcheck` to the bot in a private chat. It prints the acting id, the
+   admin allow list, whether the tokens are set, the backend URL, and whether a
+   real panel call succeeds. That single command distinguishes "the bot is not
+   deployed" from "the backend is unreachable" from "the service token is wrong".
+
 ## 1. Create the project and database
 
 ```bash
@@ -74,9 +106,9 @@ switch the Dockerfile CMD accordingly.
 
 ```
 /newapp  ->  NumoraAppBot
-            Title:      Number Collector
-            Short name: numora
-            Web App URL: https://<your-frontend>.up.railway.app
+             Title:      NUMORA
+             Short name: numora
+             Web App URL: https://<your-frontend>.up.railway.app
 ```
 
 Set the menu button (HTTPS URL required):
@@ -85,6 +117,12 @@ Set the menu button (HTTPS URL required):
 curl -X POST "https://api.telegram.org/bot$TOKEN/setChatMenuButton" \
   -d "menu_button={\"type\":\"web_app\",\"text\":\"Play\",\"web_app\":{\"url\":\"https://<your-frontend>.up.railway.app/numora\"}}"
 ```
+
+The bot publishes its command list on every start: players see `/start` and
+`/help`, and each configured admin additionally sees `/admin`, `/panel`, `/a` and
+`/panelcheck` in their own chat. Because that list is scoped per chat, a newly
+added `ADMIN_TELEGRAM_ID` only appears after the bot service restarts - which
+`railway up bot` does.
 
 ## 6. Verify
 

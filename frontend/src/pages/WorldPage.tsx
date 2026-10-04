@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import { CountrySelector } from '@/components/Selectors';
 import { EmptyState, LoadingSpinner } from '@/components/States';
-import { useI18n } from '@/i18n';
+import { useI18n, type I18nValue } from '@/i18n';
 import { useNavigate } from 'react-router-dom';
 import { game } from '@/services/api';
 import { formatCoins } from '@/lib/format';
@@ -100,7 +100,11 @@ export function WorldPage() {
           icon="🌍"
           title={t('world.empty')}
           hint={t('world.emptyHint')}
-          action={{ label: t('nav.roll'), onClick: () => navigate('/') }}
+          action={
+            <button type="button" className="btn-primary" onClick={() => navigate('/')}>
+              {t('nav.roll')}
+            </button>
+          }
         />
       ) : (
         <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -127,7 +131,7 @@ function CountryCard({
 }: {
   country: CountryProgress;
   name: string;
-  t: (key: never, vars?: Record<string, string | number>) => string;
+  t: I18nValue['t'];
   onHunt: () => void;
 }) {
   const percent = country.total ? Math.round((country.discovered / country.total) * 100) : 0;
@@ -135,17 +139,17 @@ function CountryCard({
 
   // Completion hooks, strongest first. These are what pull the player back.
   const hook = (() => {
-    if (country.total && left === 0) return { text: t('world.complete' as never), tone: 'gold' as const };
+    if (country.total && left === 0) return { text: t('world.complete'), tone: 'gold' as const };
     if (left > 0 && left <= 5) {
       return {
-        text: t('world.almost' as never, { count: left }),
+        text: t('world.almost', { count: left }),
         tone: 'hot' as const,
       };
     }
     if (percent >= 80) {
-      return { text: t('world.close' as never, { percent }), tone: 'warm' as const };
+      return { text: t('world.close', { percent }), tone: 'warm' as const };
     }
-    if (country.is_secret_found) return { text: t('world.secretFound' as never), tone: 'accent' as const };
+    if (country.is_secret_found) return { text: t('world.secretFound'), tone: 'accent' as const };
     return null;
   })();
 
@@ -200,7 +204,7 @@ function CountryCard({
           onClick={onHunt}
           className="min-h-[32px] rounded-full border border-white/12 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/70 active:scale-95"
         >
-          {t('world.hunt' as never)}
+          {t('world.hunt')}
         </button>
       </div>
 

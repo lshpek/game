@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { LoadingSpinner } from '@/components/States';
@@ -44,6 +44,8 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
   const [category, setCategory] = useState<CollectibleCategory | null>(null);
   const [country, setCountry] = useState<string | null>(null);
   const [result, setResult] = useState<PlateRollResult | null>(null);
+  // Guards the in-flight roll against a double tap inside a single frame.
+  const rollingRef = useRef(false);
 
   const worldQuery = useQuery({
     queryKey: ['world'],
@@ -83,6 +85,7 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
   const roll = useMutation({
     mutationFn: (key: string) => game.roll(key, { category, country_code: country }),
     onSuccess: (data) => {
+      rollingRef.current = false;
       setResult(data);
       if (profile) {
         applyProfile({ ...profile, coins: data.balance, rolls_remaining: data.rolls_remaining });
@@ -90,12 +93,18 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
       invalidate();
     },
     onError: (error) => {
+      rollingRef.current = false;
       hapticError();
       if (error instanceof Error && 'code' in error) invalidate();
     },
   });
 
   const handleRoll = useCallback(() => {
+    // A double tap must not become two rolls. `isPending` only flips after a
+    // re-render, so two taps inside one frame would both pass the disabled check
+    // and the player would silently pay two rolls for one press.
+    if (rollingRef.current) return;
+    rollingRef.current = true;
     haptic('medium');
     roll.mutate(makeIdempotencyKey('roll'));
   }, [roll]);
@@ -150,7 +159,10 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
       <Reveal
         result={result}
         pending={busy}
-        onClose={() => setResult(null)}
+        onClose={() => {
+          rollingRef.current = false;
+          setResult(null);
+        }}
         onShare={handleShare}
         onSell={handleSell}
         onViewCollection={() => {

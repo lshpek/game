@@ -136,7 +136,11 @@ export function CountrySelector({
   // Keep the active chip in view when the selection changes from elsewhere.
   useEffect(() => {
     const node = scroller.current?.querySelector<HTMLElement>('[data-active="true"]');
-    node?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    // jsdom and older WebViews have no scrollIntoView; a missing nicety must never
+    // break the selector.
+    if (typeof node?.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }
   }, [value]);
 
   const chips: Array<{ code: string | null; label: string; flag: string; option?: CountryOption }> = [

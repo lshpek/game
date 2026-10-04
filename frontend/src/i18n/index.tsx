@@ -54,7 +54,7 @@ function detectLang(): Lang {
   return 'en';
 }
 
-interface I18nValue {
+export interface I18nValue {
   lang: Lang;
   setLang: (lang: Lang) => void;
   toggleLang: () => void;
