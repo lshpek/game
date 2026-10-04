@@ -21,12 +21,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.admin import ops
-from bot.admin.client import AdminAPIError, AdminBotClient
+from bot.admin.client import AdminAPIError, AdminAPIUnavailable, AdminBotClient
 from bot.admin.config import ACCESS_DENIED_TEXT, AdminConfig, load_config
 from bot.admin.formatters import truncate
 from bot.admin.states import get_data, selected_user_id
@@ -332,8 +332,18 @@ async def require_user(context: FSMContext, target: Any) -> int | None:
     return user_id
 
 
-async def refresh_commands(bot: Bot) -> None:
-    """Publish the command list, with ``/admin`` only for admins."""
+async def refresh_commands(bot: Bot) -> list[str]:
+    """Publish the command list, with the admin commands scoped per operator.
+
+    Returns the ids whose command list could not be published, so a failure is
+    visible in the startup log instead of surfacing much later as "the commands are
+    in the picker but nothing happens".
+
+    Scoping matters: ``set_my_commands`` with ``BotCommandScopeDefault`` replaces the
+    list *everybody* sees, so a single global list would advertise ``/admin`` to every
+    player. ``BotCommandScopeChat`` publishes the admin list only into that operator's
+    own chat, which is exactly the audience it belongs to.
+    """
     from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
     from bot.admin.config import ADMIN_COMMANDS, USER_COMMANDS
@@ -342,13 +352,39 @@ async def refresh_commands(bot: Bot) -> None:
     admin_commands = [BotCommand(command=cmd, description=text) for cmd, text in ADMIN_COMMANDS]
 
     await bot.set_my_commands(default, scope=BotCommandScopeDefault())
+    failed: list[str] = []
     for telegram_id in sorted(config.admin_ids):
-        # ``BotCommandScopeChat`` is keyword-only. Passing the id positionally
-        # raises inside pydantic and takes the whole bot down on startup.
-        await bot.set_my_commands(
-            default + admin_commands,
-            scope=BotCommandScopeChat(chat_id=telegram_id),
-        )
+        try:
+            # ``BotCommandScopeChat`` is keyword-only. Passing the id positionally
+            # raises inside pydantic and takes the whole bot down on startup.
+            await bot.set_my_commands(
+                default + admin_commands,
+                scope=BotCommandScopeChat(chat_id=telegram_id),
+            )
+        except TelegramAPIError as exc:
+            # One unreachable chat must not cost every other operator their menu.
+            logger.error("could not publish the admin command list: %s", exc)
+            failed.append(str(telegram_id))
+        logger.info("Admin commands published for Telegram id %s", telegram_id)
+    return failed
+
+
+async def verify_panel(bot: Bot, telegram_id: int) -> str | None:
+    """Check at startup that the panel can actually reach and be served by the backend.
+
+    Returns ``None`` when everything works, otherwise a short operator-readable
+    reason. This is the difference between "the panel is broken" being discovered by
+    an operator tapping ``/admin`` and it being reported in the startup log.
+    """
+    try:
+        await get_client().dashboard(int(telegram_id))
+    except AdminAPIUnavailable as exc:
+        return f"backend unreachable ({exc.code})"
+    except AdminAPIError as exc:
+        return f"backend refused the panel call: {exc.code} (HTTP {exc.status})"
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"{type(exc).__name__}: {exc}"
+    return None
 
 
 __all__ = [
@@ -369,4 +405,5 @@ __all__ = [
     "stage",
     "telegram_id",
     "toast",
+    "verify_panel",
 ]

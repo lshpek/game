@@ -701,6 +701,147 @@ class TestRoutingArchitecture:
         assert empty == [], empty
         assert too_long == [], too_long
 
+class TestPanelAvailability:
+    """``/admin``, ``/panel`` and ``/a`` must always produce an answer.
+
+    The failure this guards against was completely silent: an exception inside the
+    handler was absorbed by aiogram's error middleware, the command had already
+    been deleted, and the operator was left staring at an empty chat with the
+    commands still listed in the picker.
+    """
+
+    @pytest.mark.parametrize("alias", ["/panel", "/a", "/admin"])
+    async def test_every_alias_answers(self, dispatcher, bot, session, backend, monkeypatch, alias):
+        import bot.bot as bot_module
+
+        monkeypatch.setattr(bot_module, "delete_quietly", _noop_delete)
+        session.reset()
+        await dispatcher.feed_update(bot, _text_message(alias))
+        assert _bodies(session), f"{alias} produced no output at all"
+
+    @pytest.mark.parametrize("alias", ["/panel", "/a", "/admin"])
+    async def test_an_internal_failure_still_reaches_the_operator(
+        self, dispatcher, bot, session, monkeypatch, alias
+    ):
+        """A backend blow-up must not look like an unhandled route."""
+        import bot.bot as bot_module
+
+        monkeypatch.setattr(bot_module, "delete_quietly", _noop_delete)
+
+        class _Broken(StubBackend):
+            def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+                raise RuntimeError("panel exploded")
+
+        broken = _Broken()
+        for module in ("bot.admin.common", "bot.admin.router", "bot.admin.world", "bot.admin.players"):
+            monkeypatch.setattr(f"{module}.get_client", lambda: broken, raising=False)
+
+        session.reset()
+        await dispatcher.feed_update(bot, _text_message(alias))
+        assert _bodies(session), f"{alias} swallowed the failure"
+
+    async def test_the_operator_can_diagnose_the_panel_from_the_chat(
+        self, dispatcher, bot, session, monkeypatch
+    ):
+        import bot.bot as bot_module
+
+        monkeypatch.setattr(bot_module, "delete_quietly", _noop_delete)
+
+        class _Broken(StubBackend):
+            def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+                raise RuntimeError("backend unreachable")
+
+        broken = _Broken()
+        for module in ("bot.admin.common", "bot.admin.router", "bot.admin.world", "bot.admin.players"):
+            monkeypatch.setattr(f"{module}.get_client", lambda: broken, raising=False)
+
+        session.reset()
+        await dispatcher.feed_update(bot, _text_message("/panelcheck"))
+        bodies = _bodies(session)
+        assert bodies, "/panelcheck produced no output"
+        assert any("панель" in body.lower() or "Панель" in body for body in bodies)
+
+    async def test_a_stranger_cannot_diagnose_the_panel(self, dispatcher, bot, session):
+        session.reset()
+        await dispatcher.feed_update(bot, _text_message("/panelcheck", user_id=STRANGER_ID))
+        assert _bodies(session)
+
+
+class TestCommandPublication:
+    async def test_admin_commands_are_published_per_admin_chat(self):
+        """The admin list must be scoped to those chats, never published globally."""
+        from aiogram.types import BotCommandScopeChat, BotCommandScopeDefault
+
+        from bot.admin.common import refresh_commands
+        from bot.admin.config import ADMIN_COMMANDS, USER_COMMANDS
+
+        calls: list[tuple[int, list[str], Any]] = []
+
+        class _Recorder:
+            async def set_my_commands(self, commands, scope=None, **kwargs):
+                scope_chat = getattr(scope, "chat_id", None)
+                if isinstance(scope, BotCommandScopeDefault):
+                    scope_chat = None
+                elif not isinstance(scope, BotCommandScopeChat):
+                    raise AssertionError("unexpected scope")
+                calls.append((scope_chat, [c.command for c in commands], scope))
+
+        failed = await refresh_commands(_Recorder())  # type: ignore[arg-type]
+        assert failed == []
+
+        default_scope = next(call for call in calls if call[0] is None)
+        assert default_scope[1] == [cmd for cmd, _ in USER_COMMANDS]
+        # Players must not see /admin advertised.
+        assert "admin" not in default_scope[1]
+
+        admin_scopes = [call for call in calls if call[0] is not None]
+        assert len(admin_scopes) == 2, "one scoped call per configured admin"
+        for _chat, commands, _scope in admin_scopes:
+            for cmd, _text in ADMIN_COMMANDS:
+                assert cmd in commands
+
+    async def test_one_unreachable_chat_does_not_break_the_others(self):
+        from aiogram.exceptions import TelegramRetryAfter
+
+        from bot.admin.common import refresh_commands
+
+        seen: list[int | None] = []
+
+        class _Flaky:
+            async def set_my_commands(self, commands, scope=None, **kwargs):
+                chat_id = getattr(scope, "chat_id", None)
+                seen.append(chat_id)
+                if chat_id == ADMIN_ID:
+                    raise TelegramRetryAfter(method=None, message="too fast", retry_after=1)
+
+        failed = await refresh_commands(_Flaky())  # type: ignore[arg-type]
+        assert failed == [str(ADMIN_ID)]
+        assert ADMIN_ID_2 in seen
+
+    async def test_the_panel_is_probed_at_startup(self, monkeypatch):
+        from bot.admin.common import verify_panel
+
+        class _Ok:
+            async def dashboard(self, telegram_id: int) -> dict[str, Any]:
+                return {"users": {}}
+
+        monkeypatch.setattr("bot.admin.common.get_client", lambda: _Ok())
+        assert await verify_panel(None, ADMIN_ID) is None  # type: ignore[arg-type]
+
+    async def test_an_unreachable_backend_is_reported(self, monkeypatch):
+        from bot.admin.client import AdminAPIUnavailable
+        from bot.admin.common import verify_panel
+
+        class _Down:
+            async def dashboard(self, telegram_id: int) -> dict[str, Any]:
+                raise AdminAPIUnavailable("Backend unreachable.", code="UNREACHABLE")
+
+        monkeypatch.setattr("bot.admin.common.get_client", lambda: _Down())
+        reason = await verify_panel(None, ADMIN_ID)  # type: ignore[arg-type]
+        assert reason is not None
+        assert "unreachable" in reason
+
+
 # ---------------------------------------------------------------------------
 # every route reaches its own screen
 # ---------------------------------------------------------------------------

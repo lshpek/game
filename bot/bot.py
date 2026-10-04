@@ -61,7 +61,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from bot.admin.client import close_shared_clients
 from bot.admin.common import config as ADMIN_CONFIG
-from bot.admin.common import refresh_commands
+from bot.admin.common import refresh_commands, verify_panel
 from bot.admin.formatters import esc
 from bot.admin.router import router as admin_router
 from bot.admin.states import AdminStates
@@ -181,7 +181,8 @@ bot_instance: Bot | None = None
 
 # Admin panel readiness, evaluated once so ``--check`` can report it.
 ADMIN_PANEL_ENABLED = ADMIN_CONFIG.enabled
-ADMIN_ADMIN_IDS_COUNT = len(ADMIN_CONFIG.admin_ids)
+ADMIN_ADMIN_IDS = frozenset(ADMIN_CONFIG.admin_ids)
+ADMIN_ADMIN_IDS_COUNT = len(ADMIN_ADMIN_IDS)
 
 
 # --------------------------------------------------------------------------
@@ -379,12 +380,61 @@ async def handle_successful_payment(message: types.Message) -> None:
     await delete_after(confirmation, CLEANUP_DELAY)
 
 
+@router.message(Command("panelcheck"))
+async def handle_panel_check(message: types.Message) -> None:
+    """Report why the admin panel is not working, in the operator's own chat.
+
+    Registered **before** the filterless ``discard_everything_else``: a bare
+    ``@router.message()`` matches every message, so anything placed after it is
+    unreachable in practice. This command exists precisely because "the commands
+    are in the picker but nothing happens" has no other explanation - it prints the
+    things that can break it: the id, the allow list, the backend and whether the
+    panel call actually succeeds.
+    """
+    try:
+        await _panel_check(message)
+    except Exception as exc:  # pragma: no cover - diagnostics must never fail
+        logger.error("panelcheck failed", exc_info=True)
+        await message.answer(f"⚠️ Проверка не завершилась: <code>{esc(type(exc).__name__)}</code>")
+
+
+async def _panel_check(message: types.Message) -> None:
+    actor_id = message.from_user.id if message.from_user else None
+    if not ADMIN_PANEL_ENABLED:
+        await message.answer(
+            "⚠️ <b>Панель выключена</b>\n\n"
+            "Нужны <code>ADMIN_TELEGRAM_IDS</code> и настоящий <code>SERVICE_TOKEN</code>."
+        )
+        return
+    if actor_id not in ADMIN_ADMIN_IDS:
+        await message.answer("🔒 Нет доступа.")
+        return
+
+    problem = await verify_panel(message.bot, int(actor_id))
+    lines = [
+        "🩺 <b>Проверка панели</b>",
+        f"ваш id: <code>{actor_id}</code>",
+        f"вы в списке админов: {'да' if actor_id in ADMIN_ADMIN_IDS else 'нет'}",
+        f"bot token: {'задан' if BOT_TOKEN not in PLACEHOLDERS else 'НЕ ЗАДАН'}",
+        f"service token: {'задан' if SERVICE_TOKEN not in PLACEHOLDERS else 'НЕ ЗАДАН'}",
+        f"backend: <code>{esc(BACKEND_URL)}</code>",
+        f"панель: {'✅ работает' if problem is None else '❌ ' + esc(problem)}",
+    ]
+    if problem is not None:
+        lines.append("\n<i>Подробности в логе сервиса бота.</i>")
+    await message.answer("\n".join(lines))
+
+
 @router.message()
 async def discard_everything_else(message: types.Message) -> None:
     """Last handler: no command, no text, nothing to keep.
 
     Stray messages (unknown commands, plain text, stickers in private chat) are
     simply removed so the chat only ever holds the Play message.
+
+    Registered **last** on purpose. A filterless ``@router.message()`` matches every
+    single message, so anything added after it is only reachable if the earlier
+    handlers happen to decline.
     """
     await delete_quietly(message)
 
@@ -468,14 +518,30 @@ async def on_startup(bot: Bot) -> None:
 
     # Ordinary players see only /start and /help. The admin commands are scoped to
     # the configured ids, and the backend re-verifies them on every request.
-    await refresh_commands(bot)
+    unscoped = await refresh_commands(bot)
+    if unscoped:
+        logger.error(
+            "Admin commands are missing for Telegram id(s) %s - /admin will still work there, "
+            "but the command will not be listed in the picker.",
+            ", ".join(unscoped),
+        )
 
     if not ADMIN_PANEL_ENABLED:
         logger.warning(
             "Admin panel disabled: set ADMIN_TELEGRAM_IDS and a non-placeholder SERVICE_TOKEN to enable /admin."
         )
-    else:
-        logger.info("Admin panel enabled for %d Telegram id(s).", ADMIN_ADMIN_IDS_COUNT)
+        return
+
+    # Prove the panel can actually be served before an operator taps /admin. A
+    # broken backend, a wrong token or a routing mismatch is a startup problem, not
+    # something to discover from "the commands are there but nothing happens".
+    for telegram_id in sorted(ADMIN_ADMIN_IDS):
+        problem = await verify_panel(bot, telegram_id)
+        if problem is None:
+            logger.info("Admin panel verified for Telegram id %s", telegram_id)
+        else:
+            logger.error("Admin panel BROKEN for Telegram id %s: %s", telegram_id, problem)
+            logger.info("  Player facing hint: run `/panelcheck` in the bot chat for details.")
 
 
 def explain_error(exc: Exception) -> str:

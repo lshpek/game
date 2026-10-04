@@ -73,6 +73,7 @@ ADMIN_COMMANDS: tuple[tuple[str, str], ...] = (
     ("admin", "Admin control centre"),
     ("panel", "Admin control centre"),
     ("a", "Admin control centre"),
+    ("panelcheck", "Diagnose the admin panel"),
 )
 
 
