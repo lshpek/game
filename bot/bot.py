@@ -49,15 +49,16 @@ from dotenv import load_dotenv
 # Configuration - loaded from the project-root .env (no python-dotenv needed
 # for deployment: real env vars always win, the file is just the fallback).
 # --------------------------------------------------------------------------
-# ИЗМЕНЕНО: Так как Root Directory на Railway = /bot, файл bot.py лежит в /app.
-# Значит, SCRIPT_DIR = /app, и папка admin лежит прямо в /app/admin.
+# ИЗМЕНЕНО: Поскольку Root Directory на Railway = /bot, главный файл bot.py
+# лежит в /app, а папка admin находится в /app/bot/admin.
 SCRIPT_DIR = Path(__file__).resolve().parent
+BOT_PACKAGE_DIR = SCRIPT_DIR / "bot"
 ENV_FILE = Path(os.getenv("BOT_ENV_FILE", SCRIPT_DIR / ".env"))
 load_dotenv(ENV_FILE, override=False)
 
-# ИЗМЕНЕНО: Добавляем /app в sys.path, чтобы Python видел папку admin
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+# ИЗМЕНЕНО: Добавляем /app/bot в sys.path, чтобы Python видел модуль admin
+if str(BOT_PACKAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(BOT_PACKAGE_DIR))
 
 # ИЗМЕНЕНО: Убран префикс bot. у всех импортов из папки admin
 from admin.client import close_shared_clients
