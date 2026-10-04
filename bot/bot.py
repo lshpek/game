@@ -49,22 +49,23 @@ from dotenv import load_dotenv
 # Configuration - loaded from the project-root .env (no python-dotenv needed
 # for deployment: real env vars always win, the file is just the fallback).
 # --------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-ENV_FILE = Path(os.getenv("BOT_ENV_FILE", PROJECT_ROOT / ".env"))
+# ИЗМЕНЕНО: Так как Root Directory на Railway = /bot, файл bot.py лежит в /app.
+# Значит, SCRIPT_DIR = /app, и папка admin лежит прямо в /app/admin.
+SCRIPT_DIR = Path(__file__).resolve().parent
+ENV_FILE = Path(os.getenv("BOT_ENV_FILE", SCRIPT_DIR / ".env"))
 load_dotenv(ENV_FILE, override=False)
 
-# ``python bot.py`` puts the script's own directory on sys.path, which would make
-# ``bot`` resolve to this file instead of the package. Put the project root first
-# so ``bot.admin`` imports resolve identically locally and inside the container.
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+# ИЗМЕНЕНО: Добавляем /app в sys.path, чтобы Python видел папку admin
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
+# ИЗМЕНЕНО: Убран префикс bot. у всех импортов из папки admin
 from admin.client import close_shared_clients
-from bot.admin.common import config as ADMIN_CONFIG
-from bot.admin.common import refresh_commands, verify_panel
-from bot.admin.formatters import esc
-from bot.admin.router import router as admin_router
-from bot.admin.states import AdminStates
+from admin.common import config as ADMIN_CONFIG
+from admin.common import refresh_commands, verify_panel
+from admin.formatters import esc
+from admin.router import router as admin_router
+from admin.states import AdminStates
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "CHANGE_ME")
 BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "CHANGE_ME").lstrip("@")
