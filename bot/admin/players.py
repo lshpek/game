@@ -20,9 +20,9 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.admin import keyboards as kb
-from bot.admin import ops
-from bot.admin.common import (
+from admin import keyboards as kb
+from admin import ops
+from admin.common import (
     data_of,
     get_client,
     guard,
@@ -33,32 +33,32 @@ from bot.admin.common import (
     telegram_id,
     toast,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     achievements as fmt_achievements,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     confirm,
     esc,
     num,
     result_ok,
     user_line,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     cosmetics as fmt_cosmetics,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     economy as fmt_economy,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     missions as fmt_missions,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     premium as fmt_premium,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     progression as fmt_progression,
 )
-from bot.admin.states import (
+from admin.states import (
     KEY_AMOUNT,
     KEY_COUNTRY,
     KEY_KIND,
@@ -117,7 +117,7 @@ async def _render_economy(target: CallbackQuery | Message, user_id: int) -> None
 
 async def _render_user(target: CallbackQuery | Message, context: FSMContext, user_id: int | None = None) -> None:
     """Re-use the shared player card renderer from the main router."""
-    from bot.admin.router import _render_user as render_user_card
+    from admin.router import _render_user as render_user_card
 
     await render_user_card(target, context, user_id)
 
@@ -938,7 +938,7 @@ async def user_plates(callback: CallbackQuery, context: FSMContext) -> None:
     except Exception as exc:
         await render_error(callback, exc)
         return
-    from bot.admin.formatters import plate_card
+    from admin.formatters import plate_card
 
     await render(
         callback.message,
@@ -960,7 +960,7 @@ async def user_plates_page(callback: CallbackQuery, context: FSMContext) -> None
     except Exception as exc:
         await render_error(callback, exc)
         return
-    from bot.admin.formatters import plate_card
+    from admin.formatters import plate_card
 
     await render(
         callback.message,
@@ -976,7 +976,7 @@ async def user_profile_menu(callback: CallbackQuery, context: FSMContext) -> Non
     user_id = await require_user(context, callback)
     if user_id is None:
         return
-    from bot.admin.formatters import user_profile
+    from admin.formatters import user_profile
 
     try:
         data = await get_client().user_detail(telegram_id(callback), user_id)

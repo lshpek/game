@@ -13,8 +13,8 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.admin import keyboards as kb
-from bot.admin.common import (
+from admin import keyboards as kb
+from admin.common import (
     data_of,
     get_client,
     guard,
@@ -23,40 +23,40 @@ from bot.admin.common import (
     require_user,
     toast,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     analytics as fmt_analytics,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     audit as fmt_audit,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     confirm,
     esc,
     num,
     plate_card,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     countries as fmt_countries,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     events as fmt_events,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     plate_list as fmt_plate_list,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     ranks as fmt_ranks,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     system as fmt_system,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     test_roll as fmt_test_roll,
 )
-from bot.admin.formatters import (
+from admin.formatters import (
     transactions as fmt_transactions,
 )
-from bot.admin.states import (
+from admin.states import (
     KEY_CATEGORY,
     KEY_COUNTRY,
     KEY_MODE,
@@ -108,7 +108,7 @@ async def refresh_current_screen(target: CallbackQuery, context: FSMContext) -> 
     }
     handler = handlers.get(str(screen))
     if handler is None:
-        from bot.admin.router import open_panel
+        from admin.router import open_panel
 
         await open_panel(target.message)
         return
@@ -116,7 +116,7 @@ async def refresh_current_screen(target: CallbackQuery, context: FSMContext) -> 
 
 
 async def _refresh_user_section(target: CallbackQuery, context: FSMContext) -> None:
-    from bot.admin.router import _render_user
+    from admin.router import _render_user
 
     await _render_user(target, context)
 
@@ -827,7 +827,7 @@ async def plate_first_prompt(callback: CallbackQuery, context: FSMContext) -> No
 
 
 async def _player_label(target: CallbackQuery | Message, context: FSMContext, user_id: int) -> str:
-    from bot.admin.players import _user_label
+    from admin.players import _user_label
 
     return await _user_label(target, context, user_id)
 
@@ -879,7 +879,7 @@ async def rank_open_player(callback: CallbackQuery, context: FSMContext) -> None
     await context.update_data(rank_category=await data_of(context, "rank_category", "COLLECTION"))
     await context.update_data(rank_period=await data_of(context, "rank_period", "daily"))
     await set_selected_user(context, user_id)
-    from bot.admin.router import _render_user
+    from admin.router import _render_user
 
     await _render_user(callback, context, user_id)
 

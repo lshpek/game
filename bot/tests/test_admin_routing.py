@@ -33,12 +33,12 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 
-from bot.admin import keyboards as kb
-from bot.admin import ops
-from bot.admin.common import ACCESS_DENIED_TEXT
-from bot.admin.router import router as admin_router
-from bot.admin.routing import fallback_router, resolve_owner, resolved_routes
-from bot.admin.states import AdminStates
+from admin import keyboards as kb
+from admin import ops
+from admin.common import ACCESS_DENIED_TEXT
+from admin.router import router as admin_router
+from admin.routing import fallback_router, resolve_owner, resolved_routes
+from admin.states import AdminStates
 
 ADMIN_ID = 1604952820
 ADMIN_ID_2 = 1604952821
@@ -772,8 +772,8 @@ class TestCommandPublication:
         """The admin list must be scoped to those chats, never published globally."""
         from aiogram.types import BotCommandScopeChat, BotCommandScopeDefault
 
-        from bot.admin.common import refresh_commands
-        from bot.admin.config import ADMIN_COMMANDS, USER_COMMANDS
+        from admin.common import refresh_commands
+        from admin.config import ADMIN_COMMANDS, USER_COMMANDS
 
         calls: list[tuple[int, list[str], Any]] = []
 
@@ -803,7 +803,7 @@ class TestCommandPublication:
     async def test_one_unreachable_chat_does_not_break_the_others(self):
         from aiogram.exceptions import TelegramRetryAfter
 
-        from bot.admin.common import refresh_commands
+        from admin.common import refresh_commands
 
         seen: list[int | None] = []
 
@@ -819,7 +819,7 @@ class TestCommandPublication:
         assert ADMIN_ID_2 in seen
 
     async def test_the_panel_is_probed_at_startup(self, monkeypatch):
-        from bot.admin.common import verify_panel
+        from admin.common import verify_panel
 
         class _Ok:
             async def dashboard(self, telegram_id: int) -> dict[str, Any]:
@@ -829,8 +829,8 @@ class TestCommandPublication:
         assert await verify_panel(None, ADMIN_ID) is None  # type: ignore[arg-type]
 
     async def test_an_unreachable_backend_is_reported(self, monkeypatch):
-        from bot.admin.client import AdminAPIUnavailable
-        from bot.admin.common import verify_panel
+        from admin.client import AdminAPIUnavailable
+        from admin.common import verify_panel
 
         class _Down:
             async def dashboard(self, telegram_id: int) -> dict[str, Any]:
@@ -1191,7 +1191,7 @@ STAGED_ACTIONS: list[tuple[str, str]] = [
 
 class TestReasonDispatcher:
     async def _stage(self, dispatcher, bot, session, backend, kind: str):
-        from bot.admin import players
+        from admin import players
 
         await _open_user(dispatcher, bot, session, backend)
         context = _context(dispatcher, bot)
@@ -1234,7 +1234,7 @@ class TestReasonDispatcher:
         await _open_user(dispatcher, bot, session, backend)
         context = _context(dispatcher, bot)
         await context.set_state(AdminStates.reason)
-        from bot.admin import players
+        from admin import players
 
         session.reset()
         await players.reason_input(_mounted("some reason", bot=bot), context)
@@ -1244,7 +1244,7 @@ class TestReasonDispatcher:
 
     async def test_a_command_is_not_accepted_as_a_reason(self, dispatcher, bot, session, backend):
         """A slash command must never be swallowed as the reason for a grant."""
-        from bot.admin import players
+        from admin import players
 
         await _open_user(dispatcher, bot, session, backend)
         context = _context(dispatcher, bot)
@@ -1256,7 +1256,7 @@ class TestReasonDispatcher:
         assert backend.mutations == []
 
     async def test_an_empty_reason_keeps_the_flow_alive(self, dispatcher, bot, session, backend):
-        from bot.admin import players
+        from admin import players
 
         await _open_user(dispatcher, bot, session, backend)
         context = _context(dispatcher, bot)
@@ -1288,7 +1288,7 @@ class TestTestLabCountryList:
         assert len(seen) == 60, f"only {len(seen)} countries reachable"
 
     async def test_country_search_filters_by_name(self, dispatcher, bot, session, backend):
-        from bot.admin.world import lab_search_input
+        from admin.world import lab_search_input
 
         context = _context(dispatcher, bot)
         await context.update_data(screen="lab-country-search")
@@ -1298,7 +1298,7 @@ class TestTestLabCountryList:
         assert codes == {"C07"}, codes
 
     async def test_country_search_filters_by_category(self, dispatcher, bot, session, backend):
-        from bot.admin.world import _render_country_picker
+        from admin.world import _render_country_picker
 
         context = _context(dispatcher, bot)
         await context.update_data(country_query="RUS", category="PHONE_NUMBER")
@@ -1308,7 +1308,7 @@ class TestTestLabCountryList:
         assert codes == set(), "the category filter was ignored"
 
     async def test_country_search_with_no_match_says_so(self, dispatcher, bot, session, backend):
-        from bot.admin.world import lab_search_input
+        from admin.world import lab_search_input
 
         context = _context(dispatcher, bot)
         await context.update_data(screen="lab-country-search")
@@ -1322,7 +1322,7 @@ class TestTestLabCountryList:
 # ---------------------------------------------------------------------------
 class TestPlateSearch:
     async def test_a_bare_number_is_a_text_query_not_an_id(self, dispatcher, bot, session, backend):
-        from bot.admin.world import plate_search_input
+        from admin.world import plate_search_input
 
         context = _context(dispatcher, bot)
         await context.update_data(screen="plate-search")
@@ -1333,7 +1333,7 @@ class TestPlateSearch:
         assert reads[-1]["params"]["query"] == "777"
 
     async def test_an_explicit_hash_id_still_opens_a_catalogue_entry(self, dispatcher, bot, session, backend):
-        from bot.admin.world import plate_search_input
+        from admin.world import plate_search_input
 
         context = _context(dispatcher, bot)
         await context.update_data(screen="plate-search")
@@ -1362,7 +1362,7 @@ class TestPlateSearch:
 
     async def test_a_search_run_outside_the_number_browser_is_ignored(self, dispatcher, bot, session, backend):
         """``AdminStates.search_user`` is shared with the user lookup."""
-        from bot.admin.world import plate_search_input
+        from admin.world import plate_search_input
 
         context = _context(dispatcher, bot)
         await context.update_data(screen="user-search")

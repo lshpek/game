@@ -107,7 +107,7 @@ class TestEverythingElseIsRemoved:
 
 class TestAdminPanelStillWorks:
     async def test_admin_command_is_deleted_and_panel_is_sent(self, dispatcher, bot, session, monkeypatch):
-        from bot.admin import common
+        from admin import common
 
         class _OfflineClient:
             """Stands in for the HTTP client so no request leaves the process."""

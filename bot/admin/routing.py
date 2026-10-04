@@ -1,4 +1,4 @@
-﻿"""Callback routing architecture for the admin panel.
+"""Callback routing architecture for the admin panel.
 
 Why this module exists
 ----------------------
@@ -38,9 +38,9 @@ from typing import Any
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Chat, Message, User
 
-from bot.admin import keyboards as kb
-from bot.admin.common import guard
-from bot.admin.keyboards import exact_routes, pack, prefix_routes
+from admin import keyboards as kb
+from admin.common import guard
+from admin.keyboards import exact_routes, pack, prefix_routes
 
 logger = logging.getLogger("bot.admin.routing")
 

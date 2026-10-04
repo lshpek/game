@@ -19,22 +19,22 @@ from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from bot.admin import keyboards as kb
-from bot.admin import ops
-from bot.admin.common import data_of, guard, render, render_error, require_user, toast
-from bot.admin.formatters import (
+from admin import keyboards as kb
+from admin import ops
+from admin.common import data_of, guard, render, render_error, require_user, toast
+from admin.formatters import (
     esc,
     num,
     user_card,
     user_line,
 )
-from bot.admin.players import router as players_router
-from bot.admin.routing import attach_fallback, handled_routes
-from bot.admin.states import (
+from admin.players import router as players_router
+from admin.routing import attach_fallback, handled_routes
+from admin.states import (
     AdminStates,
     set_selected_user,
 )
-from bot.admin.world import router as world_router
+from admin.world import router as world_router
 
 logger = logging.getLogger("bot.admin.router")
 
@@ -100,7 +100,7 @@ async def open_panel(
     instead of being read from the message, because the panel message itself has no
     reliable author (and none at all in a channel).
     """
-    from bot.admin.common import actor_of, get_client
+    from admin.common import actor_of, get_client
 
     actor = actor_id if actor_id is not None else actor_of(message)
     if actor is None:
@@ -111,7 +111,7 @@ async def open_panel(
     except Exception as exc:
         await render_error(message, exc)
         return
-    from bot.admin.formatters import home, recent_actions
+    from admin.formatters import home, recent_actions
 
     text = home(data)
     actions = recent_actions(data.get("recent_actions") or [])
@@ -121,7 +121,7 @@ async def open_panel(
 
 
 def _telegram_id(target: Message | CallbackQuery) -> int:
-    from bot.admin.common import telegram_id
+    from admin.common import telegram_id
 
     return telegram_id(target)
 
@@ -150,7 +150,7 @@ async def go_back(callback: CallbackQuery, context: FSMContext) -> None:
 @guard
 async def refresh(callback: CallbackQuery, context: FSMContext) -> None:
     """Re-read whatever screen is currently open."""
-    from bot.admin.world import refresh_current_screen
+    from admin.world import refresh_current_screen
 
     await refresh_current_screen(callback, context)
 
@@ -177,7 +177,7 @@ async def users_menu(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == kb.pack(kb.USER_RECENT))
 @guard
 async def users_recent(callback: CallbackQuery) -> None:
-    from bot.admin.common import get_client
+    from admin.common import get_client
 
     try:
         data = await get_client().search_users(_telegram_id(callback), None, 1)
@@ -208,7 +208,7 @@ async def users_page(callback: CallbackQuery, context: FSMContext) -> None:
     ``upg`` / ``upi`` / ``upl`` / ``url`` (progression, profile, numbers, rolls), so
     a plain ``startswith`` filter would steal every one of those sub-routes.
     """
-    from bot.admin.common import get_client
+    from admin.common import get_client
 
     parts = kb.unpack(callback.data or "")
     page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
@@ -224,7 +224,7 @@ async def users_page(callback: CallbackQuery, context: FSMContext) -> None:
 @router.message(AdminStates.search_user)
 @guard
 async def users_search_input(message: Message, context: FSMContext) -> None:
-    from bot.admin.common import get_client
+    from admin.common import get_client
 
     query = (message.text or "").strip()
     await context.set_state(None)
@@ -291,14 +291,14 @@ async def user_plates(callback: CallbackQuery, context: FSMContext) -> None:
     user_id = await require_user(context, callback)
     if user_id is None:
         return
-    from bot.admin.common import get_client
+    from admin.common import get_client
 
     try:
         data = await get_client().plates(_telegram_id(callback), user_id=user_id, sort="recent", page=1)
     except Exception as exc:
         await render_error(callback, exc)
         return
-    from bot.admin.formatters import plate_list
+    from admin.formatters import plate_list
 
     await render(callback.message, plate_list(data), kb.user_plates_keyboard())
 
@@ -316,7 +316,7 @@ async def user_snapshot(callback: CallbackQuery, context: FSMContext) -> None:
 @guard
 async def cosmetics_menu(callback: CallbackQuery, context: FSMContext) -> None:
     """Global cosmetic catalogue: the section behind the home screen button."""
-    from bot.admin.common import get_client
+    from admin.common import get_client
 
     await context.update_data(cosmetics_query=None)
     try:
@@ -324,7 +324,7 @@ async def cosmetics_menu(callback: CallbackQuery, context: FSMContext) -> None:
     except Exception as exc:
         await render_error(callback, exc)
         return
-    from bot.admin.formatters import cosmetics as fmt_cosmetics
+    from admin.formatters import cosmetics as fmt_cosmetics
 
     items = data.get("items") or []
     await render(
@@ -349,14 +349,14 @@ async def cosmetics_catalogue_search(callback: CallbackQuery, context: FSMContex
 @guard
 async def rewards_catalogue(callback: CallbackQuery, context: FSMContext) -> None:
     """Fixed-value reward catalogue: what an operator can hand out at all."""
-    from bot.admin.common import get_client
+    from admin.common import get_client
 
     try:
         data = await get_client().get("/rewards/catalog", admin_telegram_id=_telegram_id(callback))
     except Exception as exc:
         await render_error(callback, exc)
         return
-    from bot.admin.formatters import rewards as fmt_rewards
+    from admin.formatters import rewards as fmt_rewards
 
     await render(
         callback.message,
@@ -375,7 +375,7 @@ async def _render_user(
     *,
     actor_id: int | None = None,
 ) -> None:
-    from bot.admin.common import actor_of, get_client
+    from admin.common import actor_of, get_client
 
     user_id = user_id or await require_user(context, target)
     if user_id is None:

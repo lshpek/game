@@ -15,8 +15,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.admin.router import router as admin_router
-from bot.admin.states import AdminStates
+from admin.router import router as admin_router
+from admin.states import AdminStates
 from bot.bot import router as player_router
 
 
@@ -101,7 +101,7 @@ def _reset_admin_http_pool() -> None:
     bound to a closed loop raises on reuse. Clearing it here keeps the pooling
     behaviour honest without weakening the production code path.
     """
-    from bot.admin import client as admin_client
+    from admin import client as admin_client
 
     admin_client._CLIENTS.clear()
     yield
@@ -116,7 +116,7 @@ def _offline_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     patching ``bot.admin.common.get_client``; anything else would silently build a
     real connection to ``BACKEND_URL``, which is why this is enforced globally.
     """
-    from bot.admin import client as admin_client
+    from admin import client as admin_client
 
     def _refuse(timeout: float) -> Any:
         raise AssertionError("the admin panel attempted a real backend call")
@@ -149,8 +149,8 @@ def _pinned_admin_config(monkeypatch: pytest.MonkeyPatch) -> None:
     ``ADMIN_TELEGRAM_IDS`` while it boots. Pinning the value here keeps the bot
     tests deterministic no matter which suite ran first.
     """
-    from bot.admin import common
-    from bot.admin.config import AdminConfig
+    from admin import common
+    from admin.config import AdminConfig
 
     monkeypatch.setattr(
         common,

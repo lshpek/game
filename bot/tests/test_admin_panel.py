@@ -14,12 +14,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.admin import keyboards as kb
-from bot.admin import ops
-from bot.admin.common import ACCESS_DENIED_TEXT, guard
-from bot.admin.config import AdminConfig, _parse_admin_ids
-from bot.admin.router import router
-from bot.admin.states import AdminStates, clear_flow_data, selected_user_id, set_selected_user
+from admin import keyboards as kb
+from admin import ops
+from admin.common import ACCESS_DENIED_TEXT, guard
+from admin.config import AdminConfig, _parse_admin_ids
+from admin.router import router
+from admin.states import AdminStates, clear_flow_data, selected_user_id, set_selected_user
 
 ADMIN_ID = 1604952820
 STRANGER_ID = 42
@@ -353,13 +353,13 @@ class TestInputParsing:
         ],
     )
     def test_clean_number(self, raw, expected):
-        from bot.admin.players import _clean_number
+        from admin.players import _clean_number
 
         assert _clean_number(raw) == expected
 
     @pytest.mark.parametrize("raw", ["", "abc", "12abc", "--5", None])
     def test_clean_number_rejects_junk(self, raw):
-        from bot.admin.players import _clean_number
+        from admin.players import _clean_number
 
         assert _clean_number(raw) is None
 
@@ -389,26 +389,26 @@ class TestInputParsing:
 # ---------------------------------------------------------------------------
 class TestFormatters:
     def test_num_formats_with_spaces(self):
-        from bot.admin.formatters import num
+        from admin.formatters import num
 
         assert num(18450) == "18 450"
         assert num(None) == "-"
 
     def test_signed_marks_direction(self):
-        from bot.admin.formatters import signed
+        from admin.formatters import signed
 
         assert signed(1000) == "+1 000"
         assert signed(-1000) == "-1 000"
 
     def test_esc_blocks_html_injection(self):
-        from bot.admin.formatters import esc
+        from admin.formatters import esc
 
         assert esc("<b>x</b>") == "&lt;b&gt;x&lt;/b&gt;"
         assert "<" not in esc("<script>")
         assert "&" in esc("a & b")
 
     def test_home_screen_contains_no_raw_secrets(self):
-        from bot.admin.formatters import home
+        from admin.formatters import home
 
         payload = {
             "users": {"total": 1, "new_today": 0, "active_today": 1},
@@ -424,7 +424,7 @@ class TestFormatters:
         assert "secret" not in text.lower()
 
     def test_system_screen_renders_without_a_token(self):
-        from bot.admin.formatters import system
+        from admin.formatters import system
 
         text = system(
             {
@@ -441,12 +441,12 @@ class TestFormatters:
         assert "BOT_TOKEN" not in text
 
     def test_truncate_keeps_messages_within_the_telegram_limit(self):
-        from bot.admin.formatters import truncate
+        from admin.formatters import truncate
 
         assert len(truncate("x" * 10_000)) <= 4096
 
     def test_user_card_surfaces_the_key_fields(self):
-        from bot.admin.formatters import user_card
+        from admin.formatters import user_card
 
         text = user_card(
             {
