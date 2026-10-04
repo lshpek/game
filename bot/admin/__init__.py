@@ -16,6 +16,6 @@ results. Authorisation, validation, mutation and auditing all happen in the
 backend, and every handler re-checks the admin id before acting.
 """
 
-from bot.admin.router import router
+from admin.router import router
 
 __all__ = ["router"]

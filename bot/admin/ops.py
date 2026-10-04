@@ -21,7 +21,7 @@ from typing import Any
 
 from aiogram.fsm.context import FSMContext
 
-from bot.admin.states import FLOW_TTL_SECONDS, KEY_PENDING, get_data, pop_data
+from admin.states import FLOW_TTL_SECONDS, KEY_PENDING, get_data, pop_data
 
 # 10 chars of urlsafe base64 is ~60 bits of entropy - plenty to stop accidental
 # or replayed callback reuse.

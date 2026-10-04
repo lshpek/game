@@ -25,11 +25,11 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
-from bot.admin import ops
-from bot.admin.client import AdminAPIError, AdminAPIUnavailable, AdminBotClient
-from bot.admin.config import ACCESS_DENIED_TEXT, AdminConfig, load_config
-from bot.admin.formatters import truncate
-from bot.admin.states import get_data, selected_user_id
+from admin import ops
+from admin.client import AdminAPIError, AdminAPIUnavailable, AdminBotClient
+from admin.config import ACCESS_DENIED_TEXT, AdminConfig, load_config
+from admin.formatters import truncate
+from admin.states import get_data, selected_user_id
 
 logger = logging.getLogger("bot.admin")
 
@@ -234,7 +234,7 @@ async def deny(target: CallbackQuery | Message) -> None:
     if message is None:
         return
     try:
-        from bot.bot import delete_quietly
+        from __main__ import delete_quietly
 
         await delete_quietly(message)
     except Exception:  # pragma: no cover - cleanup must never mask the refusal
@@ -346,7 +346,7 @@ async def refresh_commands(bot: Bot) -> list[str]:
     """
     from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
-    from bot.admin.config import ADMIN_COMMANDS, USER_COMMANDS
+    from admin.config import ADMIN_COMMANDS, USER_COMMANDS
 
     default = [BotCommand(command=cmd, description=text) for cmd, text in USER_COMMANDS]
     admin_commands = [BotCommand(command=cmd, description=text) for cmd, text in ADMIN_COMMANDS]
