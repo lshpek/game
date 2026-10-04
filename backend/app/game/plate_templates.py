@@ -36,7 +36,8 @@ from dataclasses import dataclass, field
 from app.core.errors import ValidationError
 
 MAX_PATTERN_LENGTH = 96
-_CHOICE_RE = re.compile(r"^([LDFRA])\[([^\]]+)\]$")
+# Every token kind that may be followed by a ``[choices]`` group.
+_CHOICE_RE = re.compile(r"^([LDFRAX])\[([^\]]+)\]$")
 TOKEN_KINDS = frozenset({"L", "D", "F", "R", "X", "A"})
 
 
@@ -144,9 +145,12 @@ def parse_template(pattern: str) -> ParsedTemplate:
             continue
 
         # ``D[7]`` - a choice group; the kind letter sits just before ``[``.
+        # This must be checked *before* the single-token branch below, otherwise
+        # ``X[6789]`` would consume ``X`` as a plain token and then see an
+        # unbalanced group.
         if char == "[":
             close = text.find("]", index)
-            if close == -1 or close == index - 1:
+            if close == -1 or index == 0:
                 raise ValidationError(
                     f"Unbalanced choice group in {pattern!r}", code="BAD_PLATE_TEMPLATE"
                 )
@@ -155,14 +159,23 @@ def parse_template(pattern: str) -> ParsedTemplate:
                 raise ValidationError(
                     f"Choice group must follow a token, got {kind!r}", code="BAD_PLATE_TEMPLATE"
                 )
+            # Drop the kind letter we already buffered as a literal.
             if buffer:
-                parts.append(Literal("".join(buffer)))
+                buffer.pop()
+                if buffer:
+                    parts.append(Literal("".join(buffer)))
                 buffer = []
             parts.append(_token_from(f"{kind}[{text[index + 1 : close]}]"))
             index = close + 1
             continue
 
-        if char in TOKEN_KINDS:
+        # ``X`` is a token kind too - but when it directly precedes ``[``,
+        # it is the group's kind letter, not a slot of its own. Defer to the
+        # ``[`` branch below (which pops it back off the buffer), otherwise a
+        # bare token would be double-counted alongside the group token.
+        if char in TOKEN_KINDS and not (
+            index + 1 < len(text) and text[index + 1] == "["
+        ):
             if buffer:
                 parts.append(Literal("".join(buffer)))
                 buffer = []

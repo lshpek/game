@@ -69,7 +69,9 @@ class User(Base, TimestampMixin):
     regions_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     first_discoveries_count: Mapped[int] = mapped_column(Integer, default=0, index=True, nullable=False)
     duplicates_sold_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    best_plate_id: Mapped[int | None] = mapped_column(ForeignKey("plates.id", ondelete="SET NULL"))
+    best_plate_id: Mapped[int | None] = mapped_column(
+        ForeignKey("plates.id", ondelete="SET NULL", use_alter=True)
+    )
     best_collector_value: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     equipped_title: Mapped[str | None] = mapped_column(String(64))
     equipped_cosmetic_code: Mapped[str | None] = mapped_column(String(48))

@@ -1,0 +1,324 @@
+"""Plate API schemas.
+
+Every response is typed so the frontend never has to guess a field's shape.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class PlateVisualSchema(BaseModel):
+    theme: str = "european"
+    aspect: float = 4.6
+    background: str = "#f4f6fb"
+    border: str = "#1f2937"
+    text: str = "#111827"
+    muted: str = "#6b7280"
+    accent: str = "#7c5cff"
+    band_color: str | None = None
+    band_width: float = 0.0
+    header: str = ""
+    header_align: str = "center"
+    show_flag: bool = True
+    show_region_flag: bool = True
+    region_badge: bool = True
+    font_stack: str = "display"
+    letter_spacing: str = "0.06em"
+    gloss: bool = True
+    texture: str = "metal"
+
+
+class CountryRef(BaseModel):
+    code: str = ""
+    name_en: str = ""
+    name_ru: str = ""
+    flag: str = ""
+
+
+class RegionRef(BaseModel):
+    code: str
+    name_en: str
+    name_ru: str
+
+
+class TemplateRef(BaseModel):
+    code: str = ""
+    pattern: str = ""
+
+
+class DiscovererRef(BaseModel):
+    display_name: str
+    username: str | None = None
+    photo_url: str | None = None
+
+
+class PlateCard(BaseModel):
+    """Canonical plate representation used everywhere in the app."""
+
+    id: int
+    plate_text: str
+    normalized_text: str
+    display_segments: list[str] = Field(default_factory=list)
+    letters: list[str] = Field(default_factory=list)
+    numbers: list[str] = Field(default_factory=list)
+    plate_type: str = "STANDARD"
+    rarity: str
+    rarity_score: int = 0
+    rarity_color: str = "#8b93a7"
+    reasons: list[str] = Field(default_factory=list)
+    reason_labels: list[str] = Field(default_factory=list)
+    traits: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    story: str = ""
+    is_secret: bool = False
+    season_code: str | None = None
+    discovery_count: int = 0
+    first_discovered_at: str | None = None
+    first_discoverer: DiscovererRef | None = None
+
+    # Fictional, country-local presentation value.
+    collector_value: int = 0
+    currency_code: str = "USD"
+    currency_symbol: str = "$"
+    # Authoritative NUMORA economy value.
+    dealer_value: int = 0
+
+    country: CountryRef = Field(default_factory=CountryRef)
+    region: RegionRef | None = None
+    template: TemplateRef = Field(default_factory=TemplateRef)
+    visual: PlateVisualSchema = Field(default_factory=PlateVisualSchema)
+
+    owned: bool = False
+    duplicate_count: int = 0
+    is_favorite: bool = False
+    is_new: bool = False
+    acquired_at: str | None = None
+    # Compatibility alias for the legacy ``number`` field.
+    number: str = ""
+
+
+class PlateRollResponse(BaseModel):
+    success: bool = True
+    roll_id: int
+    plate: PlateCard
+    rarity: str
+    natural_rarity: str
+    luck_rarity: str
+    rarity_score: int
+    is_duplicate: bool
+    is_first_discovery: bool
+    is_new_country: bool = False
+    is_new_region: bool = False
+    numora_awarded: int = 0
+    balance: int
+    rolls_remaining: int
+    sale_value: int
+    collector_level: int
+    missions_completed: list[dict[str, Any]] = Field(default_factory=list)
+    albums_completed: list[dict[str, Any]] = Field(default_factory=list)
+    unlocked_achievements: list[dict[str, Any]] = Field(default_factory=list)
+    event: dict[str, Any] | None = None
+    replayed: bool = False
+    share_start_param: str
+    # Compatibility aliases for clients built against the number roll.
+    value: int = 0
+    coins_awarded: int = 0
+    conversion_value: int = 0
+    number: PlateCard | None = None
+
+
+class PlateRollHistoryItem(BaseModel):
+    roll_id: int
+    plate_text: str
+    plate_id: int
+    country_code: str
+    rarity: str
+    rarity_score: int
+    collector_value: int
+    currency_symbol: str
+    dealer_value: int
+    is_duplicate: bool
+    is_first_discovery: bool
+    created_at: str
+
+
+class CollectionResponse(BaseModel):
+    items: list[PlateCard]
+    page: int
+    page_size: int
+    total: int
+    has_more: bool
+    rarity_breakdown: dict[str, int] = Field(default_factory=dict)
+    progress: float = 0.0
+    target: int = 0
+    duplicates_count: int = 0
+    total_dealer_value: int = 0
+
+
+class SaleResponse(BaseModel):
+    plate_id: int
+    plate_text: str
+    copies_sold: int
+    numora_gained: int
+    duplicates_left: int
+    balance: int
+
+
+class SellAllResponse(BaseModel):
+    plates_sold: int
+    copies_sold: int
+    numora_gained: int
+    balance: int
+
+
+class FavoriteResponse(BaseModel):
+    plate_id: int
+    is_favorite: bool
+
+
+class ShareResponse(BaseModel):
+    plate_id: int
+    plate_text: str
+    rarity: str
+    rarity_score: int
+    collector_value: int
+    currency_symbol: str
+    dealer_value: int
+    start_param: str
+    mini_app_link: str
+    share_text_en: str = ""
+    share_text_ru: str = ""
+
+
+class CountrySummary(BaseModel):
+    code: str
+    name_en: str
+    name_ru: str
+    flag: str
+    region_group: str
+    currency_code: str
+    currency_symbol: str
+    visual: PlateVisualSchema = Field(default_factory=PlateVisualSchema)
+    collected: int = 0
+    total: int = 0
+    progress: float = 0.0
+    percent: float = 0.0
+    best_rarity: str | None = None
+    regions_collected: int = 0
+    regions_total: int = 0
+    completed: bool = False
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class WorldResponse(BaseModel):
+    countries: list[CountrySummary]
+    total_collected: int
+    total_plates: int
+    progress: float
+    event: dict[str, Any] | None = None
+
+
+class CountryDetail(BaseModel):
+    code: str
+    name_en: str
+    name_ru: str
+    flag: str
+    region_group: str
+    currency_code: str
+    currency_symbol: str
+    visual: PlateVisualSchema = Field(default_factory=PlateVisualSchema)
+    collected: int
+    total: int
+    progress: float
+    percent: float
+    best_rarity: str | None = None
+    completed: bool
+    regions: list[dict[str, Any]] = Field(default_factory=list)
+    templates: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AlbumProgressItem(BaseModel):
+    code: str
+    name_en: str
+    name_ru: str
+    description_en: str = ""
+    description_ru: str = ""
+    icon: str = ""
+    kind: str = "THEME"
+    collected: int
+    total: int
+    progress: float
+    percent: float
+    completed: bool
+    reward_coins: int = 0
+    reward_title: str | None = None
+
+
+class MissionItem(BaseModel):
+    code: str
+    name_en: str
+    name_ru: str
+    description_en: str = ""
+    description_ru: str = ""
+    icon: str = "target"
+    progress: int
+    target: int
+    completed: bool
+    reward_coins: int
+    reward_rolls: int
+    reward_xp: int
+
+
+class CosmeticItem(BaseModel):
+    code: str
+    kind: str
+    name_en: str
+    name_ru: str
+    description_en: str = ""
+    description_ru: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+    price_stars: int = 0
+    price_numora: int = 0
+    rarity: str = "COMMON"
+    owned: bool = False
+    equipped: bool = False
+    locked: bool = True
+
+
+class EquipCosmeticResponse(BaseModel):
+    code: str
+    equipped: bool
+    equipped_map: dict[str, str] = Field(default_factory=dict)
+
+
+class EventResponse(BaseModel):
+    code: str
+    name_en: str
+    name_ru: str
+    flag: str
+    country_multipliers: dict[str, float] = Field(default_factory=dict)
+    ends_at: str | None = None
+    reward_coins: int = 0
+    reward_title: str | None = None
+    is_event: bool = False
+
+
+class PlateShareView(BaseModel):
+    """Public view of a shared plate (used by deep links)."""
+
+    plate: PlateCard
+    discoverer: DiscovererRef | None = None
+    is_owned: bool = False
+    start_param: str = ""
+
+
+class DealerSaleRequest(BaseModel):
+    copies: int = Field(default=1, ge=1, le=999)
+    allow_last: bool = Field(
+        default=False,
+        description="Explicit opt-in required before the final copy may be sold.",
+    )

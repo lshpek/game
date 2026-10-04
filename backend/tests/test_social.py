@@ -1,4 +1,4 @@
-"""Referrals, challenges, sharing, leaderboards, achievements and seasons."""
+﻿"""Referrals, challenges, sharing, leaderboards, achievements and seasons."""
 
 from __future__ import annotations
 
@@ -70,23 +70,37 @@ class TestReferrals:
 class TestSharing:
     def test_share_returns_a_deep_link(self, client, authed):
         session = authed(710001)
-        roll = client.post("/api/roll", headers=session["headers"]).json()
-        payload = client.post(f"/api/numbers/{roll['number']['number']}/share", headers=session["headers"]).json()
-        assert payload["start_param"].startswith("number_")
-        assert "startapp=number_" in payload["mini_app_link"]
+        plate = client.post("/api/roll", headers=session["headers"]).json()["plate"]
+        payload = client.post(
+            f"/api/plates/{plate['id']}/share", headers=session["headers"]
+        ).json()
+        # The deep link carries an encoded plate id, never raw plate text.
+        assert payload["start_param"] == f"plate_{plate['id']}"
+        assert "startapp=plate_" in payload["mini_app_link"]
+        assert plate["plate_text"] not in payload["start_param"]
         assert client.get("/api/user", headers=session["headers"]).json()["shares_count"] >= 1
 
-    def test_shared_number_deep_link_is_parsed_on_login(self, client):
-        response = client.post("/api/auth/dev", json={"telegram_id": 710002, "start_param": "number_1337"})
-        assert response.json()["start_context"]["shared_number"] == "1337"
+    def test_shared_plate_deep_link_is_parsed_on_login(self, client):
+        response = client.post(
+            "/api/auth/dev", json={"telegram_id": 710002, "start_param": "plate_42"}
+        )
+        assert response.json()["start_context"]["shared_plate_id"] == 42
+
+    def test_shared_plate_is_viewable_by_others(self, client, authed):
+        owner = authed(710003)
+        plate = client.post("/api/roll", headers=owner["headers"]).json()["plate"]
+        viewer = authed(710004)
+        detail = client.get(f"/api/plates/{plate['id']}", headers=viewer["headers"]).json()
+        assert detail["plate"]["plate_text"] == plate["plate_text"]
+        assert detail["is_owned"] is False
 
 
 class TestChallenges:
-    def test_challenge_requires_a_number_first(self, client, authed):
+    def test_challenge_requires_a_plate_first(self, client, authed):
         session = authed(720001)
         response = client.post("/api/challenges", headers=session["headers"], json={})
         assert response.status_code == 409
-        assert response.json()["error"]["code"] == "NO_NUMBERS"
+        assert response.json()["error"]["code"] == "NO_PLATES"
 
     def test_friend_can_accept_and_a_result_is_stored(self, client, authed):
         challenger = authed(720002)
@@ -94,22 +108,45 @@ class TestChallenges:
         challenge = client.post("/api/challenges", headers=challenger["headers"], json={}).json()
         assert challenge["status"] == "PENDING"
         assert "startapp=challenge_" in challenge["link"]
+        assert challenge["challenger_plate_text"]
 
         opponent = authed(720003)
         client.post("/api/roll", headers=opponent["headers"])
-        accepted = client.post(f"/api/challenges/{challenge['code']}/accept", headers=opponent["headers"]).json()
+        accepted = client.post(
+            f"/api/challenges/{challenge['code']}/accept", headers=opponent["headers"]
+        ).json()
 
         assert accepted["status"] == "COMPLETED"
-        assert accepted["opponent_number"] is not None
+        assert accepted["opponent_plate_text"]
         assert accepted["challenger_rarity"] and accepted["opponent_rarity"]
+        # The server resolved the winner from stored scores alone.
+        assert "winner_id" in accepted
+
+    def test_challenge_cannot_be_accepted_twice(self, client, authed):
+        challenger = authed(720006)
+        client.post("/api/roll", headers=challenger["headers"])
+        challenge = client.post("/api/challenges", headers=challenger["headers"], json={}).json()
+
+        opponent = authed(720007)
+        client.post("/api/roll", headers=opponent["headers"])
+        first = client.post(
+            f"/api/challenges/{challenge['code']}/accept", headers=opponent["headers"]
+        )
+        assert first.status_code == 200
+        second = client.post(
+            f"/api/challenges/{challenge['code']}/accept", headers=opponent["headers"]
+        )
+        assert second.status_code == 409
 
     def test_self_acceptance_is_rejected(self, client, authed):
         session = authed(720004)
         client.post("/api/roll", headers=session["headers"])
         challenge = client.post("/api/challenges", headers=session["headers"], json={}).json()
-        response = client.post(f"/api/challenges/{challenge['code']}/accept", headers=session["headers"])
-        assert response.status_code == 409
-        assert response.json()["error"]["code"] == "CHALLENGE_SELF"
+        response = client.post(
+            f"/api/challenges/{challenge['code']}/accept", headers=session["headers"]
+        )
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "SELF_ACCEPTANCE"
 
     def test_unknown_code_is_not_found(self, client, authed):
         session = authed(720005)
@@ -121,7 +158,13 @@ class TestLeaderboards:
         session = authed(730001)
         client.post("/api/roll", headers=session["headers"])
         payload = client.get("/api/leaderboard/all?period=alltime", headers=session["headers"]).json()
-        assert set(payload["boards"]) == {"VALUE", "RARITY", "COLLECTION", "ROLLS"}
+        assert set(payload["boards"]) == {
+            "COLLECTION",
+            "COUNTRIES",
+            "FIRST_DISCOVERIES",
+            "RARITY",
+            "ROLLS",
+        }
         assert payload["boards"]["ROLLS"]["entries"]
 
     @pytest.mark.parametrize("period", ["daily", "weekly", "alltime"])
@@ -136,11 +179,11 @@ class TestAchievementsAndSeasons:
     def test_achievements_report_progress(self, client, authed):
         session = authed(740001)
         payload = client.get("/api/achievements", headers=session["headers"]).json()
-        assert any(row["code"] == "FIRST_ROLL" for row in payload)
+        assert any(row["code"] == "FIRST_PLATE" for row in payload)
 
         client.post("/api/roll", headers=session["headers"])
         updated = {row["code"]: row for row in client.get("/api/achievements", headers=session["headers"]).json()}
-        assert updated["FIRST_ROLL"]["unlocked"] is True
+        assert updated["FIRST_PLATE"]["unlocked"] is True
 
     def test_seasons_are_listed_with_exactly_one_active(self, client, authed):
         session = authed(740002)

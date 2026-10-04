@@ -154,7 +154,8 @@ def upgrade() -> None:
             ("ix_plates_region_id", ["region_id"]),
             ("ix_plates_country_rarity", ["country_id", "rarity"]),
             ("ix_plates_country_region", ["country_id", "region_id"]),
-            ("ix_plates_discovery", ["discovery_count"]),
+            ("ix_plates_rarity_value", ["rarity", "collector_value"]),
+            ("ix_plates_discovery_count", ["discovery_count"]),
         ):
             batch.create_index(name, cols, unique=False)
 
@@ -475,6 +476,13 @@ def upgrade() -> None:
         batch.create_index("ix_users_plates_count", ["plates_count"])
         batch.create_index("ix_users_first_discoveries_count", ["first_discoveries_count"])
 
+    # --- store catalogue grouping ----------------------------------------
+    with op.batch_alter_table("products") as batch:
+        batch.add_column(
+            sa.Column("category", sa.String(length=24), nullable=False, server_default="PRO")
+        )
+        batch.create_index("ix_products_category", ["category"], unique=False)
+
     # --- supporter entitlements ------------------------------------------
     op.create_table(
         "supporter_entitlements",
@@ -501,6 +509,10 @@ def downgrade() -> None:
     # The legacy 4-digit number domain is deliberately preserved: this migration
     # only removes what it created.
     op.drop_table("supporter_entitlements")
+
+    with op.batch_alter_table("products") as batch:
+        batch.drop_index("ix_products_category")
+        batch.drop_column("category")
 
     with op.batch_alter_table("users") as batch:
         for name in (

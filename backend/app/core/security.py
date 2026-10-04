@@ -232,6 +232,39 @@ def parse_number_start_param(start_param: str | None) -> str | None:
     return raw
 
 
+def parse_plate_start_param(start_param: str | None) -> int | None:
+    """Extract a plate id from a ``plate_<id>`` deep-link parameter.
+
+    Only digits are accepted, so a crafted link can never smuggle content.
+    """
+    if not start_param or not start_param.startswith("plate_"):
+        return None
+    raw = start_param[len("plate_") :]
+    if not raw.isdigit() or len(raw) > 12:
+        raise ValidationError("Shared plate parameter is invalid.", code="INVALID_PLATE_PARAM")
+    return int(raw)
+
+
+def parse_country_start_param(start_param: str | None) -> str | None:
+    """Extract a country code from a ``country_<CODE>`` deep-link parameter."""
+    if not start_param or not start_param.startswith("country_"):
+        return None
+    raw = start_param[len("country_") :]
+    if not raw.isalnum() or not (2 <= len(raw) <= 4):
+        raise ValidationError("Country parameter is invalid.", code="INVALID_COUNTRY_PARAM")
+    return raw.upper()
+
+
+def parse_season_start_param(start_param: str | None) -> str | None:
+    """Extract a season code from a ``season_<code>`` deep-link parameter."""
+    if not start_param or not start_param.startswith("season_"):
+        return None
+    raw = start_param[len("season_") :]
+    if not raw.isalnum() or not (2 <= len(raw) <= 32):
+        raise ValidationError("Season parameter is invalid.", code="INVALID_SEASON_PARAM")
+    return raw
+
+
 def parse_challenge_start_param(start_param: str | None) -> str | None:
     """Extract a challenge code from a ``challenge_<code>`` deep-link parameter."""
     if not start_param or not start_param.startswith("challenge_"):

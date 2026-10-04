@@ -18,7 +18,12 @@ from app.schemas.number import (
 )
 from app.services.users import TOTAL_NUMBERS, UserService
 
-router = APIRouter(tags=["collection"])
+# Legacy number domain, kept alive for backwards compatibility.
+#
+# New gameplay lives in :mod:`app.api.v1.plates`; these routes serve the old
+# ``/api/numbers/*`` clients and the legacy collection view without ever
+# conflicting with the plate routes.
+router = APIRouter(prefix="/legacy", tags=["legacy"])
 
 
 @router.get("/collection", response_model=CollectionResponse, summary="Paginated, filterable collection")

@@ -1,4 +1,4 @@
-"""Ledger economy, payments and premium entitlements."""
+﻿"""Ledger economy, payments and premium entitlements."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class TestPayments:
     def test_products_are_listed(self, client, authed):
         session = authed(810001)
         payload = client.get("/api/payments/products", headers=session["headers"]).json()
-        assert any(row["code"] == "coins_1000" for row in payload)
+        assert any(row["code"] == "numora_5000" for row in payload)
         assert all(row["stars_price"] > 0 for row in payload)
 
     def test_invoice_is_created_and_confirmed_once(self, client, authed):
@@ -73,7 +73,7 @@ class TestPayments:
         invoice = client.post(
             "/api/payments/invoice",
             headers={**session["headers"], "Idempotency-Key": "pay-1"},
-            json={"product_code": "coins_1000"},
+            json={"product_code": "numora_5000"},
         ).json()
         assert invoice["provider"] == "MOCK"
         assert invoice["status"] == "PENDING"
@@ -86,7 +86,7 @@ class TestPayments:
         assert confirmed["granted"] is True
 
         after = client.get("/api/user", headers=session["headers"]).json()["coins"]
-        assert after == before + 1000
+        assert after == before + 5000
 
         # Re-confirming must never grant twice.
         client.post(
@@ -97,8 +97,8 @@ class TestPayments:
     def test_invoice_idempotency(self, client, authed):
         session = authed(810003)
         headers = {**session["headers"], "Idempotency-Key": "pay-2"}
-        first = client.post("/api/payments/invoice", headers=headers, json={"product_code": "coins_1000"}).json()
-        second = client.post("/api/payments/invoice", headers=headers, json={"product_code": "coins_1000"}).json()
+        first = client.post("/api/payments/invoice", headers=headers, json={"product_code": "numora_5000"}).json()
+        second = client.post("/api/payments/invoice", headers=headers, json={"product_code": "numora_5000"}).json()
         assert first["payment_id"] == second["payment_id"]
 
     def test_premium_purchase_unlocks_the_pro_box(self, client, authed):

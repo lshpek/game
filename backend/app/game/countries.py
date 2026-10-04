@@ -1,4 +1,4 @@
-﻿"""Launch country catalogue: regions, templates, currencies, albums and events.
+"""Launch country catalogue: regions, templates, currencies, albums and events.
 
 Pure configuration. Adding a country (or region, or template) means appending
 one definition - no engine, API or React code changes.
@@ -16,7 +16,7 @@ LATIN = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CYRILLIC = "РђР‘Р’Р“Р”Р•РЃР–Р—РР™РљР›РњРќРћРџР РЎРўРЈР¤РҐР¦Р§РЁР©РЄР«Р¬Р­Р®РЇ"
 JAPANESE = "г‚ўг‚¤г‚¦г‚Ёг‚Єг‚«г‚­г‚Їг‚±г‚іг‚µг‚·г‚№г‚»г‚Ѕг‚їгѓЃгѓ„гѓ†гѓ€гѓЉгѓ‹гѓЊгѓЌгѓЋгѓЏгѓ’гѓ•гѓгѓ›гѓћгѓџгѓ гѓЎгѓўгѓ¤гѓ¦гѓЁгѓ©гѓЄгѓ«гѓ¬гѓ­гѓЇгѓІгѓі"
 GEORGIAN = "бѓђбѓ‘бѓ’бѓ“бѓ”бѓ•бѓ–бѓ—бѓбѓ™бѓљбѓ›бѓњбѓќбѓћбѓџбѓ бѓЎбѓўбѓЈбѓ¤бѓҐбѓ¦бѓ§бѓЁбѓ©бѓЄбѓ«бѓ¬бѓ­бѓ®бѓЇбѓ°"
-ARMENIAN = "Ф±ФІФіФґФµФ¶Ф·ФёФ№ФєФ»ФјФЅФѕФїХЂХЃХ‚ХѓХ„Х…Х†Х‡Х€Х№ХЉХ‹ХЊХЌХЋХЏХђХ‘Х’Х“Х”Х•Х–"
+ARMENIAN = "ԱԲԳԴԵԶԷԸԹԺԻԼԽԾԿՀՁՂՃՄՅՆՇՈչՊՋՌՍՎՏՐՑՒՓՔՕՖ"
 
 REGION_TAGS: dict[str, str] = {
     "CIS": "cis",
@@ -111,132 +111,132 @@ class EventDef:
 
 # Region catalogues ----------------------------------------------------------
 RU_REGIONS = (
-    RegionDef("77", "Moscow", "РњРѕСЃРєРІР°", 4.0),
-    RegionDef("50", "Moscow Oblast", "РњРѕСЃРєРѕРІСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ", 3.0),
-    RegionDef("78", "Saint Petersburg", "РЎР°РЅРєС‚-РџРµС‚РµСЂР±СѓСЂРі", 3.4),
-    RegionDef("23", "Krasnodar", "РљСЂР°СЃРЅРѕРґР°СЂ", 2.6),
-    RegionDef("16", "Tatarstan", "РўР°С‚Р°СЂСЃС‚Р°РЅ", 2.2),
-    RegionDef("40", "Kaluga", "РљР°Р»СѓРіР°", 1.4),
-    RegionDef("66", "Sverdlovsk", "РЎРІРµСЂРґР»РѕРІСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ", 2.0),
-    RegionDef("52", "Nizhny Novgorod", "РќРёР¶РµРіРѕСЂРѕРґСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ", 2.0),
-    RegionDef("63", "Samara", "РЎР°РјР°СЂСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ", 2.0),
-    RegionDef("61", "Rostov", "Р РѕСЃС‚РѕРІСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ", 1.8),
-    RegionDef("54", "Novosibirsk", "РќРѕРІРѕСЃРёР±РёСЂСЃРєР°СЏ РѕР±Р»Р°СЃС‚СЊ", 1.8),
-    RegionDef("02", "Bashkortostan", "Р‘Р°С€РєРѕСЂС‚РѕСЃС‚Р°РЅ", 1.6),
+    RegionDef("77", "Moscow", "Москва", 4.0),
+    RegionDef("50", "Moscow Oblast", "Московская область", 3.0),
+    RegionDef("78", "Saint Petersburg", "Санкт-Петербург", 3.4),
+    RegionDef("23", "Krasnodar", "Краснодар", 2.6),
+    RegionDef("16", "Tatarstan", "Татарстан", 2.2),
+    RegionDef("40", "Kaluga", "Калуга", 1.4),
+    RegionDef("66", "Sverdlovsk", "Свердловская область", 2.0),
+    RegionDef("52", "Nizhny Novgorod", "Нижегородская область", 2.0),
+    RegionDef("63", "Samara", "Самарская область", 2.0),
+    RegionDef("61", "Rostov", "Ростовская область", 1.8),
+    RegionDef("54", "Novosibirsk", "Новосибирская область", 1.8),
+    RegionDef("02", "Bashkortostan", "Башкортостан", 1.6),
 )
 
 US_REGIONS = (
-    RegionDef("CA", "California", "РљР°Р»РёС„РѕСЂРЅРёСЏ", 5.0),
-    RegionDef("TX", "Texas", "РўРµС…Р°СЃ", 4.0),
-    RegionDef("FL", "Florida", "Р¤Р»РѕСЂРёРґР°", 3.6),
-    RegionDef("NY", "New York", "РќСЊСЋ-Р™РѕСЂРє", 3.6),
-    RegionDef("NV", "Nevada", "РќРµРІР°РґР°", 2.0),
-    RegionDef("AZ", "Arizona", "РђСЂРёР·РѕРЅР°", 2.0),
-    RegionDef("WA", "Washington", "Р’Р°С€РёРЅРіС‚РѕРЅ", 2.4),
-    RegionDef("NJ", "New Jersey", "РќСЊСЋ-Р”Р¶РµСЂСЃРё", 2.2),
+    RegionDef("CA", "California", "Калифорния", 5.0),
+    RegionDef("TX", "Texas", "Техас", 4.0),
+    RegionDef("FL", "Florida", "Флорида", 3.6),
+    RegionDef("NY", "New York", "Нью-Йорк", 3.6),
+    RegionDef("NV", "Nevada", "Невада", 2.0),
+    RegionDef("AZ", "Arizona", "Аризона", 2.0),
+    RegionDef("WA", "Washington", "Вашингтон", 2.4),
+    RegionDef("NJ", "New Jersey", "Нью-Джерси", 2.2),
     RegionDef("IL", "Illinois", "РР»Р»РёРЅРѕР№СЃ", 2.4),
-    RegionDef("GA", "Georgia", "Р”Р¶РѕСЂРґР¶РёСЏ", 2.2),
-    RegionDef("CO", "Colorado", "РљРѕР»РѕСЂР°РґРѕ", 2.0),
-    RegionDef("MI", "Michigan", "РњРёС‡РёРіР°РЅ", 2.0),
-    RegionDef("MA", "Massachusetts", "РњР°СЃСЃР°С‡СѓСЃРµС‚СЃ", 1.8),
-    RegionDef("AK", "Alaska", "РђР»СЏСЃРєР°", 1.2),
-    RegionDef("HI", "Hawaii", "Р“Р°РІР°Р№Рё", 1.2),
+    RegionDef("GA", "Georgia", "Джорджия", 2.2),
+    RegionDef("CO", "Colorado", "Колорадо", 2.0),
+    RegionDef("MI", "Michigan", "Мичиган", 2.0),
+    RegionDef("MA", "Massachusetts", "Массачусетс", 1.8),
+    RegionDef("AK", "Alaska", "Аляска", 1.2),
+    RegionDef("HI", "Hawaii", "Гавайи", 1.2),
 )
 
 DE_REGIONS = (
-    RegionDef("B", "Berlin", "Р‘РµСЂР»РёРЅ", 3.0),
-    RegionDef("M", "Munich", "РњСЋРЅС…РµРЅ", 3.0),
-    RegionDef("HH", "Hamburg", "Р“Р°РјР±СѓСЂРі", 2.4),
-    RegionDef("HE", "Frankfurt", "Р¤СЂР°РЅРєС„СѓСЂС‚", 2.2),
-    RegionDef("S", "Stuttgart", "РЁС‚СѓС‚РіР°СЂС‚", 2.0),
-    RegionDef("K", "Cologne", "РљС‘Р»СЊРЅ", 2.0),
-    RegionDef("D", "Dusseldorf", "Р”СЋСЃСЃРµР»СЊРґРѕСЂС„", 1.9),
-    RegionDef("DD", "Dresden", "Р”СЂРµР·РґРµРЅ", 1.8),
-    RegionDef("L", "Leipzig", "Р›РµР№РїС†РёРі", 1.6),
-    RegionDef("H", "Hanover", "Р“Р°РЅРЅРѕРІРµСЂ", 1.7),
+    RegionDef("B", "Berlin", "Берлин", 3.0),
+    RegionDef("M", "Munich", "Мюнхен", 3.0),
+    RegionDef("HH", "Hamburg", "Гамбург", 2.4),
+    RegionDef("HE", "Frankfurt", "Франкфурт", 2.2),
+    RegionDef("S", "Stuttgart", "Штутгарт", 2.0),
+    RegionDef("K", "Cologne", "Кёльн", 2.0),
+    RegionDef("D", "Dusseldorf", "Дюссельдорф", 1.9),
+    RegionDef("DD", "Dresden", "Дрезден", 1.8),
+    RegionDef("L", "Leipzig", "Лейпциг", 1.6),
+    RegionDef("H", "Hanover", "Ганновер", 1.7),
 )
 
 KZ_REGIONS = (
-    RegionDef("02", "Almaty", "РђР»РјР°С‚С‹", 4.0),
-    RegionDef("01", "Astana", "РђСЃС‚Р°РЅР°", 3.4),
-    RegionDef("03", "Shymkent", "РЁС‹РјРєРµРЅС‚", 2.6),
-    RegionDef("10", "Karaganda", "РљР°СЂР°РіР°РЅРґР°", 2.0),
-    RegionDef("05", "Aktobe", "РђРєС‚РѕР±Рµ", 1.8),
-    RegionDef("04", "Atyrau", "РђС‚С‹СЂР°Сѓ", 1.4),
-    RegionDef("07", "Pavlodar", "РџР°РІР»РѕРґР°СЂ", 1.6),
+    RegionDef("02", "Almaty", "Алматы", 4.0),
+    RegionDef("01", "Astana", "Астана", 3.4),
+    RegionDef("03", "Shymkent", "Шымкент", 2.6),
+    RegionDef("10", "Karaganda", "Караганда", 2.0),
+    RegionDef("05", "Aktobe", "Актобе", 1.8),
+    RegionDef("04", "Atyrau", "Атырау", 1.4),
+    RegionDef("07", "Pavlodar", "Павлодар", 1.6),
 )
 
 AM_REGIONS = (
-    RegionDef("01", "Yerevan", "Р•СЂРµРІР°РЅ", 4.0),
-    RegionDef("02", "Ararat", "РђСЂР°СЂР°С‚", 1.8),
-    RegionDef("03", "Armavir", "РђСЂРјР°РІРёСЂ", 1.6),
-    RegionDef("04", "Gegharkunik", "Р“РµРіР°СЂРєСѓРЅРёРє", 1.6),
-    RegionDef("05", "Lori", "Р›РѕСЂРё", 1.8),
-    RegionDef("06", "Shirak", "РЁРёСЂР°Рє", 1.4),
-    RegionDef("07", "Syunik", "РЎСЋРЅРёРє", 1.4),
-    RegionDef("08", "Tavush", "РўР°РІСѓС€", 1.3),
+    RegionDef("01", "Yerevan", "Ереван", 4.0),
+    RegionDef("02", "Ararat", "Арарат", 1.8),
+    RegionDef("03", "Armavir", "Армавир", 1.6),
+    RegionDef("04", "Gegharkunik", "Гегаркуник", 1.6),
+    RegionDef("05", "Lori", "Лори", 1.8),
+    RegionDef("06", "Shirak", "Ширак", 1.4),
+    RegionDef("07", "Syunik", "Сюник", 1.4),
+    RegionDef("08", "Tavush", "Тавуш", 1.3),
 )
 
 GE_REGIONS = (
-    RegionDef("TB", "Tbilisi", "РўР±РёР»РёСЃРё", 4.0),
-    RegionDef("BT", "Batumi", "Р‘Р°С‚СѓРјРё", 2.4),
-    RegionDef("KL", "Kutaisi", "РљСѓС‚Р°РёСЃРё", 2.2),
-    RegionDef("RL", "Rustavi", "Р СѓСЃС‚Р°РІРё", 1.8),
-    RegionDef("GQ", "Gori", "Р“РѕСЂРё", 1.6),
-    RegionDef("OZ", "Ozurgeti", "РћР·СѓСЂРіРµС‚Рё", 1.6),
-    RegionDef("TK", "Telavi", "РўРµР»Р°РІРё", 1.4),
-    RegionDef("SN", "Senaki", "РЎРµРЅР°РєРё", 1.3),
+    RegionDef("TB", "Tbilisi", "Тбилиси", 4.0),
+    RegionDef("BT", "Batumi", "Батуми", 2.4),
+    RegionDef("KL", "Kutaisi", "Кутаиси", 2.2),
+    RegionDef("RL", "Rustavi", "Рустави", 1.8),
+    RegionDef("GQ", "Gori", "Гори", 1.6),
+    RegionDef("OZ", "Ozurgeti", "Озургети", 1.6),
+    RegionDef("TK", "Telavi", "Телави", 1.4),
+    RegionDef("SN", "Senaki", "Сенаки", 1.3),
 )
 
 FR_REGIONS = (
     RegionDef("IDF", "Ile-de-France", "РР»СЊ-РґРµ-Р¤СЂР°РЅСЃ", 3.2),
-    RegionDef("ARA", "Auvergne-Rhone-Alpes", "РћРІРµСЂРЅСЊ-Р РѕРЅР°-РђР»СЊРї", 2.4),
-    RegionDef("PAC", "Provence-Alpes-Cote d'Azur", "РџСЂРѕРІР°РЅСЃ", 2.2),
-    RegionDef("OCC", "Occitanie", "РћРєСЃРёС‚Р°РЅРёСЏ", 2.0),
-    RegionDef("NAQ", "Nouvelle-Aquitaine", "РќРѕРІР°СЏ РђРєРІРёС‚Р°РЅРёСЏ", 1.8),
-    RegionDef("BRE", "Brittany", "Р‘СЂРµС‚Р°РЅСЊ", 1.8),
+    RegionDef("ARA", "Auvergne-Rhone-Alpes", "Овернь-Рона-Альп", 2.4),
+    RegionDef("PAC", "Provence-Alpes-Cote d'Azur", "Прованс", 2.2),
+    RegionDef("OCC", "Occitanie", "Окситания", 2.0),
+    RegionDef("NAQ", "Nouvelle-Aquitaine", "Новая Аквитания", 1.8),
+    RegionDef("BRE", "Brittany", "Бретань", 1.8),
 )
 
 IT_REGIONS = (
-    RegionDef("MI", "Lombardy", "Р›РѕРјР±Р°СЂРґРёСЏ", 3.0),
-    RegionDef("RM", "Lazio", "Р›Р°С†РёРѕ", 2.6),
-    RegionDef("TO", "Piedmont", "РџСЊРµРјРѕРЅС‚", 2.2),
-    RegionDef("VE", "Veneto", "Р’РµРЅРµС‚Рѕ", 2.2),
-    RegionDef("NA", "Campania", "РљР°РјРїР°РЅРёСЏ", 2.0),
-    RegionDef("FI", "Tuscany", "РўРѕСЃРєР°РЅР°", 1.9),
+    RegionDef("MI", "Lombardy", "Ломбардия", 3.0),
+    RegionDef("RM", "Lazio", "Лацио", 2.6),
+    RegionDef("TO", "Piedmont", "Пьемонт", 2.2),
+    RegionDef("VE", "Veneto", "Венето", 2.2),
+    RegionDef("NA", "Campania", "Кампания", 2.0),
+    RegionDef("FI", "Tuscany", "Тоскана", 1.9),
 )
 
 CA_REGIONS = (
-    RegionDef("ON", "Ontario", "РћРЅС‚Р°СЂРёРѕ", 4.0),
-    RegionDef("QC", "Quebec", "РљРІРµР±РµРє", 3.0),
-    RegionDef("BC", "British Columbia", "Р‘СЂРёС‚Р°РЅСЃРєР°СЏ РљРѕР»СѓРјР±РёСЏ", 2.4),
-    RegionDef("AB", "Alberta", "РђР»Р±РµСЂС‚Р°", 2.2),
-    RegionDef("MB", "Manitoba", "РњР°РЅРёС‚РѕР±Р°", 1.6),
-    RegionDef("NS", "Nova Scotia", "РќРѕРІР°СЏ РЁРѕС‚Р»Р°РЅРґРёСЏ", 1.6),
+    RegionDef("ON", "Ontario", "Онтарио", 4.0),
+    RegionDef("QC", "Quebec", "Квебек", 3.0),
+    RegionDef("BC", "British Columbia", "Британская Колумбия", 2.4),
+    RegionDef("AB", "Alberta", "Алберта", 2.2),
+    RegionDef("MB", "Manitoba", "Манитоба", 1.6),
+    RegionDef("NS", "Nova Scotia", "Новая Шотландия", 1.6),
 )
 
 JP_REGIONS = (
-    RegionDef("13", "Tokyo", "РўРѕРєРёРѕ", 4.0),
-    RegionDef("27", "Osaka", "РћСЃР°РєР°", 3.0),
-    RegionDef("01", "Hokkaido", "РҐРѕРєРєР°Р№РґРѕ", 2.0),
-    RegionDef("40", "Fukuoka", "Р¤СѓРєСѓРѕРєР°", 2.0),
-    RegionDef("23", "Aichi", "РђР№С‚Рё", 2.2),
-    RegionDef("14", "Kanagawa", "РљР°РЅР°РіР°РІР°", 2.2),
+    RegionDef("13", "Tokyo", "Токио", 4.0),
+    RegionDef("27", "Osaka", "Осака", 3.0),
+    RegionDef("01", "Hokkaido", "Хоккайдо", 2.0),
+    RegionDef("40", "Fukuoka", "Фукуока", 2.0),
+    RegionDef("23", "Aichi", "Айти", 2.2),
+    RegionDef("14", "Kanagawa", "Канагава", 2.2),
 )
 
 AE_REGIONS = (
-    RegionDef("DXB", "Dubai", "Р”СѓР±Р°Р№", 4.0),
-    RegionDef("AZ", "Abu Dhabi", "РђР±Сѓ-Р”Р°Р±Рё", 3.0),
-    RegionDef("SH", "Sharjah", "РЁР°СЂРґР¶Р°", 2.2),
-    RegionDef("AJ", "Ajman", "РђРґР¶РјР°РЅ", 1.8),
-    RegionDef("UQ", "Umm Al Quwain", "РЈРјРј-РђР»СЊ-РљР°РІРІР°Р№РЅ", 1.5),
-    RegionDef("RK", "Ras Al Khaimah", "Р Р°СЃ-РђР»СЊ-РҐР°Р№РјР°", 1.5),
+    RegionDef("DXB", "Dubai", "Дубай", 4.0),
+    RegionDef("AZ", "Abu Dhabi", "Абу-Даби", 3.0),
+    RegionDef("SH", "Sharjah", "Шарджа", 2.2),
+    RegionDef("AJ", "Ajman", "Аджман", 1.8),
+    RegionDef("UQ", "Umm Al Quwain", "Умм-Аль-Каввайн", 1.5),
+    RegionDef("RK", "Ras Al Khaimah", "Рас-Аль-Хайма", 1.5),
 )
 
 GB_REGIONS = (
-    RegionDef("ENG", "England", "РђРЅРіР»РёСЏ", 4.0),
-    RegionDef("SCT", "Scotland", "РЁРѕС‚Р»Р°РЅРґРёСЏ", 2.2),
-    RegionDef("WLS", "Wales", "РЈСЌР»СЊСЃ", 2.0),
+    RegionDef("ENG", "England", "Англия", 4.0),
+    RegionDef("SCT", "Scotland", "Шотландия", 2.2),
+    RegionDef("WLS", "Wales", "Уэльс", 2.0),
     RegionDef("NIR", "Northern Ireland", "РЎРµРІРµСЂРЅР°СЏ РСЂР»Р°РЅРґРёСЏ", 1.4),
 )
 
@@ -245,11 +245,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="RUS",
         name_en="Russia",
-        name_ru="Р РѕСЃСЃРёСЏ",
+        name_ru="Россия",
         flag="\U0001F1F7\U0001F1FA",
         region_group="CIS",
         currency_code="RUB",
-        currency_symbol="в‚Ѕ",
+        currency_symbol="₽",
         weight=18.0,
         alphabet=CYRILLIC,
         letter_style="CYRILLIC",
@@ -268,7 +268,7 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="USA",
         name_en="United States",
-        name_ru="РЎРЁРђ",
+        name_ru="США",
         flag="\U0001F1FA\U0001F1F8",
         region_group="AMERICAS",
         currency_code="USD",
@@ -294,11 +294,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="KAZ",
         name_en="Kazakhstan",
-        name_ru="РљР°Р·Р°С…СЃС‚Р°РЅ",
+        name_ru="Казахстан",
         flag="\U0001F1F0\U0001F1FF",
         region_group="CIS",
         currency_code="KZT",
-        currency_symbol="в‚ё",
+        currency_symbol="₸",
         weight=11.0,
         alphabet=CYRILLIC,
         letter_style="CYRILLIC",
@@ -317,11 +317,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="DEU",
         name_en="Germany",
-        name_ru="Р“РµСЂРјР°РЅРёСЏ",
+        name_ru="Германия",
         flag="\U0001F1E9\U0001F1EA",
         region_group="EUROPE",
         currency_code="EUR",
-        currency_symbol="в‚¬",
+        currency_symbol="€",
         weight=10.0,
         alphabet=LATIN,
         value_scale=1.1,
@@ -339,11 +339,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="GBR",
         name_en="United Kingdom",
-        name_ru="Р’РµР»РёРєРѕР±СЂРёС‚Р°РЅРёСЏ",
+        name_ru="Великобритания",
         flag="\U0001F1EC\U0001F1E7",
         region_group="EUROPE",
         currency_code="GBP",
-        currency_symbol="ВЈ",
+        currency_symbol="£",
         weight=9.0,
         alphabet=LATIN,
         value_scale=1.15,
@@ -360,11 +360,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="FRA",
         name_en="France",
-        name_ru="Р¤СЂР°РЅС†РёСЏ",
+        name_ru="Франция",
         flag="\U0001F1EB\U0001F1F7",
         region_group="EUROPE",
         currency_code="EUR",
-        currency_symbol="в‚¬",
+        currency_symbol="€",
         weight=8.0,
         alphabet=LATIN,
         value_scale=1.05,
@@ -381,11 +381,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="ITA",
         name_en="Italy",
-        name_ru="РС‚Р°Р»РёСЏ",
+        name_ru="Италия",
         flag="\U0001F1EE\U0001F1F9",
         region_group="EUROPE",
         currency_code="EUR",
-        currency_symbol="в‚¬",
+        currency_symbol="€",
         weight=7.0,
         alphabet=LATIN,
         visual="it",
@@ -401,7 +401,7 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="CAN",
         name_en="Canada",
-        name_ru="РљР°РЅР°РґР°",
+        name_ru="Канада",
         flag="\U0001F1E8\U0001F1E6",
         region_group="AMERICAS",
         currency_code="CAD",
@@ -422,11 +422,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="JPN",
         name_en="Japan",
-        name_ru="РЇРїРѕРЅРёСЏ",
+        name_ru="Япония",
         flag="\U0001F1EF\U0001F1F5",
         region_group="ASIA",
         currency_code="JPY",
-        currency_symbol="ВҐ",
+        currency_symbol="¥",
         weight=6.0,
         alphabet=JAPANESE,
         letter_style="KANJI",
@@ -446,7 +446,7 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="ARE",
         name_en="United Arab Emirates",
-        name_ru="РћРђР­",
+        name_ru="ОАЭ",
         flag="\U0001F1E6\U0001F1EA",
         region_group="MIDEAST",
         currency_code="AED",
@@ -469,11 +469,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="ARM",
         name_en="Armenia",
-        name_ru="РђСЂРјРµРЅРёСЏ",
-        flag="\U0001F1F2\U0001F1F8",
+        name_ru="Армения",
+        flag="\U0001F1F2\U0001F1EA",
         region_group="CIS",
         currency_code="AMD",
-        currency_symbol="ЦЏ",
+        currency_symbol="֏",
         weight=5.0,
         alphabet=ARMENIAN,
         letter_style="ARMENIAN",
@@ -492,11 +492,11 @@ COUNTRIES: tuple[CountryDef, ...] = (
     CountryDef(
         code="GEO",
         name_en="Georgia",
-        name_ru="Р“СЂСѓР·РёСЏ",
-        flag="\U0001F1EC\U0001F1ED",
+        name_ru="Грузия",
+        flag="\U0001F1EC\U0001F1EA",
         region_group="CIS",
         currency_code="GEL",
-        currency_symbol="в‚ѕ",
+        currency_symbol="₾",
         weight=5.0,
         alphabet=GEORGIAN,
         letter_style="GEORGIAN",
@@ -526,18 +526,18 @@ def country_by_code(code: str) -> CountryDef | None:
 # completion set per launch country.
 # ---------------------------------------------------------------------------
 THEME_ALBUMS: tuple[AlbumDef, ...] = (
-    AlbumDef("album_europe", "EUROPE", "Р•Р’Р РћРџРђ", "European plates", "Р•РІСЂРѕРїРµР№СЃРєРёРµ РЅРѕРјРµСЂР°", "\U0001F1EA\U0001F1FA", sort_order=1),
-    AlbumDef("album_asia", "ASIA", "РђР—РРЇ", "Asian plates", "РђР·РёР°С‚СЃРєРёРµ РЅРѕРјРµСЂР°", "\U0001F1F0\U0001F1F7", sort_order=2),
-    AlbumDef("album_cis", "CIS", "РЎРќР“", "Post-Soviet plates", "РќРѕРјРµСЂР° РЎРќР“", "\U0001F1F7\U0001F1FA", sort_order=3),
+    AlbumDef("album_europe", "EUROPE", "ЕВРОПА", "European plates", "Европейские номера", "\U0001F1EA\U0001F1FA", sort_order=1),
+    AlbumDef("album_asia", "ASIA", "АЗИА", "Asian plates", "Азиатские номера", "\\U0001F1F0\\U0001F1F7", sort_order=2),
+    AlbumDef("album_cis", "CIS", "СНГ", "Post-Soviet plates", "Номера СНГ", "\U0001F1F7\U0001F1FA", sort_order=3),
     AlbumDef("album_americas", "AMERICAS", "РђРњР•Р РРљРђ", "North American plates", "РЎРµРІРµСЂРѕР°РјРµСЂРёРєР°РЅСЃРєРёРµ РЅРѕРјРµСЂР°", "\U0001F1FA\U0001F1F8", sort_order=4),
     AlbumDef("album_middle_east", "MIDEAST", "Р‘Р›РР–РќРР™ Р’РћРЎРўРћРљ", "Gulf plates", "РќРѕРјРµСЂР° Р·Р°Р»РёРІР°", "\U0001F1E6\U0001F1EA", sort_order=5),
     AlbumDef("album_lucky", "LUCKY", "РЎР§РђРЎРўР›РР’Р«Р•", "Lucky digit combinations", "РЎС‡Р°СЃС‚Р»РёРІС‹Рµ РєРѕРјР±РёРЅР°С†РёРё", "\U0001F340", sort_order=6, reward_coins=800),
     AlbumDef("album_sequences", "SEQUENCES", "РџРћРЎР›Р•Р”РћР’РђРўР•Р›Р¬РќРћРЎРўР", "Ascending and descending runs", "Р СЏРґС‹ РїРѕ РїРѕСЂСЏРґРєСѓ", "\U0001F501", sort_order=7),
     AlbumDef("album_palindromes", "PALINDROMES", "РџРђР›РРќР”Р РћРњР«", "Symmetric plates", "РЎРёРјРјРµС‚СЂРёС‡РЅС‹Рµ РЅРѕРјРµСЂР°", "\U0001FA9D", sort_order=8),
     AlbumDef("album_meme", "MEME PLATES", "РњР•Рњ-РќРћРњР•Р Рђ", "Internet culture plates", "РРЅС‚РµСЂРЅРµС‚-РјРµРјС‹", "\U0001F923", sort_order=9, reward_coins=1000),
-    AlbumDef("album_secret", "SECRET", "РЎР•РљР Р•Рў", "The rarest discoveries", "РЎР°РјС‹Рµ СЂРµРґРєРёРµ РЅР°С…РѕРґРєРё", "вњЁ", sort_order=10, reward_coins=5000),
-    AlbumDef("album_seasonal", "SEASONAL", "РЎР•Р—РћРќРќР«Р•", "Limited-time plates", "РЎРµР·РѕРЅРЅС‹Рµ РЅРѕРјРµСЂР°", "\U0001F31F", sort_order=11),
-    AlbumDef("album_luxury", "LUXURY", "Р›Р®РљРЎ", "Premium and diplomatic plates", "РџСЂРµРјРёСѓРј-РЅРѕРјРµСЂР°", "\U0001F48E", sort_order=12, reward_coins=1200),
+    AlbumDef("album_secret", "SECRET", "СЕКРЕТ", "The rarest discoveries", "Самые редкие находки", "✨", sort_order=10, reward_coins=5000),
+    AlbumDef("album_seasonal", "SEASONAL", "СЕЗОННЫЕ", "Limited-time plates", "Сезонные номера", "\U0001F31F", sort_order=11),
+    AlbumDef("album_luxury", "LUXURY", "ЛЮКС", "Premium and diplomatic plates", "Премиум-номера", "\U0001F48E", sort_order=12, reward_coins=1200),
 )
 
 THEME_TAG_MAP: dict[str, tuple[str, ...]] = {
@@ -566,7 +566,7 @@ def country_album_defs() -> tuple[AlbumDef, ...]:
             name_en=country.name_en.upper(),
             name_ru=country.name_ru.upper(),
             description_en=f"Complete the {country.name_en} collection",
-            description_ru=f"Р—Р°РІРµСЂС€РёС‚Рµ РєРѕР»Р»РµРєС†РёСЋ В«{country.name_ru}В»",
+            description_ru=f"Завершите коллекцию «{country.name_ru}»",
             icon=country.flag,
             kind="COUNTRY",
             country_code=country.code,
@@ -585,11 +585,11 @@ ALL_ALBUMS: tuple[AlbumDef, ...] = THEME_ALBUMS + country_album_defs()
 # by the generator - never by the frontend.
 # ---------------------------------------------------------------------------
 EVENTS: tuple[EventDef, ...] = (
-    EventDef("event_cis", "CIS WEEK", "РќР•Р”Р•Р›РЇ РЎРќР“", "\U0001F1F7\U0001F1FA", 7, {"RUS": 3.0, "KAZ": 3.0, "ARM": 2.6, "GEO": 2.6}, 900, sort_order=1),
-    EventDef("event_japan", "JAPAN DAY", "Р”Р•РќР¬ РЇРџРћРќРР", "\U0001F1EF\U0001F1F5", 3, {"JPN": 8.0}, 700, "Japan Day Hero", sort_order=2),
-    EventDef("event_usa", "USA WEEK", "РќР•Р”Р•Р›РЇ РЎРЁРђ", "\U0001F1FA\U0001F1F8", 7, {"USA": 3.2}, 900, sort_order=3),
-    EventDef("event_europe", "EUROPE WEEK", "РќР•Р”Р•Р›РЇ Р•Р’Р РћРџР«", "\U0001F1EA\U0001F1FA", 7, {"DEU": 3.0, "GBR": 3.0, "FRA": 3.0, "ITA": 3.0}, 1000, sort_order=4),
-    EventDef("event_luxury", "LUXURY NIGHT", "Р›Р®РљРЎРћР’РђРЇ РќРћР§Р¬", "\U0001F1E6\U0001F1EA", 2, {"ARE": 7.0, "JPN": 2.0}, 1200, "Luxury Night", sort_order=5),
+    EventDef("event_cis", "CIS WEEK", "НЕДЕЛЯ СНГ", "\U0001F1F7\U0001F1FA", 7, {"RUS": 3.0, "KAZ": 3.0, "ARM": 2.6, "GEO": 2.6}, 900, sort_order=1),
+    EventDef("event_japan", "JAPAN DAY", "ДЕНЬ ЯПОНИИ", "\\U0001F1EF\\U0001F1F5", 3, {"JPN": 8.0}, 700, "Japan Day Hero", sort_order=2),
+    EventDef("event_usa", "USA WEEK", "НЕДЕЛЯ США", "\U0001F1FA\U0001F1F8", 7, {"USA": 3.2}, 900, sort_order=3),
+    EventDef("event_europe", "EUROPE WEEK", "НЕДЕЛЯ ЕВРОПЫ", "\U0001F1EA\U0001F1FA", 7, {"DEU": 3.0, "GBR": 3.0, "FRA": 3.0, "ITA": 3.0}, 1000, sort_order=4),
+    EventDef("event_luxury", "LUXURY NIGHT", "ЛЮКСОВАЯ НОЧЬ", "\U0001F1E6\U0001F1EA", 2, {"ARE": 7.0, "JPN": 2.0}, 1200, "Luxury Night", sort_order=5),
 )
 
 __all__ = [

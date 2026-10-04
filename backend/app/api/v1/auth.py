@@ -22,12 +22,7 @@ def _build_response(result, users: UserService) -> AuthResponse:
         expires_in=result.expires_in,
         is_new_user=result.created,
         user=users.profile(result.user),  # type: ignore[arg-type]
-        start_context={
-            "raw": result.context.raw,
-            "referral_telegram_id": result.context.referral_telegram_id,
-            "shared_number": result.context.shared_number,
-            "challenge_code": result.context.challenge_code,
-        },
+        start_context=result.context.to_dict(),  # type: ignore[arg-type]
     )
 
 

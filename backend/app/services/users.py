@@ -17,6 +17,7 @@ from app.game.rarity import RARITY_RANK
 from app.game.valuation import duplicate_conversion_reward
 from app.models.enums import AnalyticsEventName, TransactionType, UserRole
 from app.models.number import Number, UserNumber
+from app.models.plates import Plate, PlateDiscovery
 from app.models.social import ShareEvent
 from app.models.user import User, Wallet
 from app.services.analytics import AnalyticsService
@@ -101,9 +102,43 @@ class UserService:
 
     # --- profile --------------------------------------------------------
     def profile(self, user: User) -> dict[str, object]:
+        """The full profile the app boots with."""
+        from app.models.numora import SupporterEntitlement
+        from app.services.cosmetics import CosmeticService
+        from app.services.progression import ProgressionService
+        from app.services.world import WorldService
+
         wallet = self.economy.get_wallet(user.id)
         allowance = self.daily.status(user)
         expires_at = self.premium.expires_at(user.id)
+        level = ProgressionService(self.db).current_level(user)
+
+        # Recount so the profile is always accurate, even after a direct write.
+        ProgressionService(self.db).recompute_counters(user)
+        first_discoveries = int(
+            self.db.execute(
+                select(func.count(func.distinct(PlateDiscovery.plate_id))).where(
+                    PlateDiscovery.user_id == user.id,
+                    PlateDiscovery.is_first_discovery.is_(True),
+                )
+            ).scalar_one()
+            or 0
+        )
+        user.first_discoveries_count = first_discoveries
+
+        best_plate = self.db.get(Plate, user.best_plate_id) if user.best_plate_id else None
+        overview = WorldService(self.db, self.settings.rarity_weights).overview(user)
+        supporter = (
+            self.db.execute(
+                select(func.count(SupporterEntitlement.id)).where(
+                    SupporterEntitlement.user_id == user.id,
+                    SupporterEntitlement.is_active.is_(True),
+                )
+            ).scalar_one()
+            or 0
+        ) > 0
+        self.db.flush()
+
         return {
             "id": user.id,
             "telegram_id": user.telegram_id,
@@ -116,33 +151,54 @@ class UserService:
             "role": user.role,
             "is_admin": user.is_admin,
             "is_banned": bool(user.is_banned),
+            # --- economy: the user-facing name is NUMORA
             "coins": int(wallet.coins),
             "total_earned": int(wallet.total_earned),
             "total_spent": int(wallet.total_spent),
+            # --- activity
             "total_rolls": int(user.total_rolls),
             "containers_opened": int(user.containers_opened),
-            "unique_numbers": int(user.unique_numbers_count),
-            "collection_progress": round(int(user.unique_numbers_count) / TOTAL_NUMBERS, 6),
-            "collection_target": TOTAL_NUMBERS,
+            # --- collection
+            "plates_count": int(user.plates_count),
+            "countries_count": int(user.countries_count),
+            "regions_count": int(user.regions_count),
+            "first_discoveries_count": first_discoveries,
+            "duplicates_sold_count": int(user.duplicates_sold_count),
+            "collection_progress": float(overview["progress"]),
+            "collection_target": int(overview["total_plates"]),
+            "collector_level": level.to_dict(),
+            # --- best find
             "best_value": int(user.best_value),
             "best_rarity": user.best_rarity or None,
+            "best_collector_value": int(user.best_collector_value),
+            "best_plate_id": user.best_plate_id,
+            "best_plate_text": best_plate.plate_text if best_plate is not None else "",
+            # --- social
             "referrals_count": int(user.referrals_count),
             "shares_count": int(user.shares_count),
             "challenges_completed": int(user.challenges_completed),
+            # --- daily
             "current_streak": int(user.current_streak),
             "longest_streak": int(user.longest_streak),
             "rolls_remaining": allowance.rolls_remaining,
             "daily_allowance": allowance.daily_allowance,
             "daily_resets_at": allowance.resets_at,
             "can_claim_daily": allowance.can_claim,
+            # --- entitlements and cosmetics
             "premium": {
                 "active": self.premium.is_premium(user.id),
                 "tier": self.premium.active_tier(user.id),
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 "perks": self.premium.perks(user.id),
             },
+            "supporter": supporter,
+            "season_pass_active": bool(user.season_pass_active),
+            "equipped_title": user.equipped_title,
+            "equipped_cosmetics": CosmeticService(self.db).equipped_codes(user.id),
             "created_at": as_aware(user.created_at).isoformat() if user.created_at else None,
             "last_seen_at": as_aware(user.updated_at).isoformat() if user.updated_at else None,
+            # --- legacy aliases for older clients
+            "unique_numbers": int(user.plates_count),
         }
 
     def top_items(self, user: User, limit: int = 3) -> dict[str, object]:

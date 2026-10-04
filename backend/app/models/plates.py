@@ -62,7 +62,6 @@ class Country(Base, TimestampMixin):
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Country {self.code}>"
 
-
 class Region(Base, TimestampMixin):
     """A region/state/canton whose code is part of the plate."""
 
@@ -167,7 +166,7 @@ class Plate(Base, TimestampMixin):
     season_code: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
 
-    discovery_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    discovery_count: Mapped[int] = mapped_column(Integer, default=0, index=True, nullable=False)
     first_discovered_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
@@ -182,11 +181,11 @@ class Plate(Base, TimestampMixin):
         # identity of a collectible is (country, normalized serial) - never the
         # serial alone.
         UniqueConstraint("country_id", "normalized_text", name="uq_plates_country_normalized"),
+        # Composite indexes the game actually filters on; the single-column
+        # ones come from ``index=True`` on the mapped columns.
         Index("ix_plates_country_rarity", "country_id", "rarity"),
-        Index("ix_plates_rarity_score", "rarity_score"),
         Index("ix_plates_country_region", "country_id", "region_id"),
-        Index("ix_plates_season", "season_code"),
-        Index("ix_plates_discovery", "discovery_count"),
+        Index("ix_plates_rarity_value", "rarity", "collector_value"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover

@@ -13,8 +13,11 @@ from app.core.security import (
     TelegramUser,
     create_access_token,
     parse_challenge_start_param,
+    parse_country_start_param,
     parse_number_start_param,
+    parse_plate_start_param,
     parse_referral_start_param,
+    parse_season_start_param,
     verify_init_data,
 )
 from app.models.enums import AnalyticsEventName
@@ -33,7 +36,21 @@ class StartContext:
     raw: str | None = None
     referral_telegram_id: int | None = None
     shared_number: str | None = None
+    shared_plate_id: int | None = None
+    country_code: str | None = None
+    season_code: str | None = None
     challenge_code: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "raw": self.raw,
+            "referral_telegram_id": self.referral_telegram_id,
+            "shared_number": self.shared_number,
+            "shared_plate_id": self.shared_plate_id,
+            "country_code": self.country_code,
+            "season_code": self.season_code,
+            "challenge_code": self.challenge_code,
+        }
 
 
 @dataclass(slots=True)
@@ -62,6 +79,9 @@ class AuthService:
             return context
         context.referral_telegram_id = parse_referral_start_param(start_param)
         context.shared_number = parse_number_start_param(start_param)
+        context.shared_plate_id = parse_plate_start_param(start_param)
+        context.country_code = parse_country_start_param(start_param)
+        context.season_code = parse_season_start_param(start_param)
         context.challenge_code = parse_challenge_start_param(start_param)
         return context
 

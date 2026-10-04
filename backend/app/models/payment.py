@@ -34,6 +34,7 @@ class Product(Base, TimestampMixin):
     stars_price: Mapped[int] = mapped_column(Integer, nullable=False)
     grant_type: Mapped[str] = mapped_column(String(16), nullable=False)
     grant_payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    category: Mapped[str] = mapped_column(String(24), index=True, default="PRO", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 

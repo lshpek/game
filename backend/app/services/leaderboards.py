@@ -1,8 +1,7 @@
-"""Leaderboards.
+"""Leaderboards that reward collecting, never wallet balance.
 
-Queries are aggregate-only and bounded by ``limit`` with supporting indexes
-(``rolls.user_id/created_at``, ``rolls.rarity/created_at``,
-``user_numbers.user_id/first_acquired_at``) so no N+1 fan-out occurs.
+Every board is a single aggregate query over indexed columns, so no N+1 fan-out
+occurs and a board stays cheap at any table size.
 """
 
 from __future__ import annotations
@@ -14,14 +13,15 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.core.timeutils import start_of_utc_day, start_of_utc_week
-from app.game.rarity import RARITY_RANK
-from app.models.enums import LeaderboardCategory
-from app.models.number import UserNumber
-from app.models.roll import Roll
+from app.game.plate_rarity import RARITY_RANK
+from app.models.numora import PlateRoll
+from app.models.plates import Plate, PlateDiscovery, UserPlate
 from app.models.user import User
 
-RARITY_CASE = case(RARITY_RANK, value=Roll.rarity, else_=0)
 MAX_LIMIT = 100
+
+# Rank of a rarity, used to find each player's best find.
+RARITY_CASE = case(RARITY_RANK, value=Plate.rarity, else_=0)
 
 
 @dataclass(slots=True)
@@ -44,19 +44,21 @@ def _display(username: str | None, first_name: str | None, last_name: str | None
     return full or (f"@{username}" if username else "Player")
 
 
-def _entry(row, *, score: int, rolls: int = 0) -> dict[str, object]:
+def _entry(row, *, score: int, metric: str) -> dict[str, object]:
     return {
         "user_id": row.user_id,
         "display_name": _display(row.username, row.first_name, row.last_name),
         "username": row.username,
         "photo_url": row.photo_url,
         "score": score,
-        "rolls": rolls,
+        "metric": metric,
     }
 
 
-class LeaderboardService:
-    """Computes daily, weekly and all-time rankings."""
+class PlateLeaderboardService:
+    """Computes the collection, rarity and discovery boards."""
+
+    IDENTITY_COLUMNS = (User.username, User.first_name, User.last_name, User.photo_url)
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -64,104 +66,124 @@ class LeaderboardService:
     def _period(self, period: str) -> LeaderboardPeriod:
         return periods().get(period, periods()["daily"])
 
-    def _rolls_query(self, since: datetime | None):
+    def _owned_aggregate(self):
+        return (
+            select(
+                UserPlate.user_id.label("user_id"),
+                func.count(func.distinct(UserPlate.plate_id)).label("plates"),
+                func.count(func.distinct(Plate.country_id)).label("countries"),
+                func.coalesce(func.max(RARITY_CASE), 0).label("rarity_rank"),
+                *self.IDENTITY_COLUMNS
+            )
+            .join(Plate, Plate.id == UserPlate.plate_id)
+            .join(User, User.id == UserPlate.user_id)
+            .group_by(UserPlate.user_id, *self.IDENTITY_COLUMNS)
+        )
+
+    def _discovery_aggregate(self, since: datetime | None):
         stmt = (
             select(
-                Roll.user_id.label("user_id"),
-                func.count(Roll.id).label("rolls"),
-                func.coalesce(func.sum(Roll.value), 0).label("value"),
-                func.coalesce(func.max(RARITY_CASE), 0).label("rarity_rank"),
-                User.username,
-                User.first_name,
-                User.last_name,
-                User.photo_url,
+                PlateDiscovery.user_id.label("user_id"),
+                func.count(PlateDiscovery.id).label("discoveries"),
+                *self.IDENTITY_COLUMNS
             )
-            .join(User, User.id == Roll.user_id)
-            .group_by(Roll.user_id, User.username, User.first_name, User.last_name, User.photo_url)
+            .join(User, User.id == PlateDiscovery.user_id)
+            .where(PlateDiscovery.is_first_discovery.is_(True))
+            .group_by(PlateDiscovery.user_id, *self.IDENTITY_COLUMNS)
         )
         if since is not None:
-            stmt = stmt.where(Roll.created_at >= since)
+            stmt = stmt.where(PlateDiscovery.created_at >= since)
         return stmt
 
-    def _value_leaderboard(self, since: datetime | None, limit: int) -> list[dict[str, object]]:
-        stmt = self._rolls_query(since).order_by(func.sum(Roll.value).desc()).limit(limit)
-        return [_entry(row, score=int(row.value or 0), rolls=int(row.rolls)) for row in self.db.execute(stmt)]
-
-    def _rarest_leaderboard(self, since: datetime | None, limit: int) -> list[dict[str, object]]:
-        stmt = (
-            self._rolls_query(since)
-            .order_by(func.max(RARITY_CASE).desc(), func.sum(Roll.value).desc())
-            .limit(limit)
-        )
-        return [_entry(row, score=int(row.rarity_rank or 0), rolls=int(row.rolls)) for row in self.db.execute(stmt)]
-
-    def _rolls_leaderboard(self, since: datetime | None, limit: int) -> list[dict[str, object]]:
-        stmt = self._rolls_query(since).order_by(func.count(Roll.id).desc()).limit(limit)
-        return [_entry(row, score=int(row.rolls), rolls=int(row.rolls)) for row in self.db.execute(stmt)]
-
-    def _collection_leaderboard(self, since: datetime | None, limit: int) -> list[dict[str, object]]:
-        owned = func.count(func.distinct(UserNumber.number_id))
+    def _roll_aggregate(self, since: datetime | None):
         stmt = (
             select(
-                UserNumber.user_id.label("user_id"),
-                owned.label("owned"),
-                User.username,
-                User.first_name,
-                User.last_name,
-                User.photo_url,
+                PlateRoll.user_id.label("user_id"),
+                func.count(PlateRoll.id).label("rolls"),
+                *self.IDENTITY_COLUMNS
             )
-            .join(User, User.id == UserNumber.user_id)
-            .group_by(UserNumber.user_id, User.username, User.first_name, User.last_name, User.photo_url)
-            .order_by(owned.desc())
-            .limit(limit)
+            .join(User, User.id == PlateRoll.user_id)
+            .group_by(PlateRoll.user_id, *self.IDENTITY_COLUMNS)
         )
         if since is not None:
-            stmt = stmt.where(UserNumber.first_acquired_at >= since)
-        return [_entry(row, score=int(row.owned)) for row in self.db.execute(stmt)]
+            stmt = stmt.where(PlateRoll.created_at >= since)
+        return stmt
+
+    # --- boards ---------------------------------------------------------
+    def board(self, category: str, since: datetime | None, limit: int) -> list[dict[str, object]]:
+        key = category.upper()
+
+        if key == "COUNTRIES":
+            stmt = self._owned_aggregate().order_by(
+                func.count(func.distinct(Plate.country_id)).desc()
+            )
+            return [
+                _entry(row, score=int(row.countries or 0), metric="COUNTRIES")
+                for row in self.db.execute(stmt.limit(limit))
+            ]
+
+        if key == "FIRST_DISCOVERIES":
+            stmt = self._discovery_aggregate(since).order_by(func.count(PlateDiscovery.id).desc())
+            return [
+                _entry(row, score=int(row.discoveries or 0), metric="FIRST_DISCOVERIES")
+                for row in self.db.execute(stmt.limit(limit))
+            ]
+
+        if key in ("RARITY", "SEASON", "VALUE"):
+            stmt = self._owned_aggregate().order_by(
+                func.max(RARITY_CASE).desc(),
+                func.max(Plate.rarity_score).desc(),
+                func.max(Plate.collector_value).desc(),
+            )
+            return [
+                _entry(row, score=int(row.rarity_rank or 0), metric=key)
+                for row in self.db.execute(stmt.limit(limit))
+            ]
+
+        if key == "ROLLS":
+            stmt = self._roll_aggregate(since).order_by(func.count(PlateRoll.id).desc())
+            return [
+                _entry(row, score=int(row.rolls or 0), metric="ROLLS")
+                for row in self.db.execute(stmt.limit(limit))
+            ]
+
+        # Default: most collected plates.
+        stmt = self._owned_aggregate().order_by(
+            func.count(func.distinct(UserPlate.plate_id)).desc()
+        )
+        return [
+            _entry(row, score=int(row.plates or 0), metric="COLLECTION")
+            for row in self.db.execute(stmt.limit(limit))
+        ]
 
     def leaderboard(
-        self,
-        *,
-        category: str = "VALUE",
-        period: str = "daily",
-        limit: int = 20,
+        self, *, category: str = "COLLECTION", period: str = "daily", limit: int = 20
     ) -> dict[str, object]:
-        try:
-            resolved = LeaderboardCategory(str(category).upper())
-        except ValueError:
-            resolved = LeaderboardCategory.VALUE
-
         window = self._period(period)
         bounded = max(1, min(int(limit), MAX_LIMIT))
-
-        builders = {
-            LeaderboardCategory.VALUE: self._value_leaderboard,
-            LeaderboardCategory.RARITY: self._rarest_leaderboard,
-            LeaderboardCategory.COLLECTION: self._collection_leaderboard,
-            LeaderboardCategory.ROLLS: self._rolls_leaderboard,
-        }
-        entries = builders[resolved](window.since, bounded)
         return {
-            "category": resolved.value,
+            "category": category.upper(),
             "period": window.key,
             "label": window.label,
-            "entries": entries,
+            "entries": self.board(category, window.since, bounded),
         }
 
     def all_boards(self, *, limit: int = 20) -> dict[str, dict[str, object]]:
-        """Every board for one period - used by the ranking screen."""
+        categories = ("COLLECTION", "COUNTRIES", "FIRST_DISCOVERIES", "RARITY", "ROLLS")
         return {
             period: {
                 category: self.leaderboard(category=category, period=period, limit=limit)
-                for category in ("VALUE", "RARITY", "COLLECTION", "ROLLS")
+                for category in categories
             }
             for period in periods()
         }
 
-    def rank_of(self, user_id: int, *, category: str = "VALUE", period: str = "daily") -> int | None:
-        """Position of one user inside the visible board (bounded query)."""
+    def rank_of(self, user_id: int, *, category: str = "COLLECTION", period: str = "daily") -> int | None:
         data = self.leaderboard(category=category, period=period, limit=MAX_LIMIT)
         for index, entry in enumerate(data["entries"], start=1):  # type: ignore[union-attr]
             if entry["user_id"] == user_id:  # type: ignore[index]
                 return index
         return None
+
+
+__all__ = ["MAX_LIMIT", "LeaderboardPeriod", "PlateLeaderboardService", "periods"]

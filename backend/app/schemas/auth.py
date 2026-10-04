@@ -34,6 +34,16 @@ class PremiumState(BaseModel):
     perks: list[str] = Field(default_factory=list)
 
 
+class CollectorLevelState(BaseModel):
+    level: int = 1
+    title_en: str = "Rookie"
+    title_ru: str = "Новичок"
+    xp: int = 0
+    xp_into_level: int = 0
+    xp_for_level: int = 0
+    progress: float = 0.0
+
+
 class UserSummary(BaseModel):
     id: int
     telegram_id: int
@@ -46,28 +56,58 @@ class UserSummary(BaseModel):
     role: str
     is_admin: bool = False
     is_banned: bool = False
+
+    # --- economy (user-facing name is NUMORA) ---
     coins: int = 0
     total_earned: int = 0
     total_spent: int = 0
+
+    # --- activity ---
     total_rolls: int = 0
     containers_opened: int = 0
-    unique_numbers: int = 0
+
+    # --- collection ---
+    plates_count: int = 0
+    countries_count: int = 0
+    regions_count: int = 0
+    first_discoveries_count: int = 0
+    duplicates_sold_count: int = 0
     collection_progress: float = 0.0
-    collection_target: int = 10_000
+    collection_target: int = 0
+    collector_level: CollectorLevelState = Field(default_factory=CollectorLevelState)
+
+    # --- best find ---
     best_value: int = 0
     best_rarity: str | None = None
+    best_collector_value: int = 0
+    best_plate_id: int | None = None
+
+    # --- social ---
     referrals_count: int = 0
     shares_count: int = 0
     challenges_completed: int = 0
+
+    # --- daily ---
     current_streak: int = 0
     longest_streak: int = 0
     rolls_remaining: int = 0
     daily_allowance: int = 0
     daily_resets_at: str | None = None
     can_claim_daily: bool = False
+
+    # --- entitlements and cosmetics ---
     premium: PremiumState = Field(default_factory=PremiumState)
+    supporter: bool = False
+    season_pass_active: bool = False
+    equipped_title: str | None = None
+    equipped_cosmetics: dict[str, str] = Field(default_factory=dict)
+
     created_at: str | None = None
     last_seen_at: str | None = None
+
+    # --- legacy aliases kept for older clients ---
+    unique_numbers: int = 0
+    best_plate_text: str = ""
 
 
 class AuthResponse(BaseModel):

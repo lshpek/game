@@ -1,4 +1,4 @@
-"""Achievement evaluation.
+﻿"""Achievement evaluation.
 
 Metrics are resolved from the user's persisted counters, so unlocking is
 deterministic and replay-safe (rewards are keyed by ``achievement:{id}``).
@@ -10,14 +10,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.timeutils import utcnow
-from app.game.rarity import RARITY_RANK, Rarity
+from app.game.plate_rarity import RARITY_RANK
 from app.models.enums import TransactionType
-from app.models.number import Discovery, Number, UserNumber
 from app.models.payment import PremiumEntitlement
+from app.models.plates import Country, Plate, PlateDiscovery, UserPlate
 from app.models.progression import Achievement, UserAchievement
 from app.models.social import Challenge, Referral, ShareEvent
 from app.models.user import User
 from app.services.economy import EconomyService
+
+# Traits that count toward the pattern achievements.
+PALINDROME_TRAITS = ("palindrome", "symmetric_plate")
+REPEAT_TRAITS = ("repeated_pattern", "pair_letter", "triple_letter")
 
 
 class AchievementService:
@@ -33,47 +37,67 @@ class AchievementService:
             stmt = stmt.where(condition)
         return int(self.db.execute(stmt).scalar_one() or 0)
 
-    def _rarity_count(self, user: User, threshold_rank: int) -> int:
-        rarities = [code for code, rank in RARITY_RANK.items() if rank >= threshold_rank]
+    def _owned(self, user: User) -> list[tuple]:
+        """One bounded query feeding every plate-derived metric."""
         stmt = (
-            select(func.count(func.distinct(UserNumber.number_id)))
-            .join(Number, Number.id == UserNumber.number_id)
-            .where(UserNumber.user_id == user.id, Number.rarity.in_(rarities))
+            select(UserPlate.plate_id, Plate.rarity, Plate.country_id, Plate.tags, Plate.is_secret)
+            .join(Plate, Plate.id == UserPlate.plate_id)
+            .where(UserPlate.user_id == user.id)
         )
-        return int(self.db.execute(stmt).scalar_one() or 0)
+        return list(self.db.execute(stmt).all())
 
-    def _secret_first_count(self, user: User) -> int:
-        """First-ever discoveries of *Secret* numbers only."""
-        stmt = (
-            select(func.count())
-            .select_from(Discovery)
-            .join(Number, Number.id == Discovery.number_id)
-            .where(
-                Discovery.user_id == user.id,
-                Discovery.is_first_discovery.is_(True),
-                Number.rarity == Rarity.SECRET.value,
-            )
-        )
-        return int(self.db.execute(stmt).scalar_one() or 0)
+    def _rarity_count(self, rows: list[tuple], threshold_rank: int) -> int:
+        rarities = {code for code, rank in RARITY_RANK.items() if rank >= threshold_rank}
+        return len({row[0] for row in rows if row[1] in rarities})
+
+    @staticmethod
+    def _has_tag(tags: object, wanted: tuple[str, ...]) -> bool:
+        values = tags if isinstance(tags, (list, tuple, set)) else []
+        return any(tag in wanted for tag in values)  # type: ignore[union-attr]
 
     def metrics(self, user: User) -> dict[str, int]:
         """Current value of every metric referenced by the catalogue."""
-        return {
+        rows = self._owned(user)
+        country_codes = {
+            int(country_id): str(code)
+            for country_id, code in self.db.execute(select(Country.id, Country.code)).all()
+        }
+        country_counts: dict[str, int] = {}
+        for row in rows:
+            code = country_codes.get(int(row[2]))
+            if code:
+                country_counts[code.lower()] = country_counts.get(code.lower(), 0) + 1
+
+        metrics: dict[str, int] = {
             "total_rolls": int(user.total_rolls),
-            "unique_numbers": int(user.unique_numbers_count),
-            "containers_opened": int(user.containers_opened),
+            "plates": len({row[0] for row in rows}),
+            "packs_opened": int(user.containers_opened),
             "streak": int(user.longest_streak),
+            "countries": len({row[2] for row in rows}),
+            "first_discoveries": self._count(
+                PlateDiscovery,
+                PlateDiscovery.user_id == user.id,
+                PlateDiscovery.is_first_discovery.is_(True),
+            ),
             "referrals": self._count(
                 Referral, Referral.referrer_id == user.id, Referral.reward_paid.is_(True)
             ),
             "challenges_completed": int(user.challenges_completed),
             "shares": self._count(ShareEvent, ShareEvent.user_id == user.id),
-            "rarity_rare": self._rarity_count(user, RARITY_RANK[Rarity.RARE.value]),
-            "rarity_epic": self._rarity_count(user, RARITY_RANK[Rarity.EPIC.value]),
-            "rarity_legendary": self._rarity_count(user, RARITY_RANK[Rarity.LEGENDARY.value]),
-            "rarity_mythic": self._rarity_count(user, RARITY_RANK[Rarity.MYTHIC.value]),
-            "secret_first_discovery": self._secret_first_count(user),
+            "rarity_rare": self._rarity_count(rows, RARITY_RANK["RARE"]),
+            "rarity_epic": self._rarity_count(rows, RARITY_RANK["EPIC"]),
+            "rarity_legendary": self._rarity_count(rows, RARITY_RANK["LEGENDARY"]),
+            "rarity_mythic": self._rarity_count(rows, RARITY_RANK["MYTHIC"]),
+            "secret": len({row[0] for row in rows if bool(row[4])}),
+            "trait_palindrome": len(
+                {row[0] for row in rows if self._has_tag(row[3], PALINDROME_TRAITS)}
+            ),
+            "trait_repeat": len({row[0] for row in rows if self._has_tag(row[3], REPEAT_TRAITS)}),
+            "trait_777": len({row[0] for row in rows if self._has_tag(row[3], ("contains_777",))}),
         }
+        for code, count in country_counts.items():
+            metrics[f"country_{code}"] = count
+        return metrics
 
     def evaluate(self, user: User) -> list[UserAchievement]:
         """Check every active achievement and unlock those that qualify."""
