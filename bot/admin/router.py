@@ -74,7 +74,7 @@ async def handle_start(message: Message, command: CommandObject) -> None:
     del command
     # Keep the operator's chat as clean as a player's: the command disappears and
     # only the panel message remains.
-    from bot.bot import delete_quietly
+    from bot import delete_quietly
 
     await delete_quietly(message)
     try:
