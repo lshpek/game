@@ -14,7 +14,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.admin import keyboards as kb
-from bot.admin import ops
 from bot.admin.common import (
     data_of,
     get_client,
@@ -22,7 +21,6 @@ from bot.admin.common import (
     render,
     render_error,
     require_user,
-    stage,
     toast,
 )
 from bot.admin.formatters import (
@@ -33,6 +31,9 @@ from bot.admin.formatters import (
 )
 from bot.admin.formatters import (
     confirm,
+    esc,
+    num,
+    plate_card,
 )
 from bot.admin.formatters import (
     countries as fmt_countries,
@@ -41,16 +42,10 @@ from bot.admin.formatters import (
     events as fmt_events,
 )
 from bot.admin.formatters import (
-    plate_card,
-)
-from bot.admin.formatters import (
     plate_list as fmt_plate_list,
 )
 from bot.admin.formatters import (
     ranks as fmt_ranks,
-)
-from bot.admin.formatters import (
-    result_ok,
 )
 from bot.admin.formatters import (
     system as fmt_system,
@@ -61,11 +56,9 @@ from bot.admin.formatters import (
 from bot.admin.formatters import (
     transactions as fmt_transactions,
 )
-from bot.admin.formatters import esc, num
 from bot.admin.states import (
     KEY_COUNTRY,
     KEY_MODE,
-    KEY_PAGE,
     KEY_PRESET,
     KEY_QUERY,
     KEY_RARITY,
@@ -73,7 +66,6 @@ from bot.admin.states import (
     KEY_SORT,
     KEY_TRAIT,
     AdminStates,
-    clear_flow_data,
     selected_user_id,
 )
 
@@ -87,7 +79,8 @@ DEFAULT_MODE = "SIMULATION"
 # ---------------------------------------------------------------------------
 # generic routing helpers
 # ---------------------------------------------------------------------------
-def _screen(context: FSMContext, name: str) -> None:
+async def _screen(context: FSMContext, name: str) -> None:
+    """Remember which screen is open so ``Refresh`` knows what to re-read."""
     await context.update_data(**{KEY_SCREEN: name})
 
 
@@ -97,7 +90,7 @@ def _telegram_id(target: Message | CallbackQuery) -> int:
 
 async def refresh_current_screen(target: CallbackQuery, context: FSMContext) -> None:
     """Re-render whichever screen the admin is looking at."""
-    screen = data_of(context, KEY_SCREEN, kb.HOME)
+    screen = await data_of(context, KEY_SCREEN, kb.HOME)
     handlers = {
         kb.TESTLAB: lab_menu,
         kb.PLATES: plates_menu,
@@ -132,20 +125,20 @@ async def _refresh_user_section(target: CallbackQuery, context: FSMContext) -> N
 @guard
 async def lab_menu(callback: CallbackQuery, context: FSMContext) -> None:
     await _screen(context, kb.TESTLAB)
-    mode = data_of(context, KEY_MODE, DEFAULT_MODE)
+    mode = await data_of(context, KEY_MODE, DEFAULT_MODE)
     user_id = await selected_user_id(context)
     await render(
         callback.message,
-        _lab_header(mode, user_id, context),
+        await _lab_header(mode, user_id, context),
         kb.lab_keyboard(mode=str(mode), has_user=user_id is not None),
     )
 
 
-def _lab_header(mode: str, user_id: int | None, context: FSMContext) -> str:
-    country = data_of(context, KEY_COUNTRY)
-    rarity = data_of(context, KEY_RARITY)
-    preset = data_of(context, KEY_PRESET)
-    trait = data_of(context, KEY_TRAIT)
+async def _lab_header(mode: str, user_id: int | None, context: FSMContext) -> str:
+    country = await data_of(context, KEY_COUNTRY)
+    rarity = await data_of(context, KEY_RARITY)
+    preset = await data_of(context, KEY_PRESET)
+    trait = await data_of(context, KEY_TRAIT)
     rows = [
         "🧪 <b>TEST LAB</b>",
         "━━━━━━━━━━",
@@ -185,7 +178,7 @@ async def lab_country_menu(callback: CallbackQuery, context: FSMContext) -> None
     """Countries are loaded from the backend catalogue, never hardcoded here."""
     try:
         catalog = await get_client().catalog(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     countries = catalog.get("countries") or []
@@ -217,14 +210,13 @@ async def lab_country_pick(callback: CallbackQuery, context: FSMContext) -> None
 async def lab_rarity_menu(callback: CallbackQuery, context: FSMContext) -> None:
     try:
         catalog = await get_client().catalog(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     rarities = [str(value) for value in (catalog.get("rarities") or [])]
     await render(
         callback.message,
-        "💎 <b>РЕДКОСТЬ</b>\n━━━━━━━━━━\n\nБудет сгенерирован номер этой редкости.\n"
-        "<i>веса RNG не меняются</i>",
+        "💎 <b>РЕДКОСТЬ</b>\n━━━━━━━━━━\n\nБудет сгенерирован номер этой редкости.\n<i>веса RNG не меняются</i>",
         kb.rarity_keyboard(rarities),
     )
 
@@ -246,7 +238,7 @@ async def lab_rarity_pick(callback: CallbackQuery, context: FSMContext) -> None:
 async def lab_preset_menu(callback: CallbackQuery, context: FSMContext) -> None:
     try:
         catalog = await get_client().catalog(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(
@@ -263,19 +255,17 @@ async def lab_preset_pick(callback: CallbackQuery, context: FSMContext) -> None:
     if len(parts) < 3:
         await lab_preset_menu(callback, context)
         return
-    await context.update_data(
-        **{KEY_PRESET: parts[2], KEY_COUNTRY: None, KEY_RARITY: None, KEY_TRAIT: None}
-    )
+    await context.update_data(**{KEY_PRESET: parts[2], KEY_COUNTRY: None, KEY_RARITY: None, KEY_TRAIT: None})
     await toast(callback, f"Пресет: {parts[2]}")
     await lab_menu(callback, context)
 
 
-def _lab_request(context: FSMContext) -> dict[str, Any]:
+async def _lab_request(context: FSMContext) -> dict[str, Any]:
     return {
-        "country_code": data_of(context, KEY_COUNTRY),
-        "rarity": data_of(context, KEY_RARITY),
-        "preset": data_of(context, KEY_PRESET),
-        "require_trait": data_of(context, KEY_TRAIT),
+        "country_code": await data_of(context, KEY_COUNTRY),
+        "rarity": await data_of(context, KEY_RARITY),
+        "preset": await data_of(context, KEY_PRESET),
+        "require_trait": await data_of(context, KEY_TRAIT),
     }
 
 
@@ -287,15 +277,15 @@ async def lab_simulate(callback: CallbackQuery, context: FSMContext) -> None:
         payload = await get_client().post(
             "/testlab/simulate",
             admin_telegram_id=_telegram_id(callback),
-            json=_lab_request(context),
+            json=await _lab_request(context),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(
         callback.message,
         fmt_test_roll(payload, mode="SIMULATION"),
-        kb.lab_keyboard(mode=str(data_of(context, KEY_MODE, DEFAULT_MODE)), has_user=False),
+        kb.lab_keyboard(mode=str(await data_of(context, KEY_MODE, DEFAULT_MODE)), has_user=False),
     )
 
 
@@ -305,7 +295,7 @@ async def lab_live_prompt(callback: CallbackQuery, context: FSMContext) -> None:
     user_id = await require_user(context, callback)
     if user_id is None:
         return
-    request = _lab_request(context)
+    request = await _lab_request(context)
     await context.set_state(AdminStates.reason)
     await context.update_data(**{KEY_MODE: "LIVE"})
     rows = [
@@ -355,9 +345,7 @@ async def lab_text_input(message: Message, context: FSMContext) -> None:
     text = (message.text or "").strip()
     await context.set_state(AdminStates.reason)
     await context.update_data(plate_text=text[:32])
-    await message.answer(
-        "✅ Текст принят. Введите причину.", reply_markup=kb.prompt_keyboard()
-    )
+    await message.answer("✅ Текст принят. Введите причину.", reply_markup=kb.prompt_keyboard())
 
 
 # ---------------------------------------------------------------------------
@@ -389,19 +377,21 @@ async def plate_search_prompt(callback: CallbackQuery, context: FSMContext) -> N
 @router.message(AdminStates.search_user, F.text)
 @guard
 async def plate_search_input(message: Message, context: FSMContext) -> None:
-    if data_of(context, KEY_SCREEN) != "plate-search":
+    if await data_of(context, KEY_SCREEN) != "plate-search":
         return
     query = (message.text or "").strip()[:32]
     await context.set_state(None)
     await render(message, f"🔍 Ищу <code>{esc(query)}</code>…", None, answer=True)
     try:
         data = await get_client().plates(_telegram_id(message), query=query, sort="recent", page=1)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(message, exc)
         return
-    await render(message, fmt_plate_list(data), kb.plate_list_keyboard(
-        page=int(data.get("page", 1)), has_more=bool(data.get("has_more"))
-    ))
+    await render(
+        message,
+        fmt_plate_list(data),
+        kb.plate_list_keyboard(page=int(data.get("page", 1)), has_more=bool(data.get("has_more"))),
+    )
 
 
 @router.callback_query(F.data.startswith(kb.pack(kb.PLATE_SORT)))
@@ -426,13 +416,13 @@ async def _render_plate_list(
     context: FSMContext,
     page: int,
 ) -> None:
-    params: dict[str, Any] = {"sort": data_of(context, KEY_SORT, "recent"), "page": page}
-    query = data_of(context, KEY_QUERY)
+    params: dict[str, Any] = {"sort": await data_of(context, KEY_SORT, "recent"), "page": page}
+    query = await data_of(context, KEY_QUERY)
     if query:
         params["query"] = query
     try:
         data = await get_client().plates(_telegram_id(target), **params)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(target, exc)
         return
     await render(
@@ -452,7 +442,7 @@ async def plate_open(callback: CallbackQuery, context: FSMContext) -> None:
     await context.update_data(plate_id=int(parts[2]))
     try:
         data = await get_client().plate(_telegram_id(callback), int(parts[2]))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(callback.message, plate_card(data), kb.plate_keyboard())
@@ -465,20 +455,18 @@ async def plate_open(callback: CallbackQuery, context: FSMContext) -> None:
 @guard
 async def ranks_menu(callback: CallbackQuery, context: FSMContext) -> None:
     await _screen(context, kb.RANKS)
-    category = data_of(context, "rank_category", "COLLECTION")
-    period = data_of(context, "rank_period", "daily")
+    category = await data_of(context, "rank_category", "COLLECTION")
+    period = await data_of(context, "rank_period", "daily")
     try:
         data = await get_client().ranks(_telegram_id(callback), category, period)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     entries = [
-        (int(entry["user_id"]), entry.get("username") and f"@{entry['username']}" or entry.get("display_name") or "")
+        (int(entry["user_id"]), (entry.get("username") and f"@{entry['username']}") or entry.get("display_name") or "")
         for entry in (data.get("entries") or [])
     ]
-    keyboard = kb.ranks_keyboard(
-        data.get("categories") or ["COLLECTION"], data.get("periods") or ["daily"]
-    )
+    keyboard = kb.ranks_keyboard(data.get("categories") or ["COLLECTION"], data.get("periods") or ["daily"])
     await render(callback.message, _ranks_with_open(data, entries), keyboard)
 
 
@@ -514,7 +502,7 @@ async def countries_menu(callback: CallbackQuery, context: FSMContext) -> None:
     await _screen(context, kb.COUNTRIES)
     try:
         data = await get_client().countries(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(
@@ -534,7 +522,7 @@ async def country_toggle(callback: CallbackQuery, context: FSMContext) -> None:
     country_id = int(parts[2])
     try:
         data = await get_client().countries(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     current = next((item for item in (data.get("items") or []) if int(item["id"]) == country_id), None)
@@ -566,7 +554,7 @@ async def events_menu(callback: CallbackQuery, context: FSMContext) -> None:
     await _screen(context, kb.EVENTS)
     try:
         data = await get_client().events(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(callback.message, fmt_events(data), kb.events_keyboard(data.get("items") or []))
@@ -582,7 +570,7 @@ async def event_toggle(callback: CallbackQuery, context: FSMContext) -> None:
     event_id = int(parts[2])
     try:
         data = await get_client().events(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     current = next((item for item in (data.get("items") or []) if int(item["id"]) == event_id), None)
@@ -629,7 +617,7 @@ async def analytics_period(callback: CallbackQuery, context: FSMContext) -> None
     await _screen(context, kb.ANALYTICS)
     try:
         data = await get_client().analytics(_telegram_id(callback), period)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(
@@ -669,7 +657,7 @@ async def _render_audit(
     page: int,
 ) -> None:
     params: dict[str, Any] = {"page": page}
-    scope = data_of(context, "audit_scope", "all")
+    scope = await data_of(context, "audit_scope", "all")
     if scope == "mine":
         from bot.admin.common import config
 
@@ -680,7 +668,7 @@ async def _render_audit(
         params["target_user_id"] = user_id
     try:
         data = await get_client().audit(_telegram_id(target), **params)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(target, exc)
         return
     await render(
@@ -696,7 +684,7 @@ async def system_menu(callback: CallbackQuery, context: FSMContext) -> None:
     await _screen(context, kb.SYSTEM)
     try:
         data = await get_client().system(_telegram_id(callback))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     bot_username = os_environ("TELEGRAM_BOT_USERNAME")
@@ -728,7 +716,7 @@ async def ledger_menu(callback: CallbackQuery, context: FSMContext) -> None:
         params["user_id"] = user_id
     try:
         data = await get_client().transactions(_telegram_id(callback), **params)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await render(
@@ -736,13 +724,6 @@ async def ledger_menu(callback: CallbackQuery, context: FSMContext) -> None:
         fmt_transactions(data),
         kb.ledger_keyboard(offset=offset, has_more=bool(data.get("has_more"))),
     )
-
-
-@router.callback_query(F.data.startswith(kb.pack(kb.HOME))
-@guard
-async def world_home(callback: CallbackQuery) -> None:
-    """Home is handled by the main router; swallow duplicates here."""
-    del callback
 
 
 __all__ = ["refresh_current_screen", "router"]

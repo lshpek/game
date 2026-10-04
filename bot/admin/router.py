@@ -11,46 +11,22 @@ import logging
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.admin import keyboards as kb
 from bot.admin import ops
-from bot.admin.common import config, data_of, guard, render, render_error, require_user, stage, toast
+from bot.admin.common import data_of, guard, render, render_error, require_user, toast
 from bot.admin.formatters import (
-    achievements as fmt_achievements,
-)
-from bot.admin.formatters import (
-    cosmetics as fmt_cosmetics,
-)
-from bot.admin.formatters import (
-    economy as fmt_economy,
-)
-from bot.admin.formatters import (
-    missions as fmt_missions,
-)
-from bot.admin.formatters import (
-    premium as fmt_premium,
-)
-from bot.admin.formatters import (
-    progression as fmt_progression,
-)
-from bot.admin.formatters import (
+    esc,
+    num,
     user_card,
-)
-from bot.admin.formatters import (
     user_line,
 )
-from bot.admin.formatters import esc, num
+from bot.admin.players import router as players_router
 from bot.admin.states import (
-    KEY_AMOUNT,
-    KEY_KIND,
-    KEY_MODE,
-    KEY_REASON,
     AdminStates,
-    clear_flow_data,
-    selected_user_id,
     set_selected_user,
 )
 from bot.admin.world import router as world_router
@@ -58,7 +34,6 @@ from bot.admin.world import router as world_router
 logger = logging.getLogger("bot.admin.router")
 
 router = Router(name="admin")
-router.include_router(world_router)
 
 # Actions that need an explicit confirmation before they run.
 DANGEROUS_PREFIXES = (
@@ -96,7 +71,7 @@ async def open_panel(message: Message, *, answer: bool = False) -> None:
 
     try:
         data = await get_client().dashboard(_telegram_id(message))
-    except Exception as exc:  # noqa: BLE001 - surfaced to the admin below
+    except Exception as exc:
         await render_error(message, exc)
         return
     from bot.admin.formatters import home, recent_actions
@@ -163,8 +138,7 @@ async def unknown_route(callback: CallbackQuery) -> None:
 async def users_menu(callback: CallbackQuery) -> None:
     await render(
         callback.message,
-        "👤 <b>ЮЗЕРЫ</b>\n━━━━━━━━━━\n\nНайдите игрока по Telegram ID, внутреннему ID,\n"
-        "@username или имени.",
+        "👤 <b>ЮЗЕРЫ</b>\n━━━━━━━━━━\n\nНайдите игрока по Telegram ID, внутреннему ID,\n@username или имени.",
         kb.users_keyboard(),
     )
 
@@ -176,7 +150,7 @@ async def users_recent(callback: CallbackQuery) -> None:
 
     try:
         data = await get_client().search_users(_telegram_id(callback), None, 1)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await _render_search(callback, data, title="🕘 <b>ПОСЛЕДНИЕ ИГРОКИ</b>")
@@ -201,10 +175,10 @@ async def users_page(callback: CallbackQuery, context: FSMContext) -> None:
 
     parts = kb.unpack(callback.data or "")
     page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
-    query = data_of(context, "query")
+    query = await data_of(context, "query")
     try:
         data = await get_client().search_users(_telegram_id(callback), query, page)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     await _render_search(callback, data)
@@ -223,7 +197,7 @@ async def users_search_input(message: Message, context: FSMContext) -> None:
     await context.update_data(query=query)
     try:
         data = await get_client().search_users(_telegram_id(message), query, 1)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(message, exc)
         return
     await _render_search(message, data, answer=True)
@@ -258,9 +232,7 @@ async def _render_search(
     await render(
         target,
         "\n".join(body),
-        kb.search_results_keyboard(
-            rows, page=int(data.get("page", 1)), has_more=bool(data.get("has_more"))
-        ),
+        kb.search_results_keyboard(rows, page=int(data.get("page", 1)), has_more=bool(data.get("has_more"))),
         answer=answer,
     )
 
@@ -286,7 +258,7 @@ async def user_plates(callback: CallbackQuery, context: FSMContext) -> None:
 
     try:
         data = await get_client().plates(_telegram_id(callback), user_id=user_id, sort="recent", page=1)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(callback, exc)
         return
     from bot.admin.formatters import plate_list
@@ -315,17 +287,15 @@ async def _render_user(
         return
     try:
         data = await get_client().user_detail(_telegram_id(target), user_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         await render_error(target, exc)
         return
     await render(target, user_card(data), kb.user_keyboard())
 
 
-
-
-from bot.admin.players import router as players_router
-
+# Sub-routers are attached last so the generic navigation handlers above (Home,
+# Back, Refresh, unknown route) always win the callback lookup.
+router.include_router(world_router)
 router.include_router(players_router)
 
 __all__ = ["open_panel", "router"]
-

@@ -37,6 +37,13 @@ from bot.admin.formatters import (
     achievements as fmt_achievements,
 )
 from bot.admin.formatters import (
+    confirm,
+    esc,
+    num,
+    result_ok,
+    user_line,
+)
+from bot.admin.formatters import (
     cosmetics as fmt_cosmetics,
 )
 from bot.admin.formatters import (
@@ -51,14 +58,9 @@ from bot.admin.formatters import (
 from bot.admin.formatters import (
     progression as fmt_progression,
 )
-from bot.admin.formatters import (
-    user_line,
-)
-from bot.admin.formatters import confirm, esc, num, result_ok
 from bot.admin.states import (
     KEY_AMOUNT,
     KEY_KIND,
-    KEY_REASON,
     AdminStates,
     clear_flow_data,
     selected_user_id,
@@ -67,6 +69,27 @@ from bot.admin.states import (
 logger = logging.getLogger("bot.admin.players")
 
 router = Router(name="admin-players")
+
+
+# ---------------------------------------------------------------------------
+# economy
+# ---------------------------------------------------------------------------
+async def _render_economy(target: CallbackQuery | Message, user_id: int) -> None:
+    """Balance, lifetime totals and the ledger tail for one player."""
+    try:
+        data = await get_client().user_economy(telegram_id(target), user_id)
+    except Exception as exc:
+        await render_error(target, exc)
+        return
+    await render(target, fmt_economy(data), kb.economy_keyboard())
+
+
+async def _render_user(target: CallbackQuery | Message, context: FSMContext, user_id: int | None = None) -> None:
+    """Re-use the shared player card renderer from the main router."""
+    from bot.admin.router import _render_user as render_user_card
+
+    await render_user_card(target, context, user_id)
+
 
 # ---------------------------------------------------------------------------
 # economy
@@ -259,12 +282,12 @@ async def coin_reason_input(message: Message, context: FSMContext) -> None:
     if not reason or reason.startswith("/"):
         await message.answer("⚠️ Нужна причина (минимум 1 символ).", reply_markup=kb.prompt_keyboard())
         return
-    amount = data_of(context, KEY_AMOUNT)
-    kind = data_of(context, KEY_KIND, kb.ACT_COINS)
+    amount = await data_of(context, KEY_AMOUNT)
+    kind = await data_of(context, KEY_KIND, kb.ACT_COINS)
     if kind == kb.ACT_BALANCE:
         amount = int(amount or 0)
     else:
-        sign = data_of(context, "sign", 1)
+        sign = await data_of(context, "sign", 1)
         amount = int(amount or 0) * (1 if sign == 1 else -1)
     await _stage_economy(message, context, kind, amount, reason)
 
@@ -671,8 +694,7 @@ async def _mission_stage(
     rows = [
         f"игрок: {await _user_label(target, context, user_id)}",
         f"задание: {code}",
-        f"действие: {action}"
-        + (f" (+{amount})" if action == "progress" else ""),
+        f"действие: {action}" + (f" (+{amount})" if action == "progress" else ""),
     ]
     if dangerous:
         rows.append("<i>награда выплачивается только один раз</i>")
@@ -1048,9 +1070,7 @@ async def ban_toggle(callback: CallbackQuery, context: FSMContext) -> None:
                 f"игрок: {esc(user_line(detail))}",
                 f"TG ID: {esc(str(detail.get('telegram_id')))}",
                 "",
-                "Бан блокирует обычный доступ к игре."
-                if banning
-                else "Игрок снова сможет играть.",
+                "Бан блокирует обычный доступ к игре." if banning else "Игрок снова сможет играть.",
                 "",
                 "📝 причина: <i>укажите сейчас</i>",
             ],
@@ -1069,22 +1089,22 @@ async def reason_input(message: Message, context: FSMContext) -> None:
     if not reason or reason.startswith("/"):
         await message.answer("⚠️ Нужна причина (минимум 1 символ).", reply_markup=kb.prompt_keyboard())
         return
-    kind = data_of(context, KEY_KIND)
+    kind = await data_of(context, KEY_KIND)
     user_id = await require_user(context, message)
     if not kind or user_id is None:
         await context.set_state(None)
         return
-    amount = data_of(context, KEY_AMOUNT)
+    amount = await data_of(context, KEY_AMOUNT)
     extra: dict[str, Any] = {}
 
     if kind == kb.ACT_COINS:
-        if data_of(context, "exact"):
+        if await data_of(context, "exact"):
             extra = {"target": int(amount or 0), "delta": int(amount or 0)}
         else:
             extra = {"delta": int(amount or 0)}
         title = "ИЗМЕНИТЬ БАЛАНС"
         rows = ["дельта рассчитана бэкендом", ""]
-        operation = kb.ACT_BALANCE if data_of(context, "exact") else kb.ACT_COINS
+        operation = kb.ACT_BALANCE if await data_of(context, "exact") else kb.ACT_COINS
         await _finalise(message, context, operation, extra, reason, title, rows, user_id)
         return
     if kind == kb.ACT_ROLLS:
@@ -1093,9 +1113,7 @@ async def reason_input(message: Message, context: FSMContext) -> None:
         )
         return
     if kind == kb.ACT_ROLLS_RESET:
-        await _finalise(
-            message, context, kb.ACT_ROLLS_RESET, {}, reason, "⚠️ СБРОС РОЛЛОВ СЕГОДНЯ", [], user_id
-        )
+        await _finalise(message, context, kb.ACT_ROLLS_RESET, {}, reason, "⚠️ СБРОС РОЛЛОВ СЕГОДНЯ", [], user_id)
         return
     if kind == kb.ACT_XP:
         await _finalise(
@@ -1134,19 +1152,17 @@ async def reason_input(message: Message, context: FSMContext) -> None:
         )
         return
     if kind == kb.ACT_PROG_RESET:
-        await _finalise(
-            message, context, kb.ACT_PROG_RESET, {}, reason, "⚠️ СБРОС ПРОГРЕССИИ", [], user_id
-        )
+        await _finalise(message, context, kb.ACT_PROG_RESET, {}, reason, "⚠️ СБРОС ПРОГРЕССИИ", [], user_id)
         return
     if kind == kb.ACT_MISSION:
-        code = data_of(context, "mission_code") or data_of(context, "pending_code") or ""
+        code = await data_of(context, "mission_code") or await data_of(context, "pending_code") or ""
         if not code:
             code = str(amount or "")
         await _finalise(
             message,
             context,
             kb.ACT_MISSION,
-            {"code": code, "action": data_of(context, "mission_action") or "progress"},
+            {"code": code, "action": await data_of(context, "mission_action") or "progress"},
             reason,
             "ЗАДАНИЕ",
             [],
@@ -1170,7 +1186,7 @@ async def reason_input(message: Message, context: FSMContext) -> None:
             message,
             context,
             kb.ACT_COSMETIC,
-            {"code": str(amount or ""), "action": data_of(context, "action") or "grant"},
+            {"code": str(amount or ""), "action": await data_of(context, "action") or "grant"},
             reason,
             "КОСМЕТИКА",
             [],
@@ -1223,7 +1239,7 @@ async def reason_input(message: Message, context: FSMContext) -> None:
             message,
             context,
             kb.ACT_REWARD,
-            {"reward_kind": data_of(context, "reward_kind"), "amount": int(amount or 0)},
+            {"reward_kind": await data_of(context, "reward_kind"), "amount": int(amount or 0)},
             reason,
             "БЫСТРАЯ НАГРАДА",
             [],
@@ -1492,7 +1508,6 @@ async def _show_wallet_result(callback: CallbackQuery, result: dict[str, Any]) -
     rows.append(f"транзакция: {result.get('transaction_id', '—')}")
     if result.get("replayed"):
         rows.append("<i>повтор запроса — начислено один раз</i>")
-    from bot.admin.formatters import result_ok
 
     await render(
         callback.message,
@@ -1507,7 +1522,6 @@ async def _show_result(
     user_id: int | None,
 ) -> None:
     """Generic success screen, then a button back to the player card."""
-    from bot.admin.formatters import result_ok
 
     rows: list[str] = []
     for key, label in (

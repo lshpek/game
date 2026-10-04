@@ -7,6 +7,8 @@ search text, separate pending operations. Nothing here is shared.
 
 from __future__ import annotations
 
+from typing import Any
+
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -48,8 +50,25 @@ KEY_PAGE = "page"
 KEY_SORT = "sort"
 
 
+async def get_data(context: FSMContext) -> dict[str, Any]:
+    """Snapshot of the admin's flow data.
+
+    aiogram exposes FSM data only through ``get_data()``; this wrapper keeps the
+    call sites short and returns a mutable copy.
+    """
+    return dict(await context.get_data() or {})
+
+
+async def pop_data(context: FSMContext, key: str) -> None:
+    """Delete one key from the flow data."""
+    data = await get_data(context)
+    if key in data:
+        data.pop(key, None)
+        await context.set_data(data)
+
+
 async def selected_user_id(context: FSMContext) -> int | None:
-    value = (context.data or {}).get(KEY_SELECTED_USER)
+    value = (await get_data(context)).get(KEY_SELECTED_USER)
     try:
         return int(value) if value is not None else None
     except (TypeError, ValueError):
@@ -58,7 +77,7 @@ async def selected_user_id(context: FSMContext) -> int | None:
 
 async def set_selected_user(context: FSMContext, user_id: int | None) -> None:
     if user_id is None:
-        await context.pop_data(KEY_SELECTED_USER)
+        await pop_data(context, KEY_SELECTED_USER)
     else:
         await context.update_data(**{KEY_SELECTED_USER: user_id})
 
@@ -66,9 +85,11 @@ async def set_selected_user(context: FSMContext, user_id: int | None) -> None:
 async def clear_flow_data(context: FSMContext, *, keep_user: bool = True) -> None:
     """Drop obsolete state after a selection, optionally keeping the target."""
     keep = {KEY_SELECTED_USER} if keep_user else set()
-    for key in list((context.data or {}).keys()):
+    data = await get_data(context)
+    for key in list(data.keys()):
         if key not in keep and key != KEY_PENDING:
-            await context.pop_data(key, None)
+            data.pop(key, None)
+    await context.set_data(data)
 
 
 __all__ = [
@@ -88,6 +109,8 @@ __all__ = [
     "KEY_TRAIT",
     "AdminStates",
     "clear_flow_data",
+    "get_data",
+    "pop_data",
     "selected_user_id",
     "set_selected_user",
 ]

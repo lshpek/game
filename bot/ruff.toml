@@ -25,6 +25,11 @@ ignore = [
     "SIM105",
 ]
 
+[lint.per-file-ignores]
+# bot.py must put the project root on sys.path before importing bot.admin, so the
+# package imports legitimately follow code.
+"bot.py" = ["E402"]
+
 [lint.isort]
 known-first-party = ["bot"]
 

@@ -7,9 +7,14 @@ Responsibilities:
 * deep-link payloads (``ref_<id>``, ``number_1337``, ``challenge_<code>``) are
   forwarded to the Mini App so Telegram delivers them through ``initData``;
 * successful Telegram Stars payments are forwarded to the backend, which is the
-  only component allowed to grant rewards.
+  only component allowed to grant rewards;
+* ``/admin`` (also ``/panel`` and ``/a``) opens the internal admin control
+  centre for the ids listed in ``ADMIN_TELEGRAM_IDS``.
 
-The bot never mutates game state directly - it only routes.
+The bot never mutates game state directly - it only routes. The admin panel
+likewise only renders screens and forwards intent: every authorisation decision,
+validation, mutation and audit entry happens in the backend, which the panel
+reaches through the service-to-service ``/api/admin/bot/*`` API.
 
 Usage::
 
@@ -31,6 +36,7 @@ from aiogram import Bot, Dispatcher, F, Router, types
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramNetworkError, TelegramUnauthorizedError
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from dotenv import load_dotenv
 
@@ -41,6 +47,17 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ENV_FILE = Path(os.getenv("BOT_ENV_FILE", PROJECT_ROOT / ".env"))
 load_dotenv(ENV_FILE, override=False)
+
+# ``python bot.py`` puts the script's own directory on sys.path, which would make
+# ``bot`` resolve to this file instead of the package. Put the project root first
+# so ``bot.admin`` imports resolve identically locally and inside the container.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from bot.admin.common import config as ADMIN_CONFIG
+from bot.admin.common import refresh_commands
+from bot.admin.router import router as admin_router
+from bot.admin.states import AdminStates
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "CHANGE_ME")
 BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "CHANGE_ME").lstrip("@")
@@ -62,6 +79,10 @@ LOCALHOST_URLS = {
 START_PARAM_PREFIXES = ("ref_", "number_", "challenge_")
 MAX_START_PARAM_LENGTH = 64
 
+# Telegram must deliver callback_query updates for the admin panel's inline
+# keyboards; message-only polling would silently break every button.
+ALLOWED_UPDATES = ["message", "callback_query"]
+
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s %(levelname)-8s %(name)s %(message)s",
@@ -71,6 +92,10 @@ logger = logging.getLogger("bot")
 
 router = Router()
 http: httpx.AsyncClient | None = None
+
+# Admin panel readiness, evaluated once so ``--check`` can report it.
+ADMIN_PANEL_ENABLED = ADMIN_CONFIG.enabled
+ADMIN_ADMIN_IDS_COUNT = len(ADMIN_CONFIG.admin_ids)
 
 
 # --------------------------------------------------------------------------
@@ -113,7 +138,6 @@ def config_problems() -> list[str]:
             f"FRONTEND_URL ({FRONTEND_URL}) is not HTTPS. Telegram only opens Mini Apps over HTTPS outside localhost."
         )
     return problems
-
 
 # --------------------------------------------------------------------------
 # Handlers
@@ -163,6 +187,16 @@ async def handle_successful_payment(message: types.Message) -> None:
     await message.answer("Payment received. Your rewards are being added — open the game to see them! 🎉")
 
 
+@router.callback_query()
+async def ignore_foreign_callbacks(callback: types.CallbackQuery) -> None:
+    """Swallow callbacks from keyboards the bot did not create.
+
+    Without this, pressing a stale inline button would leave a spinner running
+    until Telegram timed the query out.
+    """
+    await callback.answer()
+
+
 # --------------------------------------------------------------------------
 # Lifecycle
 # --------------------------------------------------------------------------
@@ -170,12 +204,17 @@ async def on_startup(bot: Bot) -> None:
     """aiogram injects the Bot instance, so no dispatcher lookup is needed."""
     me = await bot.get_me()
     logger.info("Bot connected as @%s (id=%s)", me.username, me.id)
-    await bot.set_my_commands(
-        [
-            types.BotCommand(command="start", description="Open the game"),
-            types.BotCommand(command="help", description="Help"),
-        ]
-    )
+
+    # Ordinary players see only /start and /help. The admin commands are scoped to
+    # the configured ids, and the backend re-verifies them on every request.
+    await refresh_commands(bot)
+
+    if not ADMIN_PANEL_ENABLED:
+        logger.warning(
+            "Admin panel disabled: set ADMIN_TELEGRAM_IDS and a non-placeholder SERVICE_TOKEN to enable /admin."
+        )
+    else:
+        logger.info("Admin panel enabled for %d Telegram id(s).", ADMIN_ADMIN_IDS_COUNT)
 
 
 def explain_error(exc: Exception) -> str:
@@ -204,7 +243,14 @@ async def run() -> int:
     http = httpx.AsyncClient(timeout=httpx.Timeout(15.0))
 
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-    dispatcher = Dispatcher()
+    # MemoryStorage is enough: the panel's state is short-lived per-admin text
+    # input, and aiogram keys it by (bot, chat, user) so two admins never collide.
+    storage = MemoryStorage()
+    dispatcher = Dispatcher(storage=storage)
+    dispatcher.update.state = AdminStates
+    # The admin router is registered first so its guard sees every event, and it
+    # is an outer router: player commands still fall through to ``router``.
+    dispatcher.include_router(admin_router)
     dispatcher.include_router(router)
     dispatcher.startup.register(on_startup)
 
@@ -215,11 +261,11 @@ async def run() -> int:
                 bot,
                 url=WEBHOOK_URL,
                 secret_token=WEBHOOK_SECRET or None,
-                allowed_updates=["message"],
+                allowed_updates=ALLOWED_UPDATES,
             )
         else:
             logger.info("Starting long polling (set TELEGRAM_WEBHOOK_URL to use a webhook)")
-            await dispatcher.start_polling(bot, allowed_updates=["message"])
+            await dispatcher.start_polling(bot, allowed_updates=ALLOWED_UPDATES)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Bot stopped")
     except Exception as exc:
@@ -243,8 +289,11 @@ def check() -> int:
     logger.info("  Mini App URL         : %s", mini_app_url("ref_12345"))
     logger.info("  BACKEND_URL          : %s", BACKEND_URL)
     logger.info("  SERVICE_TOKEN        : %s", "SET" if SERVICE_TOKEN not in PLACEHOLDERS else "MISSING")
+    logger.info("  ADMIN_TELEGRAM_IDS   : %s", ADMIN_ADMIN_IDS_COUNT or "MISSING")
+    logger.info("  Admin panel          : %s", "ENABLED" if ADMIN_PANEL_ENABLED else "DISABLED")
     logger.info("  Env file             : %s (%s)", ENV_FILE, "found" if ENV_FILE.is_file() else "missing")
     logger.info("  Mode                 : %s", "webhook" if WEBHOOK_URL else "polling")
+    logger.info("  Allowed updates      : %s", ", ".join(ALLOWED_UPDATES))
 
     problems = config_problems()
     if problems:
@@ -253,7 +302,8 @@ def check() -> int:
             logger.error("  - %s", problem)
         return 1
 
-    logger.info("Handlers registered: %s", len(router.message.handlers))
+    logger.info("Player handlers registered: %s", len(router.message.handlers))
+    logger.info("Admin handlers registered : %s", len(admin_router.callback_query.handlers))
     logger.info("Configuration OK.")
     return 0
 

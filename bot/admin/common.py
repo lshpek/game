@@ -15,8 +15,9 @@ panel three uniform guarantees:
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -27,7 +28,7 @@ from bot.admin import ops
 from bot.admin.client import AdminAPIError, AdminBotClient
 from bot.admin.config import ACCESS_DENIED_TEXT, AdminConfig, load_config
 from bot.admin.formatters import truncate
-from bot.admin.states import selected_user_id
+from bot.admin.states import get_data, selected_user_id
 
 logger = logging.getLogger("bot.admin")
 
@@ -87,6 +88,19 @@ async def stage(
 # ---------------------------------------------------------------------------
 # rendering
 # ---------------------------------------------------------------------------
+def _is_callback(event: Any) -> bool:
+    """True for a ``CallbackQuery``.
+
+    Duck-typed on the ``data`` attribute instead of ``isinstance`` so the panel
+    also works with aiogram-compatible test doubles.
+    """
+    return isinstance(event, CallbackQuery) or hasattr(event, "data")
+
+
+def _message_of(event: Any) -> Message | None:
+    return getattr(event, "message", None)
+
+
 async def render(
     target: Message | CallbackQuery,
     text: str,
@@ -95,11 +109,11 @@ async def render(
     answer: bool = False,
 ) -> None:
     """Edit the panel in place, tolerating "message is not modified"."""
-    message = target.message if isinstance(target, CallbackQuery) else target
+    message = _message_of(target)
     text = truncate(text)
     try:
         if answer or message is None:
-            await target.answer(text, reply_markup=keyboard)  # type: ignore[union-attr]
+            await target.answer(text, reply_markup=keyboard)
             return
         if keyboard is None:
             await message.edit_text(text)
@@ -113,9 +127,6 @@ async def render(
                     await message.edit_reply_markup(reply_markup=keyboard)
                 except TelegramBadRequest:
                     pass
-            return
-        if answer and message is None:
-            await target.answer(text, reply_markup=keyboard)  # type: ignore[union-attr]
             return
         raise
 
@@ -146,22 +157,12 @@ async def render_error(target: CallbackQuery | Message, exc: Exception) -> None:
 # ---------------------------------------------------------------------------
 # guards
 # ---------------------------------------------------------------------------
-def deny(target: CallbackQuery | Message) -> None:
+async def deny(target: CallbackQuery | Message) -> None:
     """Generic refusal. Never reveals who *is* an admin."""
-    if isinstance(target, CallbackQuery):
-        target.answer(ACCESS_DENIED_TEXT, show_alert=True)
-
-
-async def require_user(context: FSMContext, target: CallbackQuery | Message) -> int | None:
-    """Return the selected player, or prompt the admin to pick one."""
-    user_id = await selected_user_id(context)
-    if user_id is None:
-        await render(
-            target,
-            "👤 <b>Игрок не выбран</b>\n\nНайдите игрока и откройте его карточку.",
-            None,
-        )
-    return user_id
+    if _is_callback(target):
+        await target.answer(ACCESS_DENIED_TEXT, show_alert=True)
+        return
+    await target.answer(ACCESS_DENIED_TEXT)
 
 
 def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[None]]:
@@ -175,31 +176,43 @@ def guard(handler: Callable[..., Awaitable[None]]) -> Callable[..., Awaitable[No
         if not config.is_admin(user.id if user else None):
             if not config.enabled:
                 logger.warning("admin panel is disabled: ADMIN_TELEGRAM_IDS or SERVICE_TOKEN is unset")
-            deny(event)
+            await deny(event)
             return
         await handler(event, *args, **kwargs)
 
     wrapper.__name__ = getattr(handler, "__name__", "wrapper")
     wrapper.__doc__ = handler.__doc__
+    wrapper.__wrapped_by_guard__ = True  # type: ignore[attr-defined]
     return wrapper
 
 
-def data_of(context: FSMContext, key: str, default: Any = None) -> Any:
-    return (context.data or {}).get(key, default)
+async def data_of(context: FSMContext, key: str, default: Any = None) -> Any:
+    """Read one flow value, falling back to ``default``."""
+    return (await get_data(context)).get(key, default)
+
+
+async def require_user(context: FSMContext, target: Any) -> int | None:
+    """Return the selected player, or prompt the admin to pick one first."""
+    user_id = await selected_user_id(context)
+    if user_id is None:
+        await render(
+            target,
+            "👤 <b>Игрок не выбран</b>\n\nНайдите игрока и откройте его карточку.",
+            None,
+        )
+    return user_id
 
 
 async def refresh_commands(bot: Bot) -> None:
     """Publish the command list, with ``/admin`` only for admins."""
-    from aiogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+    from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
 
     from bot.admin.config import ADMIN_COMMANDS, USER_COMMANDS
 
     default = [BotCommand(**{"command": cmd, "description": text}) for cmd, text in USER_COMMANDS]
     await bot.set_my_commands(default, scope=BotCommandScopeDefault())
     for telegram_id in sorted(config.admin_ids):
-        scoped = default + [
-            BotCommand(**{"command": cmd, "description": text}) for cmd, text in ADMIN_COMMANDS
-        ]
+        scoped = default + [BotCommand(**{"command": cmd, "description": text}) for cmd, text in ADMIN_COMMANDS]
         try:
             await bot.set_my_commands(scoped, scope=BotCommandScopeChat(telegram_id))
         except TelegramBadRequest:  # pragma: no cover - admin has never started the bot
