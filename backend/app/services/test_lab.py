@@ -313,7 +313,7 @@ class TestLabService:
             ).generated
 
             plate, created = self.plates.materialize(generated)
-            grant = self.plates.grant(plate, user, dealer_value=generated.dealer_value)
+            grant = self.plates.grant(plate, user)
             is_first = self.plates.record_discovery(plate, user, source="ADMIN")
 
             if mark_first_discovery and not is_first:
@@ -428,7 +428,7 @@ class TestLabService:
 
         with user_lock(grant_to.id, "testlab"):
             plate, created = self.plates.materialize(generated)
-            grant = self.plates.grant(plate, grant_to, dealer_value=generated.dealer_value)
+            grant = self.plates.grant(plate, grant_to)
             is_first = self.plates.record_discovery(plate, grant_to, source="ADMIN")
             if mark_first_discovery and not is_first:
                 self.plates.set_first_discoverer(plate, grant_to, source="ADMIN", override=True)

@@ -207,7 +207,7 @@ def compute_rarity_score(
     total = raw + bonus
     total *= max(0.5, country_modifier) * max(0.5, template_multiplier) * max(0.5, event_modifier)
     total += max(0.0, novelty_bonus)
-    return max(0, min(200, int(round(total))))
+    return max(0, min(200, round(total)))
 
 
 def resolve_final_rarity(

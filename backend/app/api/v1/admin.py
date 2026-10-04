@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, rate_limit
 from app.core.config import settings
-from app.core.errors import NotFoundError
 from app.core.logging import error_buffer
 from app.core.timeutils import start_of_utc_day, utcnow
 from app.db.session import get_db
@@ -18,15 +17,18 @@ from app.models.number import Number
 from app.models.payment import Payment
 from app.models.roll import Roll
 from app.models.user import User, Wallet, WalletTransaction
+from app.schemas.admin import (
+    BanRequest,
+    CoinAdjustRequest,
+    PremiumActionRequest,
+    SeasonToggleRequest,
+)
 from app.schemas.payments import (
-    AdminCoinAdjustRequest,
     AdminRarityConfigResponse,
-    AdminSeasonToggleRequest,
     AdminStatsResponse,
     AdminUserItem,
 )
-from app.services.economy import EconomyService
-from app.services.premium import PremiumService
+from app.services.admin import AdminActor, AdminService
 from app.services.seasons import SeasonService
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(rate_limit("admin", "rate_limit_admin"))])
@@ -113,56 +115,58 @@ def list_users(
     ]
 
 
-@router.post("/users/coins", summary="Adjust a user's COINS balance (audited)")
+@router.post("/users/coins", summary="Adjust a user's NUMORA balance (audited, idempotent)")
 def adjust_coins(
-    payload: AdminCoinAdjustRequest,
+    payload: CoinAdjustRequest,
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    if db.get(User, payload.user_id) is None:
-        raise NotFoundError("User not found.", code="USER_NOT_FOUND")
-
-    tx = EconomyService(db).admin_adjust(
-        payload.user_id,
-        payload.delta,
+    service = AdminService(db, settings)
+    data = service.adjust_coins(
+        AdminActor(telegram_id=int(admin.telegram_id), user_id=admin.id),
+        user_id=payload.user_id,
+        delta=int(payload.delta),
         reason=payload.reason,
-        admin_telegram_id=admin.telegram_id,
+        operation_id=payload.operation_id,
     )
-    db.commit()
-    return {"success": True, "user_id": payload.user_id, "delta": payload.delta, "balance": int(tx.balance_after)}
+    return {"success": True, "user_id": payload.user_id, "delta": int(payload.delta), **data}
 
 
-@router.post("/users/{user_id}/ban", summary="Ban or unban a user")
+@router.post("/users/{user_id}/ban", summary="Ban or unban a user (audited)")
 def set_ban(
     user_id: int,
-    banned: bool = Query(default=True),
+    payload: BanRequest,
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    user = db.get(User, user_id)
-    if user is None:
-        raise NotFoundError("User not found.", code="USER_NOT_FOUND")
-    user.is_banned = banned
-    db.commit()
-    return {"success": True, "user_id": user_id, "is_banned": banned}
+    service = AdminService(db, settings)
+    data = service.set_ban(
+        AdminActor(telegram_id=int(admin.telegram_id), user_id=admin.id),
+        user_id=user_id,
+        banned=payload.banned,
+        reason=payload.reason,
+        operation_id=payload.operation_id,
+    )
+    return {"success": True, "user_id": user_id, "is_banned": payload.banned, **data}
 
 
-@router.post("/users/{user_id}/premium", summary="Grant a premium entitlement (support flow)")
+@router.post("/users/{user_id}/premium", summary="Grant a premium entitlement (support flow, audited)")
 def grant_premium(
     user_id: int,
-    days: int = Query(default=30, ge=1, le=3650),
-    tier: str = Query(default="PRO", max_length=16),
+    payload: PremiumActionRequest,
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    entitlement = PremiumService(db, settings).grant(user_id, tier=tier, days=days, source="ADMIN")
-    db.commit()
-    return {
-        "success": True,
-        "user_id": user_id,
-        "tier": entitlement.tier,
-        "expires_at": entitlement.expires_at.isoformat() if entitlement.expires_at else None,
-    }
+    service = AdminService(db, settings)
+    data = service.premium_action(
+        AdminActor(telegram_id=int(admin.telegram_id), user_id=admin.id),
+        user_id=user_id,
+        days=payload.days,
+        revoke=payload.revoke,
+        reason=payload.reason,
+        operation_id=payload.operation_id,
+    )
+    return {"success": True, "user_id": user_id, **data}
 
 
 @router.get("/economy/transactions", summary="Recent ledger entries")
@@ -206,20 +210,57 @@ def seasons(admin: User = Depends(get_current_admin), db: Session = Depends(get_
     return [service.serialize(row) for row in service.list_all()]
 
 
-@router.post("/seasons/toggle", summary="Activate or deactivate a season")
+@router.post("/seasons/toggle", summary="Activate or deactivate a season (audited)")
 def toggle_season(
-    payload: AdminSeasonToggleRequest,
+    payload: SeasonToggleRequest,
     admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
-    service = SeasonService(db)
-    if payload.active:
-        season = service.activate(payload.code)
-    else:
-        season = service.get(payload.code)
-        season.is_active = False
-    db.commit()
-    return {"success": True, "code": season.code, "is_active": bool(season.is_active)}
+    service = AdminService(db, settings)
+    data = service.toggle_season(
+        AdminActor(telegram_id=int(admin.telegram_id), user_id=admin.id),
+        code=payload.code,
+        active=payload.active,
+        reason=payload.reason,
+        operation_id=payload.operation_id,
+    )
+    return {"success": True, **data}
+
+
+@router.get("/payments", summary="Browse payments (auditable state)")
+def list_payments(
+    user_id: int | None = Query(default=None, ge=1),
+    status: str | None = Query(default=None, max_length=16),
+    product_code: str | None = Query(default=None, max_length=48),
+    charge_id: str | None = Query(default=None, max_length=128),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Payment state an operator can actually reconcile.
+
+    A purchase that did not become a reward is a support ticket, so the status,
+    the grant flag and the recorded failure reason are all visible here rather
+    than only in the raw table.
+    """
+    return AdminService(db, settings).list_payments(
+        user_id=user_id,
+        status=status,
+        product_code=product_code,
+        charge_id=charge_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/payments/{payment_id}", summary="One payment in full")
+def payment_detail(
+    payment_id: int,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    return AdminService(db, settings).payment_detail(payment_id)
 
 
 @router.get("/rarity-config", response_model=AdminRarityConfigResponse, summary="Effective rarity weights")

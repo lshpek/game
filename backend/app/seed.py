@@ -27,10 +27,10 @@ from app.game.story import build_story
 from app.game.valuation import compute_value
 from app.models.container import Container
 from app.models.number import Number
+from app.models.numora import Cosmetic, GameEvent, Mission
 from app.models.payment import Product
 from app.models.plates import Album, Country, PlateTemplate, Region
 from app.models.progression import Achievement, Season
-from app.models.numora import Cosmetic, GameEvent, Mission
 from app.services import catalog as catalog_service
 
 logger = get_logger("app.seed")
@@ -240,25 +240,6 @@ def seed_seasons(db: Session) -> int:
     return created
 
 
-def seed_products(db: Session) -> int:
-    created = 0
-    for definition in PRODUCT_DEFINITIONS:
-        row = db.execute(select(Product).where(Product.code == definition.code)).scalar_one_or_none()
-        if row is None:
-            row = Product(code=definition.code)
-            db.add(row)
-            created += 1
-        row.name = definition.name
-        row.description = definition.description
-        row.stars_price = definition.stars_price
-        row.grant_type = definition.grant_type.upper()
-        row.grant_payload = dict(definition.grant_payload)
-        row.sort_order = definition.sort_order
-        row.is_active = True
-    db.flush()
-    return created
-
-
 def seed_special_numbers(db: Session) -> int:
     """Pre-register notable numbers so their rarity and story exist from day 1."""
     created = 0
@@ -342,7 +323,12 @@ def seed_cosmetics(db: Session) -> int:
 
 
 def seed_products(db: Session) -> int:
-    """Store catalogue: NUMORA, PRO, supporter tiers and fixed bundles."""
+    """Store catalogue: NUMORA, PRO, supporter tiers and fixed bundles.
+
+    Defined once, after the other catalogue seeders, so there is a single place that
+    knows how a product row is written. The previous copy here never set
+    ``category``, so every seeded product landed in the default bucket.
+    """
     created = 0
     for definition in PRODUCT_DEFINITIONS:
         row = db.execute(select(Product).where(Product.code == definition.code)).scalar_one_or_none()

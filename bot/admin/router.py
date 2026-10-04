@@ -65,6 +65,11 @@ async def handle_start(message: Message, command: CommandObject) -> None:
     """``/admin`` (also ``/panel`` and ``/a``) opens the control centre.
 
     Non-admins get the same generic refusal as any other unauthorised command.
+
+    The whole body is wrapped: an unexpected failure here used to be swallowed by
+    aiogram's error middleware, which left the operator with a deleted command and
+    no reply at all - indistinguishable from an unhandled route. Every exit from
+    this handler now produces a message the operator can act on.
     """
     del command
     # Keep the operator's chat as clean as a player's: the command disappears and
@@ -72,7 +77,15 @@ async def handle_start(message: Message, command: CommandObject) -> None:
     from bot.bot import delete_quietly
 
     await delete_quietly(message)
-    await open_panel(message, answer=True)
+    try:
+        await open_panel(message, answer=True)
+    except Exception as exc:  # pragma: no cover - belt and braces
+        logger.error("admin panel failed to open", exc_info=True)
+        await message.answer(
+            "⚠️ <b>Панель не открылась</b>\n\n"
+            f"<code>{type(exc).__name__}</code>\n"
+            "<i>Подробности в логе бота. Попробуйте ещё раз.</i>"
+        )
 
 
 async def open_panel(

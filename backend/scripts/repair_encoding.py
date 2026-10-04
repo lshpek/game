@@ -49,7 +49,7 @@ def _printable_ratio(text: str) -> float:
 def escape_non_ascii(text: str) -> str:
     """Re-escape every non-ASCII character so the file is pure ASCII."""
     return "".join(
-        ch if ord(ch) < 128 else "\\u{:04x}".format(ord(ch)) if ord(ch) <= 0xFFFF else ch
+        ch if ord(ch) < 128 else f"\\u{ord(ch):04x}" if ord(ch) <= 0xFFFF else ch
         for ch in text
     )
 

@@ -62,7 +62,6 @@ def claim_daily(user: User = Depends(get_current_user), db: Session = Depends(ge
     unlocked = achievements.evaluate(user)
     db.commit()
 
-    from app.services.economy import EconomyService
 
     return DailyClaimResponse(
         coins_granted=coins,

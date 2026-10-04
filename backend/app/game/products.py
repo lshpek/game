@@ -150,5 +150,12 @@ def product_by_code(code: str) -> ProductDefinition | None:
     return next((item for item in PRODUCT_DEFINITIONS if item.code == code), None)
 
 
+#: Declared here, next to the catalogue that uses it, so the seeder, the admin
+#: catalogue and :meth:`PaymentService._grant` cannot drift apart. A product whose
+#: grant type is not listed here is a purchase the backend cannot fulfil, and
+#: ``tests/test_payments.py`` asserts the two sets are identical.
+GRANT_TYPES: tuple[str, ...] = ("COINS", "PREMIUM", "SUPPORTER", "COSMETIC", "SEASON_PASS")
+
+
 def premium_tier_config(tier: str) -> dict[str, object]:
     return PREMIUM_TIERS.get((tier or "").upper(), {})

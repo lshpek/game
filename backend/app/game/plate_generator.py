@@ -21,7 +21,6 @@ Production uses ``secrets.SystemRandom``; tests inject a seeded
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
 
 from app.game.countries import CountryDef
 from app.game.plate_patterns import PlateAnalysis, analyze_plate

@@ -97,7 +97,14 @@ class TransactionType(StrEnum):
 
 
 class GrantType(StrEnum):
-    """What a Stars purchase grants. Kept flat and configurable."""
+    """What a Stars purchase grants.
+
+    Kept flat and configurable, and mirrored by
+    :data:`app.game.products.GRANT_TYPES` so the catalogue and the grant
+    implementation cannot drift apart. The two definitions used to disagree: the
+    narrower copy below shadowed this one, which is how supporter tiers, bundles
+    and the season pass ended up unfulfillable.
+    """
 
     COINS = "COINS"
     PREMIUM = "PREMIUM"
@@ -135,15 +142,6 @@ class PaymentStatus(StrEnum):
     PAID = "PAID"
     FAILED = "FAILED"
     REFUNDED = "REFUNDED"
-
-
-class GrantType(StrEnum):
-    COINS = "COINS"
-    PREMIUM = "PREMIUM"
-
-
-class EntitlementTier(StrEnum):
-    PRO = "PRO"
 
 
 class LeaderboardCategory(StrEnum):

@@ -448,17 +448,23 @@ def grant_reward(
 # ---------------------------------------------------------------------------
 # plates
 # ---------------------------------------------------------------------------
-@router.get("/plates", summary="Plate catalogue browser", dependencies=read_dependencies)
+@router.get("/plates", summary="Collectible catalogue browser", dependencies=read_dependencies)
 def plates(
-    query: str | None = Query(default=None, max_length=32),
+    query: str | None = Query(default=None, max_length=64),
     sort: str = Query(default="recent", max_length=16),
     country_code: str | None = Query(default=None, max_length=8),
+    category: str | None = Query(default=None, max_length=32),
     rarity: str | None = Query(default=None, max_length=16),
     page: int = Query(default=1, ge=1, le=500),
     svc: AdminService = Depends(service),
 ) -> dict[str, object]:
     return svc.search_plates(
-        query=query, sort=sort, country_code=country_code, rarity=rarity, page=page
+        query=query,
+        sort=sort,
+        country_code=country_code,
+        category=category,
+        rarity=rarity,
+        page=page,
     )
 
 
@@ -696,18 +702,22 @@ def errors(
 @router.get("/audit", summary="Admin audit log", dependencies=read_dependencies)
 def audit(
     page: int = Query(default=1, ge=1, le=1000),
+    page_size: int = Query(default=15, ge=1, le=50),
     admin_telegram_id: int | None = Query(default=None, gt=0),
     target_user_id: int | None = Query(default=None, gt=0),
     action: str | None = Query(default=None, max_length=48),
     category: str | None = Query(default=None, max_length=24),
+    result: str | None = Query(default=None, max_length=16),
     svc: AdminService = Depends(service),
 ) -> dict[str, object]:
     return svc.audit_log(
         page=page,
+        page_size=page_size,
         admin_telegram_id=admin_telegram_id,
         target_user_id=target_user_id,
         action=action,
         category=category,
+        result=result,
     )
 
 

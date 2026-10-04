@@ -62,7 +62,14 @@ class Payment(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("provider", "external_id", name="uq_payments_provider_external_id"),
-        UniqueConstraint("idempotency_key", name="uq_payments_idempotency_key"),
+        # Scoped to the user on purpose: the key is supplied by the client and is
+        # looked up per user, so a global constraint would make two unrelated
+        # players who happened to send the same key collide into a 500.
+        UniqueConstraint("user_id", "idempotency_key", name="uq_payments_user_idempotency_key"),
+        # The webhook looks a payment up by this payload on every confirmation.
+        Index("ix_payments_invoice_payload", "invoice_payload"),
+        Index("ix_payments_user_status", "user_id", "status"),
+        Index("ix_payments_provider_status", "provider", "status"),
     )
 
 

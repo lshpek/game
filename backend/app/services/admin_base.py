@@ -125,11 +125,13 @@ class AdminServiceBase:
             )
             if not is_new:
                 # The exact same operation already ran - return its result.
+                # ``result_json`` holds the original payload verbatim, so a replay
+                # is indistinguishable from the first call except for ``replayed``.
                 logger.info(
                     "admin_action_replayed",
                     extra={"action": str(action), "telegram_id": actor.telegram_id, "user_id": target_id},
                 )
-                return {"replayed": True, "audit_id": row.id, **(row.after_json or {})}
+                return {"replayed": True, "audit_id": row.id, **(row.result_json or {})}
 
             logger.info(
                 "admin_action_started",
@@ -138,11 +140,22 @@ class AdminServiceBase:
             before = self._user_state(target_user) if target_user is not None else None
             try:
                 result = work()
-            except Exception:
-                self.db.rollback()
+            except Exception as exc:
+                # The mutation must leave nothing behind, but the *attempt* must
+                # stay observable. Rolling the transaction back and then writing a
+                # fresh FAILED row in its own transaction keeps the operation id,
+                # the actor, the target and the original timestamp - and keeps a
+                # retry from silently re-running a grant that already half-happened.
+                self.audit.mark_failed(row, exc, duration_ms=duration_ms(start))
                 logger.error(
                     "admin_action_failed",
-                    extra={"action": str(action), "telegram_id": actor.telegram_id, "user_id": target_id},
+                    extra={
+                        "action": str(action),
+                        "telegram_id": actor.telegram_id,
+                        "user_id": target_id,
+                        "operation_id": operation_id,
+                        "error_type": type(exc).__name__,
+                    },
                     exc_info=True,
                 )
                 raise
@@ -152,7 +165,15 @@ class AdminServiceBase:
             # The stored ``after`` mixes the operation's own result with a fresh
             # snapshot of the player, so the audit row shows a real diff.
             after = result if target_user is None else {**result, **self._user_state(target_user)}
-            self.audit.finish(row, after=after, amount=amount, duration_ms=duration_ms(start))
+            self.audit.finish(
+                row,
+                after=after,
+                amount=amount,
+                duration_ms=duration_ms(start),
+                # Stored verbatim so a replay returns the same payload. The audit
+                # ``after`` snapshot stays a small whitelist for the log viewer.
+                result_json=result,
+            )
             self.db.commit()
             self.db.refresh(row)
             logger.info(

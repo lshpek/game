@@ -363,11 +363,21 @@ class AdminReadsMixin(AdminServiceBase):
             stmt = stmt.where(WalletTransaction.amount < 0)
 
         total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one() or 0)
-        rows = self.db.execute(stmt.order_by(WalletTransaction.id.desc()).limit(limit).offset(max(0, offset))).scalars()
-        usernames = {
-            user.id: user
-            for user in self.db.execute(select(User).where(User.id.in_({row.user_id for row in rows} or {0}))).scalars()
-        }
+        # ``.scalars()`` is lazy: consuming it once for the owner lookup left nothing
+        # for the item loop, so the ledger rendered with a count and no rows. It is
+        # materialised here, exactly once.
+        rows = list(
+            self.db.execute(
+                stmt.order_by(WalletTransaction.id.desc()).limit(limit).offset(max(0, offset))
+            ).scalars()
+        )
+        owner_ids = {row.user_id for row in rows}
+        usernames = {}
+        if owner_ids:
+            usernames = {
+                user.id: user
+                for user in self.db.execute(select(User).where(User.id.in_(owner_ids))).scalars()
+            }
         items = []
         for row in rows:
             item = self._transaction_item(row)
@@ -384,37 +394,159 @@ class AdminReadsMixin(AdminServiceBase):
         }
 
     # --- plates ---------------------------------------------------------
+    def list_payments(
+        self,
+        *,
+        user_id: int | None = None,
+        status: str | None = None,
+        product_code: str | None = None,
+        charge_id: str | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Payment state an operator can reconcile against a support ticket.
+
+        The grant flag and the recorded failure reason are the two fields that
+        matter: ``PENDING`` + ``granted=false`` means the player paid and nothing
+        happened yet, and ``FAILED`` carries the reason it did not.
+        """
+        limit = max(1, min(int(limit), 100))
+        offset = max(0, int(offset))
+        stmt = select(Payment)
+        if user_id:
+            stmt = stmt.where(Payment.user_id == int(user_id))
+        if status:
+            stmt = stmt.where(Payment.status == str(status).upper())
+        if product_code:
+            stmt = stmt.where(Payment.product_code == str(product_code))
+        if charge_id:
+            stmt = stmt.where(Payment.external_id == str(charge_id))
+
+        total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one() or 0)
+        rows = list(
+            self.db.execute(stmt.order_by(Payment.id.desc()).limit(limit).offset(offset)).scalars()
+        )
+        owner_ids = {row.user_id for row in rows}
+        owners: dict[int, User] = {}
+        if owner_ids:
+            owners = {
+                user.id: user
+                for user in self.db.execute(select(User).where(User.id.in_(owner_ids))).scalars()
+            }
+        items = []
+        for row in rows:
+            payload = dict(row.payload or {})
+            owner = owners.get(row.user_id)
+            items.append(
+                {
+                    "id": row.id,
+                    "user_id": row.user_id,
+                    "telegram_id": int(owner.telegram_id) if owner else None,
+                    "username": owner.username if owner else None,
+                    "provider": row.provider,
+                    "product_code": row.product_code,
+                    "amount": int(row.amount),
+                    "currency": row.currency,
+                    "status": row.status,
+                    "granted": bool(row.granted),
+                    "invoice_payload": row.invoice_payload,
+                    "external_id": row.external_id,
+                    "failure_reason": payload.get("failure_reason"),
+                    "failure_type": payload.get("failure_type"),
+                    "grant_summary": payload.get("granted"),
+                    "paid_at": as_aware(row.paid_at).isoformat() if row.paid_at else None,
+                    "created_at": as_aware(row.created_at).isoformat() if row.created_at else None,
+                }
+            )
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(items) < total,
+            "items": items,
+        }
+
+    def payment_detail(self, payment_id: int) -> dict[str, Any]:
+        detail = self.db.get(Payment, int(payment_id))
+        if detail is None:
+            raise ValidationError("Payment not found.", code="PAYMENT_NOT_FOUND")
+        return self._payment_item(detail, self.db.get(User, detail.user_id))
+
+    def _payment_item(self, row: Payment, owner: User | None) -> dict[str, Any]:
+        payload = dict(row.payload or {})
+        return {
+            "id": row.id,
+            "user_id": row.user_id,
+            "telegram_id": int(owner.telegram_id) if owner else None,
+            "username": owner.username if owner else None,
+            "provider": row.provider,
+            "product_code": row.product_code,
+            "amount": int(row.amount),
+            "currency": row.currency,
+            "status": row.status,
+            "granted": bool(row.granted),
+            "invoice_payload": row.invoice_payload,
+            "external_id": row.external_id,
+            "failure_reason": payload.get("failure_reason"),
+            "failure_type": payload.get("failure_type"),
+            "grant_summary": payload.get("granted"),
+            "paid_at": as_aware(row.paid_at).isoformat() if row.paid_at else None,
+            "refunded_at": as_aware(row.refunded_at).isoformat() if row.refunded_at else None,
+            "refunded_amount": int(row.refunded_amount or 0),
+            "created_at": as_aware(row.created_at).isoformat() if row.created_at else None,
+        }
+
     def search_plates(
         self,
         *,
         query: str | None = None,
         sort: str = "recent",
         country_code: str | None = None,
+        category: str | None = None,
         rarity: str | None = None,
         page: int = 1,
         page_size: int = 8,
     ) -> dict[str, Any]:
-        """Browse the plate catalogue (search + curated sorts)."""
+        """Browse the collectible catalogue: text search, filters and curated sorts.
+
+        A numeric query is **not** treated as a catalogue id on its own. ``#1234``
+        (or an explicit ``id=``) means "open entry 1234"; anything else - ``777``,
+        ``RUS``, ``+1 777`` - is a text search across the display and normalised
+        forms, because serials and country codes are just as likely to be typed as
+        a row number.
+        """
         page = max(1, int(page))
         page_size = max(1, min(int(page_size), 15))
         stmt = select(Plate)
         conditions = []
         cleaned = (query or "").strip().lstrip("@")
-        if cleaned:
-            if cleaned.isdigit():
-                # A bare number is a Plate ID lookup. Mixing it with a fuzzy text
-                # match would bury the exact hit under every plate whose serial
-                # happens to contain those digits.
-                conditions.append(Plate.id == int(cleaned))
-            else:
-                conditions.append(
-                    or_(
-                        func.upper(Plate.plate_text).like(f"%{cleaned.upper()}%"),
-                        func.upper(Plate.normalized_text).like(f"%{cleaned.upper()}%"),
-                    )
+
+        explicit_id: int | None = None
+        if cleaned.startswith("#") and cleaned[1:].isdigit():
+            explicit_id = int(cleaned[1:])
+        elif cleaned.isdigit():
+            # Match the serial *or* the id, so an operator typing either one gets
+            # the number they meant instead of an empty page.
+            conditions.append(
+                or_(
+                    Plate.id == int(cleaned),
+                    func.upper(Plate.plate_text).like(f"%{cleaned}%"),
+                    func.upper(Plate.normalized_text).like(f"%{cleaned}%"),
                 )
+            )
+        elif cleaned:
+            conditions.append(
+                or_(
+                    func.upper(Plate.plate_text).like(f"%{cleaned.upper()}%"),
+                    func.upper(Plate.normalized_text).like(f"%{cleaned.upper()}%"),
+                )
+            )
+        if explicit_id is not None:
+            conditions.append(Plate.id == explicit_id)
         if country_code:
             conditions.append(Plate.country_code == str(country_code).upper())
+        if category:
+            conditions.append(func.upper(func.coalesce(Plate.plate_type, "")) == str(category).upper())
         if rarity:
             conditions.append(Plate.rarity == str(rarity).upper())
         if conditions:
@@ -780,6 +912,7 @@ class AdminReadsMixin(AdminServiceBase):
         target_user_id: int | None = None,
         action: str | None = None,
         category: str | None = None,
+        result: str | None = None,
     ) -> dict[str, Any]:
         page = max(1, int(page))
         page_size = max(1, min(int(page_size), 50))
@@ -788,6 +921,7 @@ class AdminReadsMixin(AdminServiceBase):
             target_user_id=target_user_id,
             action=action,
             category=category,
+            result=result,
         )
         rows = self.audit.recent(
             limit=page_size,
@@ -796,6 +930,7 @@ class AdminReadsMixin(AdminServiceBase):
             target_user_id=target_user_id,
             action=action,
             category=category,
+            result=result,
         )
         return {
             "page": page,

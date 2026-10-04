@@ -84,7 +84,8 @@ def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnap
         if code is None:
             continue
         weight = float((region.config or {}).get("weight", 1.0))
-        regions_by_country[code] = regions_by_country.get(code, ()) + (
+        regions_by_country[code] = (
+            *regions_by_country.get(code, ()),
             RegionOption(
                 code=region.code,
                 name_en=region.name_en,
@@ -98,7 +99,8 @@ def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnap
         if code is None:
             continue
         config = template.config or {}
-        templates_by_country[code] = templates_by_country.get(code, ()) + (
+        templates_by_country[code] = (
+            *templates_by_country.get(code, ()),
             TemplateOption(
                 code=template.code,
                 pattern=template.pattern,

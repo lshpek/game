@@ -141,10 +141,41 @@ class TestAdmin:
         response = client.post(
             "/api/admin/users/coins",
             headers=admin_authed["headers"],
-            json={"user_id": user.id, "delta": 1234, "reason": "support"},
+            json={
+                "user_id": user.id,
+                "delta": 1234,
+                "reason": "support ticket 42",
+                "operation_id": "op-coin-adjust-1",
+            },
         ).json()
         assert response["balance"] == 1234
         assert EconomyService(db).balance(user.id) == 1234
+
+    def test_a_replayed_coin_adjustment_does_not_double_grant(self, client, db, admin_authed):
+        """A retried admin request must not pay out twice."""
+        user = make_user(db, client, 820004)
+        body = {
+            "user_id": user.id,
+            "delta": 500,
+            "reason": "support ticket 43",
+            "operation_id": "op-coin-replay-1",
+        }
+        first = client.post("/api/admin/users/coins", headers=admin_authed["headers"], json=body).json()
+        second = client.post("/api/admin/users/coins", headers=admin_authed["headers"], json=body).json()
+        assert first["balance"] == 500
+        assert second["balance"] == 500
+        assert second["replayed"] is True
+        assert EconomyService(db).balance(user.id) == 500
+
+    def test_a_coin_adjustment_without_an_operation_id_is_rejected(self, client, db, admin_authed):
+        user = make_user(db, client, 820005)
+        response = client.post(
+            "/api/admin/users/coins",
+            headers=admin_authed["headers"],
+            json={"user_id": user.id, "delta": 10, "reason": "no id"},
+        )
+        assert response.status_code == 422
+        assert EconomyService(db).balance(user.id) == 0
 
     def test_ledger_is_visible_to_admins(self, client, db, admin_authed):
         user = make_user(db, client, 820003)
@@ -162,9 +193,15 @@ class TestAdmin:
         response = client.post(
             "/api/admin/seasons/toggle",
             headers=admin_authed["headers"],
-            json={"code": "season-2-time", "active": True},
+            json={
+                "code": "season-2-time",
+                "active": True,
+                "reason": "season 2 launch",
+                "operation_id": "op-season-2",
+            },
         ).json()
         assert response["is_active"] is True
+        assert response["replayed"] is False
 
     def test_errors_endpoint_returns_a_bounded_snapshot(self, client, admin_authed):
         payload = client.get("/api/admin/errors", headers=admin_authed["headers"]).json()

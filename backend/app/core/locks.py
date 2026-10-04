@@ -36,6 +36,22 @@ def user_lock(user_id: int, scope: str = "user") -> Iterator[None]:
         lock.release()
 
 
+@contextmanager
+def payment_lock(payment_id: int) -> Iterator[None]:
+    """Serialise the grant step of one payment.
+
+    A Telegram webhook and a client poll can arrive for the same payment at the
+    same moment. Serialising on the *payment* (not the user) keeps two different
+    purchases from blocking each other while making a double delivery harmless.
+    """
+    lock = _get_lock(f"payment:{payment_id}")
+    lock.acquire()
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 def reset_locks() -> None:
     """Test helper: drop all registered locks."""
     with _registry_lock:

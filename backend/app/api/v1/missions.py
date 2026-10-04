@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, rate_limit
-from app.core.config import settings
 from app.db.session import get_db
 from app.models.enums import AnalyticsEventName
 from app.models.numora import Mission

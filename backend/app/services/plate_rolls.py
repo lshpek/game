@@ -28,10 +28,10 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, settings
 from app.core.locks import user_lock
 from app.core.timeutils import utcnow
+from app.game.plate_generator import PlateGenerator
 from app.game.plate_rarity import RARITY_RANK, Rarity, pity_weights, rarity_rank
 from app.game.plate_valuation import duplicate_sale_value
 from app.game.rng import Rng, default_rng, weighted_choice
-from app.game.plate_generator import PlateGenerator
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
 from app.models.numora import PlateRoll
 from app.models.plates import Plate, UserPlate
@@ -235,7 +235,7 @@ class PlateRollService:
             generated = PlateGenerator(context, self.rng).generate(luck=luck)
 
             plate, _created = self.plates.materialize(generated)
-            grant = self.plates.grant(plate, user, dealer_value=generated.dealer_value)
+            grant = self.plates.grant(plate, user)
             is_first = self.plates.record_discovery(plate, user, source=source.value)
 
             rank = rarity_rank(plate.rarity)

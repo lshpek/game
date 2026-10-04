@@ -15,7 +15,7 @@ from app.core.timeutils import utcnow
 from app.db.session import get_db
 from app.game.plate_rarity import RARITY_RANK
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
-from app.models.plates import Country, Plate, UserPlate
+from app.models.plates import Plate, UserPlate
 from app.models.social import ShareEvent
 from app.models.user import User
 from app.schemas.plates import (
@@ -242,7 +242,7 @@ def collection(
         .where(UserPlate.user_id == user.id)
         .group_by(Plate.rarity)
     ).all()
-    breakdown = {code: 0 for code in RARITY_RANK}
+    breakdown = dict.fromkeys(RARITY_RANK, 0)
     for code, count in breakdown_rows:
         breakdown[code] = int(count)
 

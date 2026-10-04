@@ -182,7 +182,7 @@ COSMETIC_DEFINITIONS: tuple[CosmeticDefinition, ...] = (
 
 __all__ = [
     "COSMETIC_DEFINITIONS",
-    "CosmeticDefinition",
     "MISSION_DEFINITIONS",
+    "CosmeticDefinition",
     "MissionDefinition",
 ]

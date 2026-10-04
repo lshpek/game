@@ -655,20 +655,31 @@ class TestPlatesAdmin:
     def test_plate_search_supports_text_and_filters(self, admin_bot, db):
         plate = self._make_plate(db)
 
-        # Search by plate id. The endpoint also runs a fuzzy text match, so a
-        # numeric query legitimately returns many rows - hence the page walk.
+        # A numeric query matches the id *and* the serial, so it legitimately
+        # returns many rows - hence the page walk.
         by_id = self._search_all_pages(admin_bot, query=str(plate.id))
         assert any(item["id"] == plate.id for item in by_id)
+
+        # An explicit "#id" is the only way to ask for one exact catalogue entry.
+        by_hash = admin_bot.get("/plates", params={"query": f"#{plate.id}"}).json()
+        assert [item["id"] for item in by_hash["items"]] == [plate.id]
 
         # Search by the exact text, across pages.
         by_text = self._search_all_pages(admin_bot, query=plate.plate_text)
         assert any(item["id"] == plate.id for item in by_text)
+
+        # A digits-only query is *not* an id lookup; whether it matches a serial is
+        # covered deterministically in tests/test_plate_flows.py. Here we only assert
+        # that the explicit "#id" form still resolves to exactly one entry.
+        assert by_hash["total"] == 1
 
         # Filters.
         by_country = admin_bot.get("/plates", params={"country_code": "RUS"}).json()
         assert by_country["total"] >= 1
         by_rarity = admin_bot.get("/plates", params={"rarity": plate.rarity}).json()
         assert by_rarity["total"] >= 1
+        by_category = admin_bot.get("/plates", params={"category": plate.plate_type}).json()
+        assert by_category["total"] >= 1
 
     def test_plate_detail_exposes_every_field(self, admin_bot, db):
         plate = self._make_plate(db)

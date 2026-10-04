@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 # Digit-run patterns that carry an extra "recognisable" bonus.
 SPECIAL_NUMBER_RUNS: dict[str, str] = {
@@ -130,7 +131,7 @@ def detect_two_pairs(core: str) -> bool:
 
 def _longest_consecutive_run(digits: str) -> int:
     best = current = 1
-    for a, b in zip(digits, digits[1:]):
+    for a, b in pairwise(digits):
         if abs(int(b) - int(a)) == 1:
             current += 1
             best = max(best, current)
@@ -141,12 +142,12 @@ def _longest_consecutive_run(digits: str) -> int:
 
 def detect_ascending(core: str) -> bool:
     digits = _digits_only(core)
-    return len(digits) >= 3 and all(int(b) > int(a) for a, b in zip(digits, digits[1:]))
+    return len(digits) >= 3 and all(int(b) > int(a) for a, b in pairwise(digits))
 
 
 def detect_descending(core: str) -> bool:
     digits = _digits_only(core)
-    return len(digits) >= 3 and all(int(b) < int(a) for a, b in zip(digits, digits[1:]))
+    return len(digits) >= 3 and all(int(b) < int(a) for a, b in pairwise(digits))
 
 
 def detect_palindrome(core: str) -> bool:
@@ -241,7 +242,7 @@ def detect_letter_palindrome(letters: list[str]) -> bool:
 
 def detect_letter_ascending(letters: list[str]) -> bool:
     joined = "".join(letters)
-    return len(joined) >= 3 and all(a < b for a, b in zip(joined, joined[1:]))
+    return len(joined) >= 3 and all(a < b for a, b in pairwise(joined))
 
 
 def detect_repeated_letter_prefix(letters: list[str]) -> bool:
@@ -260,7 +261,7 @@ def detect_mirrored_letters(letters: list[str]) -> bool:
 def detect_alphabetical_run(letters: list[str]) -> bool:
     """Letters form a strictly ordered run, e.g. ABC or XYZ."""
     joined = "".join(letters)
-    return len(joined) >= 3 and all(a < b for a, b in zip(joined, joined[1:]))
+    return len(joined) >= 3 and all(a < b for a, b in pairwise(joined))
 
 
 # --- plate-level detectors -------------------------------------------------
@@ -377,9 +378,13 @@ def analyze_plate(
     # with the region code we strip it from the core so ``A777AA 77`` is judged
     # on its serial 777 rather than on the combined 77777.
     numeric_core = "".join(digits)
-    if region_code and region_code.isdigit() and len(numeric_core) > len(region_code):
-        if numeric_core.endswith(region_code):
-            numeric_core = numeric_core[: -len(region_code)]
+    if (
+        region_code
+        and region_code.isdigit()
+        and len(numeric_core) > len(region_code)
+        and numeric_core.endswith(region_code)
+    ):
+        numeric_core = numeric_core[: -len(region_code)]
     scores: dict[str, int] = {}
     traits: list[str] = []
 
@@ -411,7 +416,7 @@ def analyze_plate(
     # reasons always come first for the result UI.
     traits.sort(key=lambda code: (-scores.get(code, 0), code))
     scores_dict = {code: scores[code] for code in traits}
-    reasons = [code for code in traits[:4]]
+    reasons = list(traits[:4])
 
     return PlateAnalysis(
         plate_text=plate_text,

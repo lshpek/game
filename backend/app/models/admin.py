@@ -47,6 +47,13 @@ class AdminAuditLog(Base):
     after_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # The operation's own return value, kept apart from the state snapshots so a
+    # replayed request can be answered with byte-for-byte the same payload the
+    # first call produced. ``after_json`` is a whitelisted snapshot and would drop
+    # fields like the resulting balance, which made a replayed response a different
+    # shape from the original.
+    result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # --- operational -----------------------------------------------------
     # Unique per operation: replaying a callback with the same id can never
     # grant twice, because the second insert collides.

@@ -295,7 +295,6 @@ class TestDealer:
         # Force a duplicate by rolling the same catalogue row again.
         from app.models.plates import PlateDiscovery, UserPlate
 
-        plate = db.get(type(first.plate), plate_id)
         owned = db.query(UserPlate).filter_by(user_id=user.id, plate_id=plate_id).one()
         owned.duplicate_count = 1
         db.commit()
@@ -315,8 +314,8 @@ class TestDealer:
         assert owned_card["duplicate_count"] == 0
 
     def test_double_sale_does_not_double_pay(self, client, authed, db):
-        from app.models.user import User
         from app.models.plates import UserPlate
+        from app.models.user import User
         from app.services.plate_rolls import PlateRollService
 
         session = authed(600045)
@@ -345,8 +344,8 @@ class TestDealer:
 
     def test_batch_sale_only_sells_spares(self, client, authed, db):
         """The last copy of a plate must survive a batch sale."""
-        from app.models.user import User
         from app.models.plates import UserPlate
+        from app.models.user import User
         from app.services.plate_rolls import PlateRollService
 
         session = authed(600044)

@@ -11,7 +11,7 @@ live in one place:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -19,14 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.timeutils import as_aware, utcnow
-from app.game.plate_generator import GeneratedPlate
-from app.game.plate_stories import build_plate_story
-from app.game.plate_visuals import serialize_visual
-from app.models.plates import Album, Country, Plate, PlateDiscovery, PlateTemplate, Region, UserPlate
-from app.models.user import User
 
 # Album membership by tag: the theme sets defined in the catalogue.
 from app.game.countries import THEME_TAG_MAP
+from app.game.plate_generator import GeneratedPlate
+from app.game.plate_stories import build_plate_story
+from app.models.plates import Album, Country, Plate, PlateDiscovery, PlateTemplate, Region, UserPlate
+from app.models.user import User
 
 
 @dataclass(slots=True)
@@ -243,10 +242,14 @@ class PlateService:
         self.db.flush()
         return is_first
 
-    def grant(self, plate: Plate, user: User, *, dealer_value: int | None = None) -> PlateGrant:
-        """Give a plate to the player, handling duplicates and new-region flags."""
+    def grant(self, plate: Plate, user: User) -> PlateGrant:
+        """Give a plate to the player, handling duplicates and new-region flags.
+
+        The caller that generated the number is the only place a dealer value is
+        known; the roll pipeline books it on the ``UserPlate`` row itself, so this
+        method does not need it.
+        """
         now = utcnow()
-        value = int(plate.dealer_value if dealer_value is None else dealer_value)
         owned = self.get_user_plate(user.id, plate.id)
 
         if owned is not None:
