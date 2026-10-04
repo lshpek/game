@@ -1,4 +1,4 @@
-"""Structural traits for digit-heavy collectibles (phones, SIM serials).
+"""Structural traits for digit-heavy collectibles (SIM card serials).
 
 Rarity must come from the *shape* of the number, never from a random dice throw.
 These detectors read the digits of the generated collectible and report what is
@@ -149,7 +149,7 @@ def perfect_symmetry(digits: str) -> bool:
 
 
 def detect_phone_traits(text: str) -> list[str]:
-    """Trait codes for a phone number or SIM serial.
+    """Trait codes for the synthetic number printed on a SIM card.
 
     Ordered strongest-first so the UI can show the most impressive chips first.
     """
@@ -191,7 +191,7 @@ def detect_phone_traits(text: str) -> list[str]:
     return traits
 
 
-#: How much each trait is worth when scoring a phone/SIM. Deterministic, so the
+#: How much each trait is worth when scoring a SIM card. Deterministic, so the
 #: same structure always produces the same rarity band.
 PHONE_TRAIT_WEIGHTS: dict[str, int] = {
     "perfect_symmetry": 46,

@@ -22,7 +22,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
-from app.game.collectibles import PLATE_TYPE_BY_CATEGORY, CollectibleCategory
+from app.game.collectibles import (
+    CollectibleKind,
+    kind_for_plate_type,
+    plate_types_for,
+)
 from app.game.countries import CountryDef
 from app.game.plate_patterns import PlateAnalysis, analyze_plate
 from app.game.plate_rarity import (
@@ -34,6 +38,7 @@ from app.game.plate_rarity import (
 from app.game.plate_templates import ParsedTemplate, Token, normalize_plate, parse_template
 from app.game.plate_valuation import value_for_analysis
 from app.game.rng import weighted_choice
+from app.game.sim_cards import card_details, details_to_dict
 
 # A roll never repeats the same serial twice in a row: the generator retries
 # (a handful of times) before falling back to the last candidate.
@@ -61,6 +66,8 @@ class TemplateOption:
     rarity_floor: str
     requires_region: bool
     multiplier: float = 1.0
+    #: Template configuration (kind, operator, edition, generation knobs).
+    config: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -103,6 +110,14 @@ class GeneratedPlate:
     display_numbers: list[str]
     segment_styles: list[dict[str, str]] = field(default_factory=list)
     is_secret: bool = False
+    #: Kind-specific payload written to ``plates.details``. Empty for vehicle
+    #: plates; populated by :mod:`app.game.sim_cards` for SIM cards.
+    details: dict[str, object] = field(default_factory=dict)
+
+    @property
+    def kind(self) -> CollectibleKind:
+        """Which collectible kind this is."""
+        return kind_for_plate_type(self.plate_type)
 
     @property
     def unique_key(self) -> tuple[str, str]:
@@ -320,7 +335,31 @@ def build_generated_plate(
         display_numbers=list(analysis.digits),
         segment_styles=styles,
         is_secret=rarity is Rarity.SECRET,
+        details=_details_for(template, country, plate_text),
     )
+
+
+def _details_for(
+    template: TemplateOption,
+    country: CountryDef,
+    plate_text: str,
+) -> dict[str, object]:
+    """Type-specific payload for the generated collectible.
+
+    Only SIM cards carry one. The number printed on the card is the value the engine
+    just rendered - the frontend never synthesises it, and the operator, series and
+    edition come from the template that produced it.
+    """
+    if kind_for_plate_type(template.plate_type) is not CollectibleKind.SIM_CARD:
+        return {}
+    config = template.config or {}
+    details = card_details(
+        country_code=country.code,
+        operator_code=str(config.get("operator_code") or "numa"),
+        edition=str(config.get("edition") or "ORIGIN"),
+        number=plate_text,
+    )
+    return details_to_dict(details)
 
 
 class PlateGenerator:
@@ -367,7 +406,7 @@ class PlateGenerator:
         *,
         luck: Rarity,
         rejected: set[tuple[str, str]] | None = None,
-        category: CollectibleCategory | None = None,
+        category: CollectibleKind | None = None,
         country_code: str | None = None,
     ) -> GeneratedPlate:
         """Generate one collectible, retrying when the serial was already rejected.
@@ -376,10 +415,10 @@ class PlateGenerator:
         roll reliably produces something new when a fresh plate is possible.
 
         ``category`` and ``country_code`` only **narrow the eligible pool**. They
-        decide which templates may be picked, never what the number is worth: the
-        rarity resolver, the valuation and the reward all still run on the generated
-        structure. That is what makes "hunt PHONES" a gameplay filter rather than a
-        way to forge a result.
+        decide which templates may be picked, never what the collectible is worth:
+        the rarity resolver, the valuation and the reward all still run on the
+        generated structure. That is what makes "hunt SIM cards" a gameplay filter
+        rather than a way to forge a result.
         """
         pool = self._narrow(country_code=country_code, category=category)
         if pool is None:
@@ -408,17 +447,18 @@ class PlateGenerator:
         self,
         *,
         country_code: str | None,
-        category: CollectibleCategory | None,
+        category: CollectibleKind | None,
     ) -> GenerationContext | None:
-        """Restrict the generation context to one country and/or category.
+        """Restrict the generation context to one country and/or kind.
 
         Returns ``None`` when the request matches nothing, so the caller can fall
         back to the world instead of raising in front of the player.
         """
         wanted_country = str(country_code or "").strip().upper() or None
-        wanted_type = (
-            PLATE_TYPE_BY_CATEGORY[category] if category is not None else None
-        )
+        # A kind owns a *set* of stored plate types: vehicle plates keep the
+        # historical values (STANDARD, COMMERCIAL, MOTORCYCLE, ...), so matching on a
+        # single string would silently return an empty pool for every country.
+        wanted_types = plate_types_for(category) if category is not None else None
 
         countries = tuple(
             country
@@ -431,30 +471,32 @@ class PlateGenerator:
         templates_by_country: dict[str, tuple[TemplateOption, ...]] = {}
         for country in countries:
             options = self.ctx.templates_by_country.get(country.code, ())
-            if wanted_type is not None:
-                options = tuple(option for option in options if option.plate_type == wanted_type)
+            if wanted_types is not None:
+                options = tuple(
+                    option
+                    for option in options
+                    if (option.plate_type or "").upper() in wanted_types
+                )
             templates_by_country[country.code] = options
 
-        # A country can legitimately have no template for the requested category
-        # yet (a new SIM line, say). Keep only the countries that do.
-        usable = tuple(
-            country
-            for country in countries
-            if any(
-                not option.requires_region for option in templates_by_country[country.code]
-            )
-            or bool(templates_by_country[country.code])
-        )
+        # A country can legitimately have no template for the requested kind yet.
+        # Keep only the countries that do, and drop templates whose region slot the
+        # country cannot fill.
+        usable: list[CountryDef] = []
+        narrowed: dict[str, tuple[TemplateOption, ...]] = {}
+        for country in countries:
+            options = templates_by_country[country.code]
+            if not options:
+                continue
+            usable.append(country)
+            narrowed[country.code] = options
         if not usable:
             return None
 
-        usable_codes = {country.code for country in usable}
         return replace(
             self.ctx,
-            countries=usable,
-            templates_by_country={
-                code: options for code, options in templates_by_country.items() if code in usable_codes
-            },
+            countries=tuple(usable),
+            templates_by_country=narrowed,
         )
 
     # --- admin test lab --------------------------------------------------

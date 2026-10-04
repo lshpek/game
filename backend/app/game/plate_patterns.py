@@ -334,9 +334,9 @@ LETTER_DETECTORS: tuple[tuple[str, object], ...] = (
     ("mirrored_letters", detect_mirrored_letters),
 )
 
-#: ``Plate.plate_type`` values that are judged purely on their digits. A phone
-#: number or a SIM serial has no letters to reward and no region to mirror, so the
-#: vehicle detectors would call every one of them ordinary - which is how a 777
+#: ``Plate.plate_type`` values that are judged purely on their digits. A synthetic
+#: number printed on a SIM card has no letters to reward and no region to mirror, so
+#: the vehicle detectors would call every one of them ordinary - which is how a 777
 #: number used to come out as an unremarkable plate.
 _DIGIT_JUDGED_TYPES: frozenset[str] = frozenset({"PHONE", "SIM"})
 
@@ -370,9 +370,9 @@ def build_tags(
     if plate_type in {"DIPLOMATIC_STYLE", "GOVERNMENT_STYLE", "SPECIAL", "HISTORICAL"}:
         tags.append("luxury")
     if plate_type in _DIGIT_JUDGED_TYPES:
-        # Every synthetic collectible is tagged, so a player can filter the whole
-        # phone/SIM line out of a mixed collection.
-        tags.append("phone" if plate_type == "PHONE" else "sim")
+        # Every synthetic collectible is tagged, so a player can filter the whole SIM
+        # line out of a mixed collection.
+        tags.append("sim")
         tags.append("synthetic")
     return sorted(set(tags))
 
@@ -429,11 +429,11 @@ def analyze_plate(
     if detect_rare_template(rarity_floor):
         _record("rare_template")
 
-    # PHONE_NUMBERS and SIM_CARDS are judged on their digits. A phone number has no
-    # letters worth rewarding and no region to mirror, so the vehicle detectors
-    # above would report almost nothing for one - which is exactly how a 777 number
-    # used to come out as an ordinary plate. These detectors read the digit
-    # structure directly, so rarity is a property of the number itself.
+    # SIM cards are judged on the digits printed on them. A synthetic number has no
+    # letters worth rewarding and no region to mirror, so the vehicle detectors above
+    # would report almost nothing for one - which is exactly how a 777 number used to
+    # come out as an ordinary plate. These detectors read the digit structure
+    # directly, so rarity is a property of the number itself.
     if plate_type in _DIGIT_JUDGED_TYPES:
         for code in detect_phone_traits(plate_text):
             if code not in scores:

@@ -100,11 +100,11 @@ class PlateService:
 
     # --- persistence -----------------------------------------------------
     def materialize(self, generated: GeneratedPlate, *, season_code: str | None = None) -> tuple[Plate, bool]:
-        """Persist a generated plate as a catalogue row.
+        """Persist a generated collectible as a catalogue row.
 
         Returns ``(plate, created)``. A concurrent insert of the same
         ``(country, serial)`` simply re-reads the winner's row, so two players
-        rolling the same plate never produce duplicates.
+        rolling the same collectible never produce duplicates.
         """
         country = self.require_country(generated.country.code)
         region = self.region_for(generated.country.code, generated.region_code)
@@ -161,6 +161,9 @@ class PlateService:
             season_code=season_code,
             is_secret=bool(generated.is_secret),
             discovery_count=0,
+            # Kind-specific payload: the SIM card's operator, series, edition and the
+            # synthetic number printed on it. Empty for vehicle plates.
+            details=dict(generated.details or {}),
         )
         try:
             with self.db.begin_nested():

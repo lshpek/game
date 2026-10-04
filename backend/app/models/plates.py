@@ -35,22 +35,38 @@ if TYPE_CHECKING:
 
 
 class Country(Base, TimestampMixin):
-    """A country whose plates can be collected."""
+    """One country or territory of the world catalogue.
+
+    ``code`` is the ISO 3166-1 **alpha-3** identifier and the engine's stable key;
+    ``iso_alpha2`` carries the two-letter form used by deep links and share payloads.
+
+    ``is_active`` and ``is_playable`` are different on purpose: every ISO country is
+    active (listed by the WORLD screen), but only countries with a complete
+    generation and presentation setup are playable. A locked country can be released
+    by flipping one flag - no schema change is involved.
+    """
 
     __tablename__ = "countries"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(3), unique=True, index=True, nullable=False)
-    name_en: Mapped[str] = mapped_column(String(64), nullable=False)
-    name_ru: Mapped[str] = mapped_column(String(64), nullable=False)
-    flag: Mapped[str] = mapped_column(String(8), default="", nullable=False)
+    #: ISO 3166-1 alpha-2 code. Nullable only so the migration can backfill it.
+    iso_alpha2: Mapped[str | None] = mapped_column(String(2), unique=True, index=True)
+    name_en: Mapped[str] = mapped_column(String(96), nullable=False)
+    name_ru: Mapped[str] = mapped_column(String(96), nullable=False)
+    flag: Mapped[str] = mapped_column(String(16), default="", nullable=False)
     # Generation configuration: alphabet, letter policy, rarity/coin modifiers,
-    # visual theme id and special rules.
+    # visual theme id, layout family and special rules.
     config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # SIM/number presentation configuration: calling code, printed groupings,
+    # fictional operators and editions. Separate from ``config`` because it is owned
+    # and validated by ``app.game.sim_cards``.
+    sim_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     # Continent / album grouping, e.g. "EUROPE".
-    region_group: Mapped[str] = mapped_column(String(16), index=True, default="", nullable=False)
+    region_group: Mapped[str] = mapped_column(String(24), index=True, default="", nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    is_playable: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
 
     regions: Mapped[list["Region"]] = relationship(
         back_populates="country", cascade="all, delete-orphan", lazy="selectin"
@@ -142,6 +158,11 @@ class Plate(Base, TimestampMixin):
     letter_parts: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     plate_type: Mapped[str] = mapped_column(String(24), index=True, default="STANDARD", nullable=False)
+    #: Kind-specific payload, shaped by :mod:`app.game.collectibles`.
+    #: SIM cards carry ``operator``, ``series``, ``edition`` and the printed
+    #: ``synthetic_number``; vehicle plates carry their layout description. Read as a
+    #: whole, never queried by inner key, which is why it is JSON.
+    details: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     rarity: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
     rarity_score: Mapped[int] = mapped_column(Integer, index=True, default=0, nullable=False)
 

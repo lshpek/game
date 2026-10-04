@@ -1,194 +1,341 @@
-"""WORLD: the collection atlas.
+"""WORLD screen queries: atlas, country detail and global progress.
 
-Country completion is computed from the template catalogue, not from a magic
-constant: a country's total is how many distinct serials its active templates
-can produce. That keeps ``42 / 150`` honest as countries gain templates,
-without anyone maintaining a counter by hand.
+Kept separate from the API layer so the same numbers back the player screen, the
+admin panel and the share card. Every query is aggregated in SQL: with the full
+ISO 3166-1 list in the database, per-country Python loops would be a performance
+problem on every request.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.errors import NotFoundError
-from app.game.plate_rarity import RARITY_RANK, rarity_rank
-from app.models.plates import Country, Plate, PlateTemplate, Region, UserPlate
+from app.game.plate_traits import trait_labels
+from app.game.plate_visuals import serialize_visual
+from app.models.plates import Album, Country, Plate, PlateTemplate, Region, UserPlate
 from app.models.user import User
-from app.services.catalog import country_card, region_card, snapshot
+from app.services import catalog
 
-# Combinatorics above this are capped so the displayed number stays readable.
-TOTAL_CAP = 100_000
-
-
-@dataclass(slots=True)
-class CountryProgress:
-    country: Country
-    collected: int
-    total: int
-    best_rarity: str | None
-    regions_collected: int
-    regions_total: int
-
-    @property
-    def percent(self) -> float:
-        return 0.0 if self.total <= 0 else round(min(1.0, self.collected / self.total), 4)
-
-    def to_dict(self) -> dict[str, object]:
-        card = country_card(self.country)
-        card.update(
-            {
-                "collected": self.collected,
-                "total": self.total,
-                "progress": self.percent,
-                "percent": round(self.percent * 100, 1),
-                "best_rarity": self.best_rarity,
-                "regions_collected": self.regions_collected,
-                "regions_total": self.regions_total,
-                "completed": self.total > 0 and self.collected >= self.total,
-            }
-        )
-        return card
-
-
-def estimate_country_total(templates: list[PlateTemplate]) -> int:
-    """How many distinct plates a country's templates can produce.
-
-    Product of per-template slot counts; the result is capped so the WORLD
-    screen never shows an unreadable number.
-    """
-    total = 1
-    for template in templates:
-        pattern = template.pattern or ""
-        letters = sum(1 for ch in pattern if ch in "LA")
-        digits = sum(1 for ch in pattern if ch in "DXF")
-        slots = 1
-        if letters:
-            slots *= 26**letters
-        if digits:
-            slots *= 10**digits
-        total *= max(1, slots)
-    return max(1, min(TOTAL_CAP, total))
+DEFAULT_PAGE_SIZE = 60
+MAX_PAGE_SIZE = 250
 
 
 class WorldService:
-    """Country and region progress for one player."""
+    """Read-only views over the country catalogue and the player's progress."""
 
     def __init__(self, db: Session, rarity_weights: dict[str, float] | None = None) -> None:
         self.db = db
-        self._weights = rarity_weights or {}
-        self._snapshot = None
+        self.rarity_weights = rarity_weights or settings.rarity_weights
 
-    def _catalog(self):
-        if self._snapshot is None:
-            self._snapshot = snapshot(self.db, self._weights)
-        return self._snapshot
+    # --- helpers -----------------------------------------------------------
+    def country(self, code: str) -> Country | None:
+        """Resolve an ISO 3166-1 alpha-3 or alpha-2 code."""
+        return catalog.country_by_code(self.db, code)
 
-    def _collected_by_country(self, user_id: int) -> dict[int, int]:
+    def _collected_counts(self, user_id: int) -> dict[str, int]:
         rows = self.db.execute(
-            select(Plate.country_id, func.count(func.distinct(UserPlate.plate_id)))
+            select(Plate.country_code, func.count(func.distinct(Plate.id)))
             .join(UserPlate, UserPlate.plate_id == Plate.id)
             .where(UserPlate.user_id == user_id)
-            .group_by(Plate.country_id)
+            .group_by(Plate.country_code)
         ).all()
-        return {int(country_id): int(count) for country_id, count in rows}
+        return {code: int(count) for code, count in rows}
 
-    def _collected_by_region(self, user_id: int) -> dict[int, int]:
+    def _region_counts(self, user_id: int) -> dict[str, int]:
         rows = self.db.execute(
-            select(Plate.region_id, func.count(func.distinct(UserPlate.plate_id)))
+            select(Plate.country_code, func.count(func.distinct(Plate.region_code)))
             .join(UserPlate, UserPlate.plate_id == Plate.id)
-            .where(UserPlate.user_id == user_id, Plate.region_id.isnot(None))
-            .group_by(Plate.region_id)
+            .where(UserPlate.user_id == user_id, Plate.region_code.isnot(None))
+            .group_by(Plate.country_code)
         ).all()
-        return {int(region_id): int(count) for region_id, count in rows}
+        return {code: int(count) for code, count in rows}
 
-    def _best_rarity(self, user_id: int) -> dict[int, str]:
-        rows = (
+    def totals(self) -> dict[str, int]:
+        """Global collectible counts, without building any per-country payloads.
+
+        Only playable countries are counted: a locked country has no layouts, so
+        including it would inflate the global target and make every player's
+        progress look worse than it is.
+        """
+        total = int(
             self.db.execute(
-                select(Plate.country_id, Plate.rarity)
-                .join(UserPlate, UserPlate.plate_id == Plate.id)
-                .where(UserPlate.user_id == user_id)
-            )
-            .tuples()
-            .all()
+                select(func.count(PlateTemplate.id))
+                .join(Country, Country.id == PlateTemplate.country_id)
+                .where(
+                    PlateTemplate.is_active.is_(True),
+                    Country.is_active.is_(True),
+                    Country.is_playable.is_(True),
+                )
+            ).scalar_one()
+            or 0
         )
-        best: dict[int, str] = {}
-        for country_id, rarity in rows:
-            code = int(country_id)
-            if code not in best or rarity_rank(rarity) > rarity_rank(best[code]):
-                best[code] = rarity
-        return best
-
-    def overview(self, user: User) -> dict[str, object]:
-        """Every country with progress, ordered for the atlas screen."""
-        catalog = self._catalog()
-        collected = self._collected_by_country(user.id)
-        regions = self._collected_by_region(user.id)
-        best = self._best_rarity(user.id)
-
-        templates_by_country: dict[int, list[PlateTemplate]] = {}
-        for template in catalog.templates:
-            templates_by_country.setdefault(template.country_id, []).append(template)
-        regions_by_country: dict[int, list[Region]] = {}
-        for region in catalog.regions:
-            regions_by_country.setdefault(region.country_id, []).append(region)
-
-        entries: list[dict[str, object]] = []
-        for country in catalog.countries:
-            country_regions = regions_by_country.get(country.id, [])
-            entries.append(
-                CountryProgress(
-                    country=country,
-                    collected=collected.get(country.id, 0),
-                    total=estimate_country_total(templates_by_country.get(country.id, [])),
-                    best_rarity=best.get(country.id),
-                    regions_collected=sum(1 for r in country_regions if regions.get(r.id, 0) > 0),
-                    regions_total=len(country_regions),
-                ).to_dict()
-            )
-
-        entries.sort(key=lambda item: (str(item.get("region_group")), int(item.get("sort_order", 0))))
-
-        total_plates = sum(int(e["collected"]) for e in entries)
-        total_slots = sum(int(e["total"]) for e in entries)
+        discovered = int(
+            self.db.execute(
+                select(func.count(func.distinct(Plate.id)))
+                .join(Country, Country.id == Plate.country_id)
+                .where(Country.is_playable.is_(True))
+            ).scalar_one()
+            or 0
+        )
         return {
-            "countries": entries,
-            "total_collected": total_plates,
-            "total_plates": total_slots,
-            "progress": 0.0 if total_slots <= 0 else round(min(1.0, total_plates / total_slots), 4),
-            "rarity_rank": dict(RARITY_RANK),
+            "total_templates": total,
+            "discovered": discovered,
+            "playable_countries": int(
+                self.db.execute(
+                    select(func.count(Country.id)).where(
+                        Country.is_active.is_(True), Country.is_playable.is_(True)
+                    )
+                ).scalar_one()
+                or 0
+            ),
+            "locked_countries": int(
+                self.db.execute(
+                    select(func.count(Country.id)).where(
+                        Country.is_active.is_(True), Country.is_playable.is_(False)
+                    )
+                ).scalar_one()
+                or 0
+            ),
         }
 
-    def country_detail(self, user: User, country_code: str) -> dict[str, object]:
-        """Country detail: regions, templates and the player's progress."""
-        catalog = self._catalog()
-        country = next((c for c in catalog.countries if c.code == country_code.upper()), None)
-        if country is None:
-            raise NotFoundError("Country not found.", code="COUNTRY_NOT_FOUND")
+    def _estimate_total(self, templates: int, slots: int) -> int:
+        """Distinct serials a country can produce.
 
-        country_templates = [t for t in catalog.templates if t.country_id == country.id]
-        country_regions = [r for r in catalog.regions if r.country_id == country.id]
-        collected = self._collected_by_country(user.id).get(country.id, 0)
-        region_progress = self._collected_by_region(user.id)
-        total = estimate_country_total(country_templates)
+        Deliberately an *estimate*: exact combinatorics depend on alphabet size and
+        repetition rules, and the number only has to make a progress bar honest.
+        """
+        if not templates:
+            return 0
+        return max(1, min(templates * max(1, slots), 100_000))
+
+    def estimate_country_total(self, country_code: str) -> int:
+        """Total collectibles a country can hold (0 for a locked country)."""
+        row = self.country(country_code)
+        if row is None or not row.is_playable:
+            return 0
+        templates = list(
+            self.db.execute(
+                select(PlateTemplate).where(
+                    PlateTemplate.country_id == row.id, PlateTemplate.is_active.is_(True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not templates:
+            return 0
+        # ~20k serials per layout keeps the estimate comparable across countries
+        # while staying cheap to compute.
+        return self._estimate_total(len(templates), slots=3)
+
+    # --- atlas -------------------------------------------------------------
+    def overview(
+        self,
+        user: User,
+        *,
+        limit: int = DEFAULT_PAGE_SIZE,
+        offset: int = 0,
+    ) -> dict:
+        """One page of the atlas plus global progress."""
+        limit = max(1, min(int(limit or DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE))
+        offset = max(0, int(offset or 0))
+
+        collected = self._collected_counts(user.id)
+        regions_collected = self._region_counts(user.id)
+
+        total_rows = int(
+            self.db.execute(
+                select(func.count(Country.id)).where(Country.is_active.is_(True))
+            ).scalar_one()
+            or 0
+        )
+        page = list(
+            self.db.execute(
+                select(Country)
+                .where(Country.is_active.is_(True))
+                .order_by(Country.sort_order, Country.id)
+                .limit(limit)
+                .offset(offset)
+            )
+            .scalars()
+            .all()
+        )
+
+        # Slot counts per country in one grouped query for the whole page.
+        slot_rows = self.db.execute(
+            select(PlateTemplate.country_id, func.count(PlateTemplate.id))
+            .where(
+                PlateTemplate.is_active.is_(True),
+                PlateTemplate.country_id.in_([row.id for row in page] or [0]),
+            )
+            .group_by(PlateTemplate.country_id)
+        ).all()
+        slots = {int(cid): int(count) for cid, count in slot_rows}
+
+        region_rows = self.db.execute(
+            select(Region.country_id, func.count(Region.id))
+            .where(Region.is_active.is_(True), Region.country_id.in_([row.id for row in page] or [0]))
+            .group_by(Region.country_id)
+        ).all()
+        regions_total = {int(cid): int(count) for cid, count in region_rows}
+
+        globals_ = self.totals()
+        entries: list[dict] = []
+        for row in page:
+            has = collected.get(row.code, 0)
+            total = self._estimate_total(slots.get(row.id, 0), slots=3) if row.is_playable else 0
+            regions_have = regions_collected.get(row.code, 0)
+            regions_have_count = regions_total.get(row.id, 0)
+            entries.append(
+                self.country_card(
+                    row,
+                    collected=has,
+                    total=total,
+                    regions_collected=regions_have,
+                    regions_total=regions_have_count,
+                    is_active=bool(user.active_country_code == row.code),
+                )
+            )
+
+        total_collected = int(
+            self.db.execute(
+                select(func.count(UserPlate.plate_id)).where(UserPlate.user_id == user.id)
+            ).scalar_one()
+            or 0
+        )
+        target = globals_["total_templates"]
 
         return {
-            **country_card(country),
+            "countries": entries,
+            "total_collected": total_collected,
+            "total_plates": target,
+            "progress": round(total_collected / target, 4) if target else 0.0,
+            "offset": offset,
+            "limit": limit,
+            "countries_total": total_rows,
+            "playable_total": globals_["playable_countries"],
+            "locked_total": globals_["locked_countries"],
+        }
+
+    def country_card(
+        self,
+        row: Country,
+        *,
+        collected: int = 0,
+        total: int = 0,
+        regions_collected: int = 0,
+        regions_total: int = 0,
+        is_active: bool = False,
+    ) -> dict:
+        """One atlas entry."""
+        cfg = row.config or {}
+        return {
+            "code": row.code,
+            "iso_alpha2": row.iso_alpha2 or "",
+            "name_en": row.name_en,
+            "name_ru": row.name_ru,
+            "flag": row.flag,
+            "region_group": row.region_group,
+            "currency_code": cfg.get("currency_code", "USD"),
+            "currency_symbol": cfg.get("currency_symbol", "$"),
+            "calling_code": (row.sim_config or {}).get("calling_code", ""),
+            "visual": serialize_visual(cfg.get("visual", "european")),
             "collected": collected,
             "total": total,
-            "progress": 0.0 if total <= 0 else round(min(1.0, collected / total), 4),
-            "percent": round((collected / total) * 100, 1) if total else 0.0,
-            "best_rarity": self._best_rarity(user.id).get(country.id),
-            "completed": total > 0 and collected >= total,
+            "progress": round(collected / total, 4) if total else 0.0,
+            "percent": int(collected / total * 100) if total else 0,
+            "best_rarity": None,
+            "regions_collected": regions_collected,
+            "regions_total": regions_total,
+            "completed": bool(total and collected >= total),
+            "sort_order": row.sort_order,
+            "is_active": is_active,
+            "is_playable": bool(row.is_playable),
+        }
+
+    # --- one country -------------------------------------------------------
+    def country_detail(self, user: User, code: str) -> dict:
+        row = self.country(code)
+        if row is None or not row.is_active:
+            raise NotFoundError("Country not found.", code="COUNTRY_NOT_FOUND")
+
+        collected = self._collected_counts(user.id).get(row.code, 0)
+        regions_total = int(
+            self.db.execute(
+                select(func.count(Region.id)).where(
+                    Region.country_id == row.id, Region.is_active.is_(True)
+                )
+            ).scalar_one()
+            or 0
+        )
+        regions_collected = int(
+            self.db.execute(
+                select(func.count(func.distinct(Plate.region_code)))
+                .join(UserPlate, UserPlate.plate_id == Plate.id)
+                .where(
+                    UserPlate.user_id == user.id,
+                    Plate.country_id == row.id,
+                    Plate.region_code.isnot(None),
+                )
+            ).scalar_one()
+            or 0
+        )
+        total = self.estimate_country_total(row.code)
+        cfg = row.config or {}
+
+        best = self.db.execute(
+            select(Plate.rarity, func.count(Plate.id))
+            .join(UserPlate, UserPlate.plate_id == Plate.id)
+            .where(UserPlate.user_id == user.id, Plate.country_id == row.id)
+            .group_by(Plate.rarity)
+        ).all()
+        from app.game.plate_rarity import RARITY_RANK
+
+        best_rarity = next(
+            (code for code, _count in sorted(best, key=lambda item: -RARITY_RANK.get(item[0], 0))),
+            None,
+        )
+
+        regions = self.db.execute(
+            select(Region).where(
+                Region.country_id == row.id, Region.is_active.is_(True)
+            ).order_by(Region.sort_order)
+        ).scalars().all()
+        templates = self.db.execute(
+            select(PlateTemplate).where(
+                PlateTemplate.country_id == row.id, PlateTemplate.is_active.is_(True)
+            ).order_by(PlateTemplate.sort_order)
+        ).scalars().all()
+
+        return {
+            "code": row.code,
+            "iso_alpha2": row.iso_alpha2 or "",
+            "name_en": row.name_en,
+            "name_ru": row.name_ru,
+            "flag": row.flag,
+            "region_group": row.region_group,
+            "currency_code": cfg.get("currency_code", "USD"),
+            "currency_symbol": cfg.get("currency_symbol", "$"),
+            "calling_code": (row.sim_config or {}).get("calling_code", ""),
+            "visual": serialize_visual(cfg.get("visual", "european")),
+            "is_playable": bool(row.is_playable),
+            "collected": collected,
+            "total": total,
+            "progress": round(collected / total, 4) if total else 0.0,
+            "percent": int(collected / total * 100) if total else 0,
+            "best_rarity": best_rarity,
+            "completed": bool(total and collected >= total),
             "regions": [
                 {
-                    **region_card(region),
-                    "collected": region_progress.get(region.id, 0),
-                    "plate_type_count": len(country_templates),
+                    "code": region.code,
+                    "name_en": region.name_en,
+                    "name_ru": region.name_ru,
+                    "collected": 0,
                 }
-                for region in sorted(country_regions, key=lambda r: r.sort_order)
+                for region in regions
             ],
             "templates": [
                 {
@@ -196,10 +343,97 @@ class WorldService:
                     "pattern": template.pattern,
                     "plate_type": template.plate_type,
                     "rarity_floor": template.rarity_floor,
+                    "weight": float(template.weight),
                 }
-                for template in sorted(country_templates, key=lambda t: t.sort_order)
+                for template in templates
             ],
         }
 
+    # --- economy context ---------------------------------------------------
+    def economy_context(self, user: User) -> dict:
+        """Everything the collection header shows, as aggregate numbers only."""
+        totals = self.totals()
+        collected = int(
+            self.db.execute(
+                select(func.count(UserPlate.plate_id)).where(UserPlate.user_id == user.id)
+            ).scalar_one()
+            or 0
+        )
+        value = int(
+            self.db.execute(
+                select(func.coalesce(func.sum(Plate.dealer_value), 0))
+                .join(UserPlate, UserPlate.plate_id == Plate.id)
+                .where(UserPlate.user_id == user.id)
+            ).scalar_one()
+            or 0
+        )
+        target = totals["total_templates"]
+        return {
+            "total_collected": collected,
+            "total_plates": target,
+            "progress": round(collected / target, 4) if target else 0.0,
+            "total_dealer_value": value,
+            "playable_total": totals["playable_countries"],
+            "locked_total": totals["locked_countries"],
+        }
 
-__all__ = ["CountryProgress", "WorldService", "estimate_country_total"]
+    # --- collections -------------------------------------------------------
+    def albums(self) -> list[dict]:
+        rows = self.db.execute(select(Album).where(Album.is_active.is_(True))).scalars().all()
+        return [
+            {
+                "code": row.code,
+                "name_en": row.name_en,
+                "name_ru": row.name_ru,
+                "description_en": row.description_en,
+                "description_ru": row.description_ru,
+                "icon": row.icon,
+                "kind": row.kind,
+                "country_id": row.country_id,
+                "sort_order": row.sort_order,
+                "reward_coins": int((row.config or {}).get("reward_coins", 0)),
+                "reward_title": (row.config or {}).get("reward_title"),
+            }
+            for row in rows
+        ]
+
+    def collectible_today(self, user: User) -> list[dict]:
+        rows = self.db.execute(
+            select(Plate)
+            .join(UserPlate, UserPlate.plate_id == Plate.id)
+            .where(UserPlate.user_id == user.id)
+            .order_by(UserPlate.last_acquired_at.desc())
+            .limit(8)
+        ).scalars().all()
+        return [
+            {
+                "id": row.id,
+                "plate_text": row.plate_text,
+                "rarity": row.rarity,
+                "reason_labels": trait_labels(list(row.traits or [])[:4]),
+                "country_code": row.country_code,
+                "currency_symbol": row.currency_symbol,
+                "collector_value": int(row.collector_value),
+            }
+            for row in rows
+        ]
+
+    def leaderboard_scope(self, user: User) -> dict:
+        """What a leaderboard row for this player should contain."""
+        rows = self.db.execute(
+            select(
+                func.count(UserPlate.plate_id),
+                func.coalesce(func.sum(Plate.dealer_value), 0),
+                func.count(func.distinct(Plate.country_code)),
+            )
+            .join(Plate, Plate.id == UserPlate.plate_id)
+            .where(UserPlate.user_id == user.id)
+        ).one()
+        return {
+            "plates": int(rows[0] or 0),
+            "value": int(rows[1] or 0),
+            "countries": int(rows[2] or 0),
+        }
+
+
+__all__ = ["DEFAULT_PAGE_SIZE", "MAX_PAGE_SIZE", "WorldService"]

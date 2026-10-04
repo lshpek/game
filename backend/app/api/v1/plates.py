@@ -13,10 +13,10 @@ from app.core.config import settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.timeutils import utcnow
 from app.db.session import get_db
-from app.game.collectibles import parse_hunt_filter
+from app.game.collectibles import normalize_kind, parse_hunt_filter, plate_types_for
 from app.game.plate_rarity import RARITY_RANK
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
-from app.models.plates import Plate, UserPlate
+from app.models.plates import Country, Plate, UserPlate
 from app.models.social import ShareEvent
 from app.models.user import User
 from app.schemas.plates import (
@@ -35,6 +35,7 @@ from app.schemas.plates import (
 )
 from app.services.albums import AlbumService
 from app.services.analytics import AnalyticsService
+from app.services import countries as country_service
 from app.services.cosmetics import CosmeticService
 from app.services.economy import EconomyService
 from app.services.events import EventService
@@ -92,12 +93,15 @@ def perform_roll(
     category: str | None = Query(
         default=None,
         max_length=24,
-        description="Optional hunt filter: VEHICLE_PLATE, PHONE_NUMBER or SIM_CARD.",
+        description="Optional hunt filter: VEHICLE_PLATE or SIM_CARD.",
     ),
     country_code: str | None = Query(
         default=None,
         max_length=32,
-        description="Optional hunt filter: restrict the roll to one country (3-letter code).",
+        description=(
+            "Optional hunt filter: restrict the roll to one ISO country. "
+            "Validated server-side; defaults to the player's active country."
+        ),
     ),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -106,12 +110,14 @@ def perform_roll(
     """Draw one collectible.
 
     The client may only narrow the *eligible pool* with ``category`` and
-    ``country_code``. Everything that decides the outcome - the number, its
-    rarity, its value, whether it is a first discovery, whether it is a duplicate
-    and the reward - is computed here. A roll with no filters behaves exactly as
-    before.
+    ``country_code``. Everything that decides the outcome - the serial, the SIM number
+    printed on the card, its rarity, its value, whether it is a first discovery,
+    whether it is a duplicate and the reward - is computed here. When no country is
+    given, the player's active country decides; with none at all, the whole world is
+    the pool.
     """
     hunt = parse_hunt_filter(category=category, country_code=country_code)
+    hunt["country_code"] = country_service.roll_country(db, user, hunt.get("country_code"))
     service = PlateRollService(db, settings)
     outcome = service.perform_roll(
         user,
@@ -162,6 +168,7 @@ def _collection_conditions(
     country: str | None,
     region: str | None,
     rarity: str | None,
+    kind: str | None,
     tag: str | None,
     search: str | None,
     favorite: bool,
@@ -175,8 +182,20 @@ def _collection_conditions(
     conditions = [UserPlate.user_id == user.id]
     if rarity and rarity.upper() != "ALL":
         conditions.append(Plate.rarity == rarity.upper())
-    if country and country.upper() != "ALL":
-        conditions.append(Plate.country_code == country.upper())
+    if country and country.upper() not in {"ALL", "WORLD"}:
+        # Both ISO forms must land on the same rows, so a shared link works even when
+        # it carries the two-letter code.
+        conditions.append(
+            or_(
+                Plate.country_code == country.upper(),
+                Plate.country_id
+                == select(Country.id)
+                .where(
+                    or_(Country.code == country.upper(), Country.iso_alpha2 == country.upper())
+                )
+                .scalar_subquery(),
+            )
+        )
     if region and region.upper() != "ALL":
         conditions.append(Plate.region_code == region.upper())
     if favorite:
@@ -187,6 +206,15 @@ def _collection_conditions(
         conditions.append(UserPlate.is_new.is_(True))
     if secret:
         conditions.append(Plate.is_secret.is_(True))
+    if kind:
+        wanted = normalize_kind(kind)
+        if wanted is None:
+            raise ValidationError(
+                f"Unknown collectible kind: {kind!r}.", code="BAD_CATEGORY"
+            )
+        conditions.append(
+            or_(*[Plate.plate_type == name for name in plate_types_for(wanted)])
+        )
     if tag and tag.lower() != "all":
         conditions.append(cast(Plate.tags, sa.String).like(f'%"{tag.lower()}"%'))
     if search:
@@ -219,6 +247,11 @@ def collection(
     country: str | None = Query(default=None, max_length=8),
     region: str | None = Query(default=None, max_length=16),
     rarity: str | None = Query(default=None, max_length=16),
+    kind: str | None = Query(
+        default=None,
+        max_length=24,
+        description="Optional filter: VEHICLE_PLATE or SIM_CARD.",
+    ),
     tag: str | None = Query(default=None, max_length=32),
     search: str | None = Query(default=None, max_length=48),
     sort: str = Query(default="recent"),
@@ -231,11 +264,18 @@ def collection(
 ) -> CollectionResponse:
     page = max(1, int(page))
     page_size = max(1, min(int(page_size), 100))
+    # Without an explicit country the collection follows the player's active country,
+    # so the screen matches what the roll is actually producing.
+    effective_country = country
+    if not effective_country and user.active_country_code:
+        active = country_service.active_country(db, user)
+        effective_country = active.code if active else None
     conditions = _collection_conditions(
         user,
-        country=country,
+        country=effective_country,
         region=region,
         rarity=rarity,
+        kind=kind,
         tag=tag,
         search=search,
         favorite=favorite,
@@ -390,10 +430,20 @@ def garage(
 
 @router.get("/world", response_model=WorldResponse, summary="World atlas overview")
 def world_overview(
+    limit: int = Query(default=60, ge=1, le=250),
+    offset: int = Query(default=0, ge=0),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WorldResponse:
-    overview = WorldService(db, settings.rarity_weights).overview(user)
+    """The atlas, one page at a time.
+
+    The full ISO 3166-1 list is ~250 entries, so the screen pages through them
+    instead of shipping the whole world in every response. ``total_plates`` and
+    ``progress`` stay global, so the header never depends on the current page.
+    """
+    overview = WorldService(db, settings.rarity_weights).overview(
+        user, limit=limit, offset=offset
+    )
     event = EventService(db).serialize()
     AnalyticsService(db).track(
         AnalyticsEventName.APP_OPEN.value,

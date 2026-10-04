@@ -77,6 +77,12 @@ class User(Base, TimestampMixin):
     equipped_cosmetic_code: Mapped[str | None] = mapped_column(String(48))
     season_pass_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # The player's selected world. Authoritative on the server: the roll, the
+    # collection filters, the country statistics and the challenge progress all read
+    # it, so a client cannot claim a country the backend has not validated. ``NULL``
+    # means "the whole world" - the default hunt mode.
+    active_country_code: Mapped[str | None] = mapped_column(String(3), index=True)
+
     # Bad-luck protection state - server owned, never client editable.
     pity_rare_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     pity_epic_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

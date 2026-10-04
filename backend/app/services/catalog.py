@@ -16,6 +16,7 @@ import time
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.game import collectibles
 from app.game.countries import COUNTRIES as CATALOG_COUNTRIES
 from app.game.plate_generator import GenerationContext, RegionOption, TemplateOption
 from app.game.plate_visuals import serialize_visual
@@ -49,11 +50,16 @@ def _requires_region(template: PlateTemplate) -> bool:
 
 
 def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnapshot:
-    """Read the whole catalogue in three queries and map it for the engine."""
+    """Read the whole catalogue in three queries and map it for the engine.
+
+    Only *playable* countries enter the generation context: locked countries are
+    listed by the atlas but can never be produced by a roll, which is what makes
+    "coming soon" honest instead of a silent surprise.
+    """
     countries = list(
         db.execute(
             select(Country)
-            .where(Country.is_active.is_(True))
+            .where(Country.is_active.is_(True), Country.is_playable.is_(True))
             .options(selectinload(Country.regions), selectinload(Country.templates))
             .order_by(Country.sort_order, Country.id)
         )
@@ -109,11 +115,30 @@ def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnap
                 rarity_floor=template.rarity_floor,
                 requires_region=_requires_region(template),
                 multiplier=float(config.get("multiplier", 1.0)),
+                config=dict(config),
             ),
         )
 
     active_codes = {c.code for c in countries}
     engine_countries = tuple(c for c in CATALOG_COUNTRIES if c.code in active_codes)
+
+    # SIM card layouts are owned by the kind module rather than the country tables,
+    # so a new collectible kind never has to be threaded through country configuration.
+    for code in active_codes:
+        for definition in collectibles.sim_templates(code):
+            templates_by_country[code] = (
+                *templates_by_country.get(code, ()),
+                TemplateOption(
+                    code=definition.code,
+                    pattern=definition.pattern,
+                    weight=definition.weight,
+                    plate_type=definition.plate_type,
+                    rarity_floor=definition.rarity_floor,
+                    requires_region="R" in (definition.pattern or ""),
+                    multiplier=1.0,
+                    config=dict(definition.config),
+                ),
+            )
 
     context = GenerationContext(
         countries=engine_countries,
@@ -146,20 +171,25 @@ def invalidate() -> None:
 
 
 def country_card(country: Country) -> dict[str, object]:
-    """Serialisable country payload used by the WORLD screen."""
+    """Serialisable country payload used by the WORLD screen and the selector."""
     config = country.config or {}
+    sim_config = country.sim_config or {}
     return {
+        "id": country.id,
         "code": country.code,
+        "iso_alpha2": country.iso_alpha2 or "",
         "name_en": country.name_en,
         "name_ru": country.name_ru,
         "flag": country.flag,
         "region_group": country.region_group,
         "currency_code": config.get("currency_code", "USD"),
         "currency_symbol": config.get("currency_symbol", "$"),
+        "calling_code": sim_config.get("calling_code", ""),
         "weight": config.get("weight", 1.0),
         "visual": serialize_visual(config.get("visual", "european")),
         "sort_order": country.sort_order,
         "is_active": bool(country.is_active),
+        "is_playable": bool(country.is_playable),
     }
 
 
@@ -183,11 +213,41 @@ def template_card(template: PlateTemplate) -> dict[str, object]:
     }
 
 
+def country_by_code(db: Session, code: str) -> Country | None:
+    """Resolve an ISO 3166-1 alpha-3 *or* alpha-2 code to a country row.
+
+    Deep links and share payloads carry the two-letter form, the engine and the
+    catalogue use the three-letter form; both must land on the same row.
+    """
+    if not code:
+        return None
+    text = str(code).strip().upper()
+    row = db.execute(select(Country).where(Country.code == text)).scalar_one_or_none()
+    if row is not None:
+        return row
+    return db.execute(select(Country).where(Country.iso_alpha2 == text)).scalar_one_or_none()
+
+
+def playable_countries(db: Session) -> list[Country]:
+    """Every country a roll may produce, in atlas order."""
+    return list(
+        db.execute(
+            select(Country)
+            .where(Country.is_active.is_(True), Country.is_playable.is_(True))
+            .order_by(Country.sort_order, Country.id)
+        )
+        .scalars()
+        .all()
+    )
+
+
 __all__ = [
     "CatalogSnapshot",
     "build_snapshot",
+    "country_by_code",
     "country_card",
     "invalidate",
+    "playable_countries",
     "region_card",
     "snapshot",
     "template_card",

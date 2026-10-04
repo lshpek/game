@@ -12,6 +12,7 @@ from app.api.v1 import (
     challenges,
     collection,
     containers,
+    countries,
     missions,
     payments,
     plates,
@@ -26,6 +27,7 @@ api_router.include_router(auth.router)
 # ``/legacy`` so old clients keep working while new gameplay uses plates.
 api_router.include_router(plates.router)
 api_router.include_router(roll.router)
+api_router.include_router(countries.router)
 api_router.include_router(missions.router)
 api_router.include_router(collection.router)
 api_router.include_router(containers.router)

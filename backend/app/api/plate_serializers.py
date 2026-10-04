@@ -10,13 +10,36 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.timeutils import as_aware
-from app.game.collectibles import category_for_plate_type
+from app.game.collectibles import CollectibleKind, kind_for_plate_type
 from app.game.plate_rarity import RARITY_COLOR
 from app.game.plate_traits import trait_labels
 from app.game.plate_visuals import serialize_visual
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.models.plates import Plate, UserPlate
+
+
+def sim_details(plate: "Plate") -> dict[str, object] | None:
+    """Kind-specific payload, or ``None`` for a vehicle plate.
+
+    Only the fields the SIM card actually prints are exposed; nothing else from
+    ``plates.details`` leaks into the API.
+    """
+    if kind_for_plate_type(plate.plate_type) is not CollectibleKind.SIM_CARD:
+        return None
+    details = plate.details or {}
+    return {
+        "operator_code": str(details.get("operator_code") or ""),
+        "operator": str(details.get("operator") or ""),
+        "operator_local": str(details.get("operator_local") or ""),
+        "series": str(details.get("series") or ""),
+        "edition": str(details.get("edition") or ""),
+        # The number the backend generated and printed on the card. The client
+        # renders it; it never composes one.
+        "synthetic_number": str(details.get("synthetic_number") or plate.plate_text),
+        "calling_code": str(details.get("calling_code") or ""),
+        "synthetic": True,
+    }
 
 
 def first_discoverer(plate: "Plate", db=None) -> dict[str, object] | None:
@@ -46,7 +69,7 @@ def plate_card(
     owned: bool | None = None,
     db=None,
 ) -> dict[str, object]:
-    """Canonical plate payload.
+    """Canonical collectible payload.
 
     ``collector_value`` is an explicitly *estimated in-game* value in the
     country's display currency; ``dealer_value`` is the NUMORA amount the DEALER
@@ -55,7 +78,7 @@ def plate_card(
     country = plate.country
     region = plate.region
     traits = list(plate.traits or [])
-    category = category_for_plate_type(plate.plate_type)
+    kind = kind_for_plate_type(plate.plate_type)
 
     return {
         "id": plate.id,
@@ -65,10 +88,10 @@ def plate_card(
         "letters": list(plate.letter_parts or []),
         "numbers": list(plate.numeric_parts or []),
         "plate_type": plate.plate_type,
-        # Unified category axis. The frontend selects on ``category`` for every
-        # collectible kind and never branches on ``plate_type``; ``plate_type``
-        # stays for existing consumers and for the admin panel.
-        "category": category.value,
+        # The collectible kind. The frontend selects on ``kind`` for every object and
+        # never branches on ``plate_type``; ``plate_type`` stays for existing
+        # consumers and for the admin panel.
+        "kind": kind.value,
         "rarity": plate.rarity,
         "rarity_score": int(plate.rarity_score),
         "rarity_color": RARITY_COLOR.get(plate.rarity, RARITY_COLOR["COMMON"]),
@@ -92,6 +115,7 @@ def plate_card(
         "dealer_value": int(plate.dealer_value),
         "country": {
             "code": country.code if country else "",
+            "iso_alpha2": (country.iso_alpha2 or "") if country else "",
             "name_en": country.name_en if country else "",
             "name_ru": country.name_ru if country else "",
             "flag": country.flag if country else "",
@@ -108,6 +132,10 @@ def plate_card(
         "visual": serialize_visual(
             (country.config or {}).get("visual", "european") if country else "european"
         ),
+        # Present for SIM cards (operator, series, edition, printed number); ``None``
+        # for a vehicle plate, so the client can branch on the payload it receives
+        # rather than on guesswork.
+        "details": sim_details(plate),
         "owned": bool(user_plate is not None) if owned is None else owned,
         "duplicate_count": int(user_plate.duplicate_count) if user_plate is not None else 0,
         "is_favorite": bool(user_plate.is_favorite) if user_plate is not None else False,
@@ -117,9 +145,7 @@ def plate_card(
             if user_plate is not None and user_plate.first_acquired_at
             else None
         ),
-        # Compatibility alias for the legacy ``number`` field.
-        "number": plate.plate_text,
     }
 
 
-__all__ = ["first_discoverer", "plate_card"]
+__all__ = ["first_discoverer", "plate_card", "sim_details"]

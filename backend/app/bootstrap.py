@@ -53,8 +53,15 @@ def bootstrap() -> None:
         return
 
     with SessionLocal() as db:
-        if catalogue_is_empty(db):
-            from app.seed import seed_all
+        first_boot = catalogue_is_empty(db)
+        # The catalogue is *configuration* that ships with the code, so it is
+        # reconciled on every boot: a release that adds countries, layouts or albums
+        # must reach an existing database, and every seed is an idempotent upsert by
+        # stable code. Nothing is ever deleted or reset.
+        from app.seed import seed_all
 
-            seed_all(db)
-            logger.info("Seed data created.")
+        counts = seed_all(db)
+        if first_boot:
+            logger.info("Seed data created: %s", counts)
+        else:
+            logger.info("Catalogue reconciled: %s", counts)

@@ -16,10 +16,11 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.core.timeutils import utcnow
 from app.db.session import session_scope
+from app.game import collectibles, sim_cards
 from app.game.achievements import ACHIEVEMENT_DEFINITIONS
 from app.game.analyzer import analyze
 from app.game.containers import CONTAINER_DEFINITIONS
-from app.game.countries import ALL_ALBUMS, COUNTRIES, EVENTS
+from app.game.countries import ALL_ALBUMS, COUNTRIES, CountryDef, EVENTS, TemplateDef
 from app.game.products import PRODUCT_DEFINITIONS
 from app.game.rarity import LEGENDARY_NUMBERS, MYTHIC_NUMBERS, SECRET_NUMBERS, SPECIAL_NUMBER_RARITY
 from app.game.seasons import SEASON_DEFINITIONS
@@ -39,7 +40,12 @@ SEEDED_NUMBERS = set(SECRET_NUMBERS) | set(MYTHIC_NUMBERS) | set(LEGENDARY_NUMBE
 
 
 def seed_countries(db: Session) -> int:
-    """Countries, regions and templates from the declarative catalogue."""
+    """Countries, regions and templates from the declarative catalogue.
+
+    Idempotent upsert over the *whole* ISO 3166-1 list. Existing rows keep their
+    ``id``, so no plate, ownership or progress row is ever touched and locked
+    countries keep their identity for a future unlock.
+    """
     created = 0
     for definition in COUNTRIES:
         country = db.execute(
@@ -50,23 +56,16 @@ def seed_countries(db: Session) -> int:
             db.add(country)
             created += 1
 
+        country.iso_alpha2 = definition.iso_alpha2 or None
         country.name_en = definition.name_en
         country.name_ru = definition.name_ru
         country.flag = definition.flag
         country.region_group = definition.region_group
         country.sort_order = definition.sort_order
         country.is_active = True
-        country.config = {
-            "currency_code": definition.currency_code,
-            "currency_symbol": definition.currency_symbol,
-            "weight": definition.weight,
-            "alphabet": definition.alphabet,
-            "letter_style": definition.letter_style,
-            "value_scale": definition.value_scale,
-            "rarity_modifier": definition.rarity_modifier,
-            "visual": definition.visual,
-            "tag": definition.tag,
-        }
+        country.is_playable = definition.playable
+        country.config = country_config(definition)
+        country.sim_config = sim_config(definition)
         db.flush()
 
         for index, region_def in enumerate(definition.regions):
@@ -88,26 +87,82 @@ def seed_countries(db: Session) -> int:
         db.flush()
 
         for index, template_def in enumerate(definition.templates):
-            template = db.execute(
-                select(PlateTemplate).where(PlateTemplate.code == template_def.code)
-            ).scalar_one_or_none()
-            if template is None:
-                template = PlateTemplate(code=template_def.code)
-                db.add(template)
+            if _upsert_template(db, country, template_def, index):
                 created += 1
-            template.country_id = country.id
-            template.region_id = None
-            template.pattern = template_def.pattern
-            template.plate_type = template_def.plate_type
-            template.rarity_floor = template_def.rarity_floor
-            template.weight = template_def.weight
-            template.config = dict(template_def.config)
-            template.sort_order = index
-            template.is_active = True
+
+        # SIM card layouts come from the kind module, not the country tables, so a new
+        # kind never has to be threaded through the country configuration.
+        for offset, template_def in enumerate(collectibles.sim_templates(definition.code)):
+            if _upsert_template(db, country, template_def, len(definition.templates) + offset):
+                created += 1
 
     db.flush()
     catalog_service.invalidate()
     return created
+
+
+def _upsert_template(
+    db: Session,
+    country: Country,
+    template_def: TemplateDef,
+    sort_order: int,
+) -> bool:
+    """Insert or update one plate layout. Returns ``True`` when a row was created."""
+    template = db.execute(
+        select(PlateTemplate).where(PlateTemplate.code == template_def.code)
+    ).scalar_one_or_none()
+    created = template is None
+    if created:
+        template = PlateTemplate(code=template_def.code)
+        db.add(template)
+    template.country_id = country.id
+    template.region_id = None
+    template.pattern = template_def.pattern
+    template.plate_type = template_def.plate_type
+    template.rarity_floor = template_def.rarity_floor
+    template.weight = template_def.weight
+    template.config = dict(template_def.config)
+    template.sort_order = sort_order
+    template.is_active = True
+    return created
+
+
+def country_config(definition: CountryDef) -> dict:
+    """Generation + presentation configuration stored on the country row."""
+    return {
+        "currency_code": definition.currency_code,
+        "currency_symbol": definition.currency_symbol,
+        "calling_code": definition.calling_code,
+        "weight": definition.weight,
+        "alphabet": definition.alphabet,
+        "letter_style": definition.letter_style,
+        "value_scale": definition.value_scale,
+        "rarity_modifier": definition.rarity_modifier,
+        "visual": definition.visual,
+        "family": (definition.config or {}).get("family"),
+        "locked": not definition.playable,
+        "tag": definition.tag,
+        **definition.config,
+    }
+
+
+def sim_config(definition: CountryDef) -> dict:
+    """SIM presentation configuration stored on the country row.
+
+    Written for locked countries too, so releasing a country later only needs layouts
+    plus an ``is_playable`` flip - its number format is already correct in the
+    database.
+    """
+    fmt = sim_cards.sim_format(definition.code)
+    return {
+        "calling_code": fmt.calling_code,
+        "prefixes": [prefix for prefix, _weight in fmt.prefixes],
+        "groups": list(fmt.groups),
+        "patterns": list(sim_cards.sim_patterns(definition.code)),
+        "operators": [entry[0] for entry in sim_cards.operators_for(definition.code)],
+        "editions": [edition for edition, _weight, _floor in sim_cards.EDITIONS],
+        sim_cards.SYNTHETIC_FLAG: True,
+    }
 
 
 def seed_albums(db: Session) -> int:
