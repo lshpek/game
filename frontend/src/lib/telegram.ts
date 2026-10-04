@@ -46,7 +46,10 @@ export function initTelegram(): void {
   if (!telegram) return;
   try {
     telegram.ready();
+    // Fullscreen Mini App: expand to the full viewport height and, where the
+    // client supports it, enter immersive fullscreen as well.
     telegram.expand();
+    telegram.requestFullscreen?.();
     telegram.setHeaderColor('#05060c');
     telegram.setBackgroundColor('#05060c');
     telegram.disableVerticalSwipes?.();

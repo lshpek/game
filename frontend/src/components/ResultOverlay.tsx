@@ -1,46 +1,33 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { RARITY_COLORS } from '@/lib/format';
-import { formatCoins, traitLabel } from '@/lib/format';
-import type { AchievementBadge, NumberCard, Rarity } from '@/types';
-import { RarityBadge, TraitChip } from './RarityBadge';
+import { RARITY_COLORS, formatCoins } from '@/lib/format';
+import type { AchievementBadge, PlateRollResult, Rarity } from '@/types';
 import { useI18n } from '@/i18n';
+import { PlateVisual } from './PlateVisual';
+import { RarityBadge, TraitChip } from './RarityBadge';
+import { ValueCounter } from './ValueCounter';
 
 interface ResultOverlayProps {
   open: boolean;
-  number: NumberCard | null;
-  rarity: Rarity | null;
-  isDuplicate: boolean;
-  isFirstDiscovery: boolean;
-  conversionValue: number;
-  coinsAwarded: number;
-  achievements: AchievementBadge[];
+  result: PlateRollResult | null;
   onClose: () => void;
   onShare: () => void;
-  onConvert: () => void;
+  onSell: () => void;
 }
 
-export function ResultOverlay({
-  open,
-  number,
-  rarity,
-  isDuplicate,
-  isFirstDiscovery,
-  conversionValue,
-  coinsAwarded,
-  achievements,
-  onClose,
-  onShare,
-  onConvert,
-}: ResultOverlayProps) {
-  const { t } = useI18n();
-  const color = rarity ? RARITY_COLORS[rarity] : '#7c5cff';
+/** The roll reveal: plate flips in, value counts up, story explains why. */
+export function ResultOverlay({ open, result, onClose, onShare, onSell }: ResultOverlayProps) {
+  const { lang, t } = useI18n();
+  const plate = result?.plate ?? null;
+  const rarity = (result?.rarity ?? 'COMMON') as Rarity;
+  const color = RARITY_COLORS[rarity] ?? RARITY_COLORS.COMMON;
   const isSecret = rarity === 'SECRET' || rarity === 'MYTHIC';
+  const achievements: AchievementBadge[] = result?.unlocked_achievements ?? [];
 
   return (
     <AnimatePresence>
-      {open && number ? (
+      {open && plate && result ? (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/85 p-5 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink-950/85 p-5 backdrop-blur-sm"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -51,7 +38,7 @@ export function ResultOverlay({
           data-testid="result-overlay"
         >
           <motion.div
-            className="relative w-full max-w-sm overflow-hidden rounded-3xl border p-6 text-center"
+            className="relative my-auto w-full max-w-sm overflow-hidden rounded-3xl border p-6 text-center"
             style={{
               borderColor: `${color}66`,
               background: `radial-gradient(circle at 50% 0%, ${color}33, #0b0e1a 70%)`,
@@ -69,52 +56,76 @@ export function ResultOverlay({
                 animate={{ opacity: [0.6, 1, 0.6] }}
                 transition={{ duration: 1.8, repeat: Infinity }}
               >
-                {isFirstDiscovery ? t('result.secretDiscovered') : t('result.secretFound')}
+                {result.is_first_discovery ? t('result.secretDiscovered') : t('result.secretFound')}
               </motion.p>
             ) : null}
 
-            {isDuplicate ? (
+            {result.is_first_discovery && !isSecret ? (
+              <p className="mb-1 text-xs font-bold uppercase tracking-[0.3em] text-amber-300/90">
+                {t('result.firstDiscovery')}
+              </p>
+            ) : null}
+
+            {result.is_duplicate ? (
               <p className="mb-1 text-xs font-bold uppercase tracking-[0.3em] text-amber-300/90">
                 {t('result.duplicate')}
               </p>
             ) : null}
 
             <motion.div
-              key={number.number}
-              className="number-display my-3 text-[4.25rem] leading-none"
-              style={{ color, textShadow: `0 0 34px ${color}80` }}
-              initial={{ scale: 0.7, opacity: 0, rotateX: 60 }}
-              animate={{ scale: 1, opacity: 1, rotateX: 0 }}
-              transition={{ type: 'spring', stiffness: 220, damping: 16, delay: 0.05 }}
-              data-testid="result-number"
+              key={plate.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2, delay: 0.05 }}
+              className="my-3"
+              data-testid="result-plate"
             >
-              {number.number}
+              <PlateVisual plate={plate} size="lg" reveal />
             </motion.div>
 
-            <div className="flex justify-center">
-              <RarityBadge rarity={rarity ?? 'COMMON'} size="lg" />
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              <RarityBadge rarity={rarity} size="lg" />
+              {result.is_new_country ? (
+                <TraitChip code="new_country" label={t('result.newCountry')} />
+              ) : null}
+              {result.is_new_region ? <TraitChip code="new_region" label={t('result.newRegion')} /> : null}
             </div>
 
+            {/* Dealer value counts up - authoritative NUMORA amount. */}
             <p className="number-display mt-4 text-3xl" style={{ color }}>
-              {formatCoins(number.value)} <span className="text-base opacity-70">🪙</span>
+              <ValueCounter value={result.sale_value} suffix=" NUMORA" />
             </p>
-
-            {number.story ? (
-              <p className="mt-3 text-sm leading-relaxed text-white/70">{number.story}</p>
+            <p className="mt-1 text-xs text-white/55">
+              {t('result.collectorValue', {
+                value: `${plate.currency_symbol}${formatCoins(plate.collector_value)}`,
+              })}
+            </p>
+            {plate.story ? (
+              <p className="mt-3 text-sm leading-relaxed text-white/70">{plate.story}</p>
             ) : null}
 
-            {number.traits.length ? (
+            {plate.reason_labels.length ? (
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                {number.traits.slice(0, 4).map((code) => (
-                  <TraitChip key={code} code={code} label={traitLabel(code)} />
+                {plate.reason_labels.slice(0, 4).map((label, index) => (
+                  <TraitChip key={plate.reasons[index] ?? label} code={plate.reasons[index] ?? ''} label={label} />
                 ))}
               </div>
             ) : null}
 
-            {coinsAwarded > 0 ? (
+            {result.numora_awarded > 0 ? (
               <p className="mt-3 text-sm font-semibold text-emerald-300">
-              {t('result.coinsAwarded', { coins: formatCoins(coinsAwarded) })}
-            </p>
+                {t('result.coinsAwarded', { coins: formatCoins(result.numora_awarded) })}
+              </p>
+            ) : null}
+
+            {result.missions_completed.length ? (
+              <p className="mt-2 text-xs font-semibold text-cyan-300">
+                {t('result.missionsDone', {
+                  names: result.missions_completed
+                    .map((mission) => mission[lang === 'ru' ? 'name_ru' : 'name_en'] ?? mission.code)
+                    .join(', '),
+                })}
+              </p>
             ) : null}
 
             {achievements.length ? (
@@ -135,9 +146,15 @@ export function ResultOverlay({
               <button type="button" className="btn-primary" onClick={onShare} data-testid="share-button">
                 {t('result.share')}
               </button>
-              {isDuplicate ? (
-                <button type="button" className="btn-ghost" onClick={onConvert}>
-                  {t('result.convert', { coins: formatCoins(conversionValue) })}
+              {result.is_duplicate ? (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={onSell}
+                  disabled={result.sale_value <= 0}
+                  data-testid="sell-button"
+                >
+                  {t('result.sell', { coins: formatCoins(result.sale_value) })}
                 </button>
               ) : null}
               <button type="button" className="btn-ghost" onClick={onClose}>

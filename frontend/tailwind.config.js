@@ -31,6 +31,7 @@ export default {
       boxShadow: {
         glow: '0 0 32px rgba(124, 92, 255, 0.35)',
         card: '0 12px 40px rgba(0, 0, 0, 0.45)',
+        plate: '0 10px 30px rgba(0, 0, 0, 0.4)',
       },
       backgroundImage: {
         'mesh-dark':

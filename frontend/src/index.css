@@ -56,6 +56,40 @@
   .number-display {
     @apply font-display font-bold tabular-nums tracking-tighter;
   }
+
+  /* A collectible plate: metal face, gloss sweep, deep shadow. */
+  .plate-frame {
+    @apply shadow-plate;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  }
+
+  .plate-gloss {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.45),
+      rgba(255, 255, 255, 0.08) 38%,
+      transparent 58%
+    );
+    opacity: 0.55;
+  }
+}
+
+@keyframes plate-reveal {
+  0% {
+    transform: perspective(700px) rotateX(85deg) scale(0.85);
+    opacity: 0;
+  }
+  60% {
+    transform: perspective(700px) rotateX(-8deg) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(700px) rotateX(0deg) scale(1);
+    opacity: 1;
+  }
 }
 
 @layer utilities {

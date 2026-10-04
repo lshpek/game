@@ -23,6 +23,9 @@ const emptyContext: StartContext = {
   raw: null,
   referral_telegram_id: null,
   shared_number: null,
+  shared_plate_id: null,
+  country_code: null,
+  season_code: null,
   challenge_code: null,
 };
 

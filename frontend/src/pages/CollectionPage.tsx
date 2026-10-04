@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api';
-import { rarityColor } from '@/lib/format';
+import { formatCoins, rarityColor } from '@/lib/format';
 import { game } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 import { RARITY_ORDER } from '@/types';
@@ -11,7 +11,7 @@ import { CollectionList } from '@/components/CollectionList';
 import { EmptyState, ErrorState, SkeletonRow } from '@/components/States';
 import { useI18n } from '@/i18n';
 
-const SORTS = ['recent', 'value', 'number', 'duplicates'] as const;
+const SORTS = ['recent', 'value', 'rarest', 'name'] as const;
 const INPUT =
   'min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none placeholder:text-white/35 focus:border-accent/60';
 
@@ -26,7 +26,7 @@ export function CollectionPage() {
   const [sort, setSort] = useState('recent');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   const query = useInfiniteQuery({
     queryKey: ['collection', page, rarity, sort, term],
@@ -35,11 +35,26 @@ export function CollectionPage() {
     getNextPageParam: (last) => (last.has_more ? last.page + 1 : undefined),
   });
 
-  const convert = useMutation({
-    mutationFn: (value: string) => game.convertDuplicate(value),
+  const sell = useMutation({
+    mutationFn: ({ plateId, copies }: { plateId: number; copies: number }) => game.sell(plateId, copies),
     onSuccess: (result) => {
       if (profile) applyProfile({ ...profile, coins: result.balance });
       void queryClient.invalidateQueries({ queryKey: ['collection'] });
+      void queryClient.invalidateQueries({ queryKey: ['garage'] });
+      void queryClient.invalidateQueries({ queryKey: ['user'] });
+      setExpanded(null);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError) window.alert(error.message);
+    },
+  });
+
+  const sellAll = useMutation({
+    mutationFn: () => game.sellDuplicates(),
+    onSuccess: (result) => {
+      if (profile) applyProfile({ ...profile, coins: result.balance });
+      void queryClient.invalidateQueries({ queryKey: ['collection'] });
+      void queryClient.invalidateQueries({ queryKey: ['garage'] });
       void queryClient.invalidateQueries({ queryKey: ['user'] });
     },
     onError: (error) => {
@@ -62,11 +77,25 @@ export function CollectionPage() {
       </p>
 
       <ProgressBar
-        value={profile?.unique_numbers ?? 0}
-        max={profile?.collection_target ?? 10_000}
+        value={profile?.plates_count ?? 0}
+        max={profile?.collection_target ?? meta?.target ?? 1}
         label={t('collection.progress')}
         trailing={`${((meta?.progress ?? 0) * 100).toFixed(2)}%`}
       />
+
+      {meta && meta.duplicates_count > 0 ? (
+        <button
+          type="button"
+          className="btn-ghost w-full !text-sm"
+          disabled={sellAll.isPending}
+          onClick={() => sellAll.mutate()}
+        >
+          {t('collection.sellAll', {
+            count: meta.duplicates_count,
+            coins: formatCoins(meta.total_dealer_value),
+          })}
+        </button>
+      ) : null}
 
       <div className="space-y-2">
         <form
@@ -145,8 +174,10 @@ export function CollectionPage() {
         items={items}
         expanded={expanded}
         onToggle={setExpanded}
-        converting={convert.isPending}
-        onConvert={(value) => convert.mutate(value)}
+        selling={sell.isPending}
+        onSell={(plate) =>
+          sell.mutate({ plateId: plate.id, copies: Math.max(1, plate.duplicate_count) })
+        }
       />
 
       {query.data && query.data.pages.length > 1 ? (

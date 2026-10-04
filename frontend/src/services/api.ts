@@ -5,19 +5,22 @@ import type {
   AchievementItem,
   AuthResponse,
   ChallengeItem,
-  CollectionPage,
+  CollectionResponse,
   ContainerCard,
   ContainerOpenResult,
   DailyClaimResult,
   DailyStatus,
-  DuplicateConversion,
+  GarageData,
   InvoiceResult,
   LeaderboardBoard,
+  PlateCard,
+  PlateRollResult,
+  PlateShareResult,
   ProductItem,
   ReferralSummary,
-  RollResult,
+  SaleResult,
   SeasonItem,
-  ShareResult,
+  SellAllResult,
   UserProfile,
 } from '@/types';
 
@@ -37,22 +40,23 @@ export const auth = {
 
 export const user = {
   profile: () => apiRequest<UserProfile>('/api/user'),
-  top: () => apiRequest<{ rarest: unknown[]; highest_value: unknown[] }>('/api/user/top'),
 };
 
 export const game = {
   /** The server decides the result; the client only animates it. */
   roll: (key?: string) =>
-    apiRequest<RollResult>('/api/roll', {
+    apiRequest<PlateRollResult>('/api/roll', {
       method: 'POST',
       idempotencyKey: key ?? makeIdempotencyKey('roll'),
     }),
 
-  history: (limit = 20) =>
-    apiRequest<Array<{ roll_id: number; number: string; rarity: string; value: number; is_duplicate: boolean }>>(
+  rollHistory: (limit = 20) =>
+    apiRequest<Array<{ roll_id: number; plate_text: string; rarity: string; value: number; is_duplicate: boolean }>>(
       '/api/roll/history',
       { query: { limit } },
     ),
+
+  garage: () => apiRequest<GarageData>('/api/garage'),
 
   daily: () => apiRequest<DailyStatus>('/api/daily'),
 
@@ -62,40 +66,57 @@ export const game = {
     page?: number;
     pageSize?: number;
     rarity?: string;
+    country?: string;
     search?: string;
     sort?: string;
+    favoritesOnly?: boolean;
     duplicatesOnly?: boolean;
   }) =>
-    apiRequest<CollectionPage>('/api/collection', {
+    apiRequest<CollectionResponse>('/api/collection', {
       query: {
         page: params.page ?? 1,
         page_size: params.pageSize ?? 30,
         rarity: params.rarity,
-        search: params.search,
+        country: params.country,
         sort: params.sort,
+        search: params.search,
+        favorites_only: params.favoritesOnly ?? false,
         duplicates_only: params.duplicatesOnly ?? false,
       },
     }),
 
-  numberDetail: (value: string) => apiRequest<CollectionPage['items'][number]>(`/api/numbers/${value}`),
+  /** Sell copies to the DEALER for NUMORA. */
+  sell: (plateId: number, copies = 1) =>
+    apiRequest<SaleResult>(`/api/plates/${plateId}/sell`, {
+      method: 'POST',
+      body: { copies },
+    }),
 
-  convertDuplicate: (value: string) =>
-    apiRequest<DuplicateConversion>(`/api/numbers/${value}/convert`, { method: 'POST' }),
+  sellDuplicates: () => apiRequest<SellAllResult>('/api/collection/sell-duplicates', { method: 'POST' }),
 
-  convertAllDuplicates: () =>
-    apiRequest<{ coins_gained: number; converted: number; balance: number }>('/api/collection/convert-all', {
+  favorite: (plateId: number) =>
+    apiRequest<{ plate_id: number; is_favorite: boolean }>(`/api/plates/${plateId}/favorite`, {
       method: 'POST',
     }),
 
-  share: (value: string) =>
-    apiRequest<ShareResult>(`/api/numbers/${value}/share`, { method: 'POST' }),
+  share: (plateId: number) =>
+    apiRequest<PlateShareResult>(`/api/plates/${plateId}/share`, { method: 'POST' }),
+
+  plateDetail: (plateId: number) =>
+    apiRequest<{ plate: PlateCard; discoverer: unknown; is_owned: boolean; start_param: string }>(
+      `/api/plates/${plateId}`,
+    ),
+
+  world: () =>
+    apiRequest<{ countries: Array<Record<string, unknown>>; total_collected: number; total_plates: number; progress: number }>(
+      '/api/world',
+    ),
 
   achievements: () => apiRequest<AchievementItem[]>('/api/achievements'),
 
   seasons: () => apiRequest<SeasonItem[]>('/api/seasons'),
   activeSeason: () => apiRequest<SeasonItem | null>('/api/seasons/active'),
 };
-
 export const containers = {
   list: () => apiRequest<ContainerCard[]>('/api/containers'),
 
@@ -106,9 +127,10 @@ export const containers = {
       idempotencyKey: key ?? makeIdempotencyKey('container'),
     }),
 
-  history: () => apiRequest<Array<{ opening_id: number; container: string; number: string; value: number }>>(
-    '/api/containers/history',
-  ),
+  history: () =>
+    apiRequest<Array<{ opening_id: number; container: string; number: string; value: number }>>(
+      '/api/containers/history',
+    ),
 };
 
 export const social = {
@@ -116,8 +138,11 @@ export const social = {
 
   challenges: () => apiRequest<ChallengeItem[]>('/api/challenges'),
 
-  createChallenge: (number?: string) =>
-    apiRequest<ChallengeItem>('/api/challenges', { method: 'POST', body: { number } }),
+  createChallenge: (plateId?: number) =>
+    apiRequest<ChallengeItem>('/api/challenges', {
+      method: 'POST',
+      body: plateId === undefined ? {} : { plate_id: plateId },
+    }),
 
   challenge: (code: string) => apiRequest<ChallengeItem>(`/api/challenges/${code}`),
 
@@ -148,6 +173,19 @@ export const shop = {
     }),
 
   premium: () => apiRequest<{ active: boolean; tier: string | null; expires_at: string | null; perks: string[] }>('/api/premium'),
+};
+
+export interface DuplicateConversion {
+  number: string;
+  coins_gained: number;
+  duplicates_left: number;
+  balance: number;
+}
+
+export const legacy = {
+  /** Boxes still grant legacy 4-digit numbers; duplicates convert to NUMORA. */
+  convertDuplicate: (value: string) =>
+    apiRequest<DuplicateConversion>(`/api/legacy/numbers/${value}/convert`, { method: 'POST' }),
 };
 
 export const analytics = {

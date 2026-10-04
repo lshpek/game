@@ -10,20 +10,84 @@ export const RARITY_ORDER: readonly Rarity[] = [
   'SECRET',
 ] as const;
 
-export interface NumberCard {
-  number: string;
+/** Server-provided visual recipe for rendering a plate like a real one. */
+export interface PlateVisual {
+  theme: string;
+  aspect: number;
+  background: string;
+  border: string;
+  text: string;
+  muted: string;
+  accent: string;
+  band_color: string | null;
+  band_width: number;
+  header: string;
+  header_align: 'left' | 'center' | 'right';
+  show_flag: boolean;
+  show_region_flag: boolean;
+  region_badge: boolean;
+  font_stack: string;
+  letter_spacing: string;
+  gloss: boolean;
+  texture: string;
+}
+
+export interface PlateCountry {
+  code: string;
+  name_en: string;
+  name_ru: string;
+  flag: string;
+}
+
+export interface PlateRegion {
+  code: string;
+  name_en: string;
+  name_ru: string;
+}
+
+export interface PlateDiscoverer {
+  display_name: string;
+  username: string | null;
+  photo_url: string | null;
+}
+
+/** Canonical plate payload returned by every plate endpoint. */
+export interface PlateCard {
+  id: number;
+  plate_text: string;
+  normalized_text: string;
+  display_segments: string[];
+  letters: string[];
+  numbers: string[];
+  plate_type: string;
   rarity: Rarity;
-  value: number;
+  rarity_score: number;
+  rarity_color: string;
+  reasons: string[];
+  reason_labels: string[];
   traits: string[];
   tags: string[];
   story: string;
-  is_special: boolean;
+  is_secret: boolean;
+  season_code: string | null;
   discovery_count: number;
-  duplicate_count: number;
+  first_discovered_at: string | null;
+  first_discoverer: PlateDiscoverer | null;
+  collector_value: number;
+  currency_code: string;
+  currency_symbol: string;
+  dealer_value: number;
+  country: PlateCountry;
+  region: PlateRegion | null;
+  template: { code: string; pattern: string };
+  visual: PlateVisual;
   owned: boolean;
+  duplicate_count: number;
+  is_favorite: boolean;
+  is_new: boolean;
   acquired_at: string | null;
-  first_discovered_at?: string | null;
-  undiscovered?: boolean;
+  /** Compatibility alias for the legacy ``number`` field. */
+  number: string;
 }
 
 export interface AchievementBadge {
@@ -32,6 +96,16 @@ export interface AchievementBadge {
   description: string;
   icon: string;
   reward_coins: number;
+}
+
+export interface CollectorLevel {
+  level: number;
+  title_en: string;
+  title_ru: string;
+  xp: number;
+  xp_into_level: number;
+  xp_for_level: number;
+  progress: number;
 }
 
 export interface PremiumState {
@@ -58,11 +132,21 @@ export interface UserProfile {
   total_spent: number;
   total_rolls: number;
   containers_opened: number;
+  /** Legacy alias of ``plates_count`` kept for older screens. */
   unique_numbers: number;
+  plates_count: number;
+  countries_count: number;
+  regions_count: number;
+  first_discoveries_count: number;
+  duplicates_sold_count: number;
   collection_progress: number;
   collection_target: number;
+  collector_level: CollectorLevel;
   best_value: number;
   best_rarity: Rarity | null;
+  best_collector_value: number;
+  best_plate_id: number | null;
+  best_plate_text: string;
   referrals_count: number;
   shares_count: number;
   challenges_completed: number;
@@ -73,27 +157,86 @@ export interface UserProfile {
   daily_resets_at: string | null;
   can_claim_daily: boolean;
   premium: PremiumState;
+  supporter: boolean;
+  season_pass_active: boolean;
+  equipped_title: string | null;
+  equipped_cosmetics: string[];
   created_at: string | null;
   last_seen_at: string | null;
 }
 
-export interface RollResult {
+/** Result of POST /api/roll - the plate reveal payload. */
+export interface PlateRollResult {
   success: true;
   roll_id: number;
-  number: NumberCard;
+  plate: PlateCard;
   rarity: Rarity;
   natural_rarity: Rarity;
   luck_rarity: Rarity;
-  value: number;
+  rarity_score: number;
   is_duplicate: boolean;
   is_first_discovery: boolean;
-  coins_awarded: number;
+  is_new_country: boolean;
+  is_new_region: boolean;
+  numora_awarded: number;
   balance: number;
   rolls_remaining: number;
-  conversion_value: number;
+  sale_value: number;
+  collector_level: number;
+  missions_completed: Array<{ code: string; name_en?: string; name_ru?: string }>;
+  albums_completed: Array<{ code: string; name_en?: string; name_ru?: string }>;
   unlocked_achievements: AchievementBadge[];
+  event: Record<string, unknown> | null;
   replayed: boolean;
   share_start_param: string;
+  // Compatibility aliases for the legacy roll client.
+  value: number;
+  coins_awarded: number;
+  conversion_value: number;
+  number: PlateCard;
+}
+export interface GarageData {
+  best: PlateCard | null;
+  recent: PlateCard | null;
+  plates_count: number;
+  countries_count: number;
+  regions_count: number;
+  first_discoveries: number;
+  best_collector_value: number;
+  world_progress: number;
+  level: CollectorLevel;
+  event: GlobalEvent | null;
+  albums_completed: AlbumProgress[];
+  equipped_cosmetics: string[];
+}
+
+export interface GlobalEvent {
+  code: string;
+  name_en: string;
+  name_ru: string;
+  flag: string;
+  country_multipliers: Record<string, number>;
+  ends_at: string | null;
+  reward_coins: number;
+  reward_title: string | null;
+  is_event: boolean;
+}
+
+export interface AlbumProgress {
+  code: string;
+  name_en: string;
+  name_ru: string;
+  description_en: string;
+  description_ru: string;
+  icon: string;
+  kind: string;
+  collected: number;
+  total: number;
+  progress: number;
+  percent: number;
+  completed: boolean;
+  reward_coins: number;
+  reward_title: string | null;
 }
 
 export interface DailyStatus {
@@ -113,7 +256,6 @@ export interface DailyClaimResult {
   balance: number;
   unlocked_achievements: AchievementBadge[];
 }
-
 export interface ContainerCard {
   code: string;
   name: string;
@@ -133,7 +275,7 @@ export interface ContainerOpenResult {
   success: true;
   opening_id: number;
   container: string;
-  number: NumberCard;
+  number: NumberCardLegacy;
   is_duplicate: boolean;
   value: number;
   balance: number;
@@ -142,8 +284,23 @@ export interface ContainerOpenResult {
   replayed: boolean;
 }
 
-export interface CollectionPage {
-  items: NumberCard[];
+/** Shape of a legacy 4-digit number card (boxes still open numbers). */
+export interface NumberCardLegacy {
+  number: string;
+  rarity: Rarity;
+  value: number;
+  traits: string[];
+  tags: string[];
+  story: string;
+  is_special: boolean;
+  discovery_count: number;
+  duplicate_count: number;
+  owned: boolean;
+  acquired_at: string | null;
+}
+
+export interface CollectionResponse {
+  items: PlateCard[];
   page: number;
   page_size: number;
   total: number;
@@ -151,6 +308,24 @@ export interface CollectionPage {
   rarity_breakdown: Record<string, number>;
   progress: number;
   target: number;
+  duplicates_count: number;
+  total_dealer_value: number;
+}
+
+export interface SaleResult {
+  plate_id: number;
+  plate_text: string;
+  copies_sold: number;
+  numora_gained: number;
+  duplicates_left: number;
+  balance: number;
+}
+
+export interface SellAllResult {
+  plates_sold: number;
+  copies_sold: number;
+  numora_gained: number;
+  balance: number;
 }
 
 export interface LeaderboardEntry {
@@ -181,7 +356,6 @@ export interface AchievementItem {
   unlocked: boolean;
   unlocked_at: string | null;
 }
-
 export interface PlayerRef {
   display_name: string;
   username: string | null;
@@ -193,12 +367,14 @@ export interface ChallengeItem {
   status: 'PENDING' | 'COMPLETED' | 'EXPIRED' | 'DECLINED';
   challenger: PlayerRef | null;
   opponent: PlayerRef | null;
-  challenger_number: string | null;
+  challenger_plate_id: number | null;
+  challenger_plate_text: string | null;
   challenger_rarity: Rarity | null;
-  challenger_value: number | null;
-  opponent_number: string | null;
+  challenger_score: number;
+  opponent_plate_id: number | null;
+  opponent_plate_text: string | null;
   opponent_rarity: Rarity | null;
-  opponent_value: number | null;
+  opponent_score: number;
   winner_id: number | null;
   expires_at: string | null;
   completed_at: string | null;
@@ -257,25 +433,27 @@ export interface InvoiceResult {
   mock_confirm_url: string | null;
 }
 
-export interface ShareResult {
-  number: string;
+export interface PlateShareResult {
+  plate_id: number;
+  plate_text: string;
   rarity: Rarity;
-  value: number;
+  rarity_score: number;
+  collector_value: number;
+  currency_symbol: string;
+  dealer_value: number;
   start_param: string;
   mini_app_link: string;
-}
-
-export interface DuplicateConversion {
-  number: string;
-  coins_gained: number;
-  duplicates_left: number;
-  balance: number;
+  share_text_en: string;
+  share_text_ru: string;
 }
 
 export interface StartContext {
   raw: string | null;
   referral_telegram_id: number | null;
   shared_number: string | null;
+  shared_plate_id: number | null;
+  country_code: string | null;
+  season_code: string | null;
   challenge_code: string | null;
 }
 

@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, makeIdempotencyKey } from '@/lib/api';
 import { haptic, hapticError, hapticSuccess } from '@/lib/telegram';
 import { compactCoins, formatCoins } from '@/lib/format';
-import { containers, game } from '@/services/api';
+import { containers, legacy } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 import type { ContainerOpenResult } from '@/types';
 import { ContainerTile } from '@/components/ContainerTile';
 import { GameCard, Section } from '@/components/GameCard';
-import { ResultOverlay } from '@/components/ResultOverlay';
+import { NumberOpenOverlay } from '@/components/NumberOpenOverlay';
 import { ErrorState, LoadingSpinner } from '@/components/States';
 import { useI18n } from '@/i18n';
 
@@ -53,7 +53,7 @@ export function BoxesPage() {
   const handleConvert = async () => {
     if (!result) return;
     try {
-      const conversion = await game.convertDuplicate(result.number.number);
+      const conversion = await legacy.convertDuplicate(result.number.number);
       if (profile) applyProfile({ ...profile, coins: conversion.balance });
       setResult(null);
       void queryClient.invalidateQueries({ queryKey: ['collection'] });
@@ -102,20 +102,12 @@ export function BoxesPage() {
       </Section>
 
       {result ? (
-        <ResultOverlay
+        <NumberOpenOverlay
           open
-          number={result.number}
-          rarity={result.number.rarity}
-          isDuplicate={result.is_duplicate}
-          isFirstDiscovery={false}
-          conversionValue={result.conversion_value}
-          coinsAwarded={0}
-          achievements={result.unlocked_achievements}
+          result={result}
           onClose={() => setResult(null)}
-          onShare={() => {
-            setResult(null);
-          }}
           onConvert={handleConvert}
+          converting={false}
         />
       ) : null}
     </div>

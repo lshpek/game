@@ -67,7 +67,9 @@ export function ProfilePage() {
         {[
           { value: formatCoins(profile.coins), label: t('common.coins'), tone: 'text-amber-200' },
           { value: profile.total_rolls, label: t('common.rolls'), tone: '' },
-          { value: profile.unique_numbers, label: t('common.numbers'), tone: '' },
+          { value: profile.plates_count, label: t('common.plates'), tone: '' },
+          { value: profile.countries_count, label: t('common.countries'), tone: '' },
+          { value: profile.first_discoveries_count, label: t('common.discoveries'), tone: '' },
           { value: `🔥 ${profile.current_streak}`, label: t('common.streak'), tone: '' },
         ].map((stat) => (
           <div key={stat.label}>
@@ -77,12 +79,33 @@ export function ProfilePage() {
         ))}
       </GameCard>
 
+      <GameCard className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-white/60">
+            {t('profile.level', { level: profile.collector_level?.level ?? 1 })}
+          </span>
+          <span className="font-semibold text-accent-soft">
+            {lang === 'ru' ? profile.collector_level?.title_ru : profile.collector_level?.title_en}
+          </span>
+        </div>
+        <ProgressBar
+          value={profile.collector_level?.xp_into_level ?? 0}
+          max={profile.collector_level?.xp_for_level ?? 1}
+          label={`${profile.collector_level?.xp_into_level ?? 0} / ${profile.collector_level?.xp_for_level ?? 0} XP`}
+        />
+        {profile.best_plate_text ? (
+          <p className="pt-1 text-sm text-white/60">
+            {t('profile.bestPlate')}: <span className="number-display text-cyan-300">{profile.best_plate_text}</span>
+          </p>
+        ) : null}
+      </GameCard>
+
       <GameCard>
         <ProgressBar
-          value={profile.unique_numbers}
+          value={profile.plates_count}
           max={profile.collection_target}
           label={t('profile.rarestFind', { rarity: rarityLabel(profile.best_rarity, lang) })}
-          trailing={`${formatCoins(profile.best_value)} 🪙`}
+          trailing={`${formatCoins(profile.best_collector_value)} 🪙`}
         />
       </GameCard>
 
@@ -149,10 +172,12 @@ export function ProfilePage() {
         </Section>
       ) : null}
 
-      {startContext?.shared_number ? (
+      {startContext?.shared_plate_id || startContext?.shared_number ? (
         <GameCard accent="#22d3ee">
           <p className="text-sm">{t('profile.sharedNumber')}</p>
-          <p className="number-display mt-1 text-3xl text-cyan-300">#{startContext.shared_number}</p>
+          <p className="number-display mt-1 text-3xl text-cyan-300">
+            #{startContext.shared_plate_id ?? startContext.shared_number}
+          </p>
         </GameCard>
       ) : null}
     </div>

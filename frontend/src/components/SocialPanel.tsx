@@ -78,7 +78,7 @@ export function SocialPanel() {
             <p className="text-sm">
               {t('social.wantsDuel', {
                 name: incoming.challenger?.username ?? incoming.challenger?.display_name ?? '',
-                number: incoming.challenger_number ?? '',
+                number: incoming.challenger_plate_text ?? '',
               })}
             </p>
             <button

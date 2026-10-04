@@ -8,12 +8,12 @@ import { useI18n } from '@/i18n';
 
 const PERIODS = ['daily', 'weekly', 'alltime'] as const;
 
-const CATEGORIES = ['VALUE', 'RARITY', 'COLLECTION', 'ROLLS'] as const;
+const CATEGORIES = ['COLLECTION', 'COUNTRIES', 'FIRST_DISCOVERIES', 'RARITY', 'ROLLS'] as const;
 
 export function RankingPage() {
   const { t } = useI18n();
   const [period, setPeriod] = useState('daily');
-  const [category, setCategory] = useState('VALUE');
+  const [category, setCategory] = useState('COLLECTION');
 
   const board = useQuery({
     queryKey: ['leaderboard', category, period],
