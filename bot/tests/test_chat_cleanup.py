@@ -41,7 +41,9 @@ class TestStartCommand:
         assert len(session.of(SendMessage)) == 1
         welcome = session.of(SendMessage)[0]
         assert "NUMORA" in str(welcome.text)
-        assert "Number Collector" in str(welcome.text)
+        # The public identity is NUMORA / global collectible numbers.
+        assert "Global collectible numbers" in str(welcome.text)
+        assert "Number Collector" not in str(welcome.text)
         assert welcome.reply_markup is not None
         keyboard = welcome.reply_markup.inline_keyboard
         assert len(keyboard) == 1

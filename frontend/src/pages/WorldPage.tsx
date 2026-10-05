@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { CountrySelector } from '@/components/CountrySelector';
 import { EmptyState, LoadingSpinner } from '@/components/States';
 import { useI18n, type I18nValue } from '@/i18n';
+import { useRouteBackButton } from '@/lib/useRouteBackButton';
 import { useNavigate } from 'react-router-dom';
 import { countries as countriesApi, game } from '@/services/api';
 import { useActiveCountry } from '@/store/activeCountry';
@@ -24,6 +25,7 @@ const PAGE_SIZE = 60;
  * and one DOM would cost more than the screen can afford on a phone.
  */
 export function WorldPage() {
+  useRouteBackButton();
   const { t, lang } = useI18n();
   const navigate = useNavigate();
   const applyCountry = useActiveCountry((state) => state.apply);

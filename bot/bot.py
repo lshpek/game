@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Telegram bot for the Number Collector Mini App.
+"""Telegram bot for the NUMORA Mini App.
 
 Responsibilities:
 
@@ -96,7 +96,7 @@ MAX_START_PARAM_LENGTH = 64
 #
 #   plate_<id>          an existing collectible by catalogue id
 #   collectible_<token> a collectible by its public share token
-#   number_<id>         legacy four-digit number (kept for old links)
+#   number_<id>         legacy number line (kept so old links keep resolving)
 #   challenge_<code>    a head-to-head challenge
 #   ref_<id>            a referral
 #   country_<code>      jump straight into a country's album
@@ -201,25 +201,26 @@ def admin_ids() -> frozenset[int]:
 # --------------------------------------------------------------------------
 WELCOME_TEXT = (
     "🔢 <b>NUMORA</b>\n"
-    "<i>Global Number Collector</i>\n\n"
-    "Hunt collectible numbers from every corner of the world.\n\n"
-    "• 🚘 real vehicle plates from 30+ countries\n"
-    "• 📱 synthetic phone numbers you will never see on a bill\n"
-    "• 💎 COMMON → MYTHIC → SECRET rarities, computed from the number itself\n"
-    "• 🌍 complete countries, categories and albums\n"
+    "<i>Global collectible numbers</i>\n\n"
+    "Hunt physical objects from every corner of the world.\n\n"
+    "• 🚘 real vehicle plates from 40+ countries\n"
+    "• 💳 collectible SIM cards carrying synthetic numbers\n"
+    "• 💎 COMMON → MYTHIC → SECRET rarities, computed from the object itself\n"
+    "• 🌍 the complete ISO 3166-1 world, 49 countries playable today\n"
     "• 🏆 first discoveries, leaderboards, challenges, PRO\n\n"
     "Tap Play to start hunting."
 )
 
 HELP_TEXT = (
-    "🔢 <b>NUMORA</b>\n<i>Global Number Collector</i>\n\n"
+    "🔢 <b>NUMORA</b>\n<i>Global collectible numbers</i>\n\n"
     "<b>How to play</b>\n"
     "1. Tap Play and open the game\n"
-    "2. ROLL - each roll reveals one collectible number\n"
-    "3. Hunt countries and categories: vehicles, phone numbers, more to come\n"
+    "2. Pick a country, then ROLL - each roll reveals one collectible\n"
+    "3. Hunt two kinds: vehicle plates and SIM cards\n"
     "4. Chase rarities, finish albums and share your best find\n\n"
     "<b>Useful</b>\n"
-    "• rarity comes from the structure of the number, not from a dice roll alone\n"
+    "• rarity comes from the structure of the number itself\n"
+    "• every number printed on a SIM card is synthetic game data\n"
     "• collector value and dealer value are in-game fiction, not money\n"
     "• duplicates turn into NUMORA\n"
     "• PRO adds daily rolls and a duplicate multiplier\n"

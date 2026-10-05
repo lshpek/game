@@ -60,6 +60,8 @@ def seed_countries(db: Session) -> int:
         country.name_en = definition.name_en
         country.name_ru = definition.name_ru
         country.flag = definition.flag
+        country.calling_code = definition.calling_code
+        country.search_text = search_text(definition)
         country.region_group = definition.region_group
         country.sort_order = definition.sort_order
         country.is_active = True
@@ -125,6 +127,23 @@ def _upsert_template(
     template.sort_order = sort_order
     template.is_active = True
     return created
+
+
+def search_text(definition: CountryDef) -> str:
+    """Lower-cased blob of everything the country search should match.
+
+    Stored rather than computed in SQL because ``lower()`` is ASCII-only on SQLite:
+    without this column "россия" would be findable in production and silently
+    unfindable in local development.
+    """
+    parts = (
+        definition.code,
+        definition.iso_alpha2,
+        definition.name_en,
+        definition.name_ru,
+        definition.calling_code,
+    )
+    return " ".join(part for part in parts if part).lower()
 
 
 def country_config(definition: CountryDef) -> dict:

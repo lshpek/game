@@ -30,6 +30,8 @@ vi.mock('@/lib/telegram', () => ({
   hapticSuccess: vi.fn(),
   hapticError: vi.fn(),
   shareToChat: vi.fn(),
+  showBackButton: () => () => {},
+  hideBackButton: vi.fn(),
 }));
 
 const VISUAL = {

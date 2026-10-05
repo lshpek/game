@@ -1,18 +1,38 @@
-# Number Collector — Telegram Mini App
+# NUMORA — Telegram Mini App
 
-A production-ready Telegram Mini App: players roll random four-digit numbers
-(`0000`–`9999`), each with a rarity, traits, a story and an in-game **Coins**
-value, then collect, share, challenge friends and open loot boxes.
+A production-ready Telegram Mini App for **global number collecting**. Players roll
+physical collectibles from a country they choose:
+
+🚘 **vehicle plates** — registration plates from 40+ countries
+💳 **SIM cards** — plastic cards carrying a synthetic number, a fictional operator
+brand, a series and an edition
+
+Each find has a rarity, traits, a story and an in-game **NUMORA** value, then gets
+collected, shared and challenged. There are exactly two collectible kinds; a phone
+number is not one of them — a number printed on a SIM belongs to the card.
 
 Two loops:
 
 ```
-ROLL → RESULT → COLLECT → SHARE → FRIEND → ROLL
-COINS → CONTAINER → ITEM → COLLECTION
+ROLL → REVEAL → COLLECT → SHARE → FRIEND → ROLL
+NUMORA → DEALER → MORE ROLLS
 ```
 
-> The value of a number is an in-game balance. It is **not** money and has no
-> cash value.
+> The value of a collectible is an in-game balance. It is **not** money and has no
+> cash value. Every number printed on a SIM card is synthetic game data and can never
+> be a real subscriber line.
+
+## The world
+
+The catalogue carries the complete ISO 3166-1 list (250 countries and territories) —
+alpha-3 `code`, alpha-2 `iso_alpha2`, both display names, flag, region grouping,
+calling code and currency. 49 countries are playable today; the rest are listed as
+**locked / coming soon** and become playable by flipping `is_playable` once their
+layouts ship — no schema change.
+
+A player's active country lives on the server (`users.active_country_code`) and
+drives the roll, the collection filters and the country statistics. The client keeps
+only a mirror, for instant rendering.
 
 ---
 
@@ -164,11 +184,13 @@ alembic downgrade -1                            # roll back
 python -m app.seed                              # seed catalogue (idempotent)
 ```
 
-Startup also runs `alembic upgrade head` and seeds an empty catalogue when
-`AUTO_MIGRATE` / `AUTO_SEED` are enabled, so `uvicorn` alone is enough locally.
+Startup also runs `alembic upgrade head` and reconciles the catalogue (an idempotent
+upsert by stable code) when `AUTO_MIGRATE` / `AUTO_SEED` are enabled, so `uvicorn`
+alone is enough locally and a release that adds countries reaches an existing
+database without a reset.
 
 Seeded data: 4 containers, 17 achievements, 2 seasons (Season 1 active), 5 Star
-products and 22 notable numbers with pre-computed rarity and stories.
+products, 250 ISO countries and 64 albums.
 
 ---
 
@@ -326,12 +348,14 @@ Rate limiting is process-local; for multi-replica deployments swap
 ```
 GET    /health
 POST   /api/auth/telegram | /api/auth/dev      GET /api/auth/me
-GET    /api/user                              POST /api/roll
+GET    /api/user                              POST /api/roll?category=&country_code=
 GET    /api/roll/history                      GET  /api/daily
 POST   /api/daily/claim
-GET    /api/collection                        POST /api/collection/convert-all
-GET    /api/numbers/{value}                   POST /api/numbers/{value}/convert
-POST   /api/numbers/{value}/share
+GET    /api/countries?search=&region=&limit=  GET  /api/countries/active
+POST   /api/countries/active                  GET  /api/countries/{alpha2|alpha3}
+GET    /api/world?limit=&offset=              GET  /api/world/{country_code}
+GET    /api/collection?kind=&country=&rarity= POST /api/collection/sell-duplicates
+GET    /api/plates/{id}                       POST /api/plates/{id}/sell|favorite|share
 GET    /api/containers                        POST /api/containers/open
 GET    /api/referrals
 GET    /api/challenges                        POST /api/challenges
@@ -345,7 +369,12 @@ GET    /api/admin/stats | /api/admin/users    POST /api/admin/users/coins
 GET    /api/admin/economy/transactions        GET  /api/admin/errors
 GET    /api/admin/seasons                     POST /api/admin/seasons/toggle
 GET    /api/admin/rarity-config
+GET    /api/admin/bot/catalog                 POST /api/admin/bot/test-lab/simulate
+POST   /api/admin/bot/test-lab/live-roll
 ```
+
+`category` accepts `VEHICLE_PLATE` or `SIM_CARD` only; anything else is a `422` with
+`BAD_CATEGORY`. A country code accepts either ISO form.
 
 Errors always look like this:
 

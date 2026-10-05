@@ -11,6 +11,7 @@ import { CollectibleDetails, DetailSheet } from '@/components/CollectibleDetails
 import { CollectionList } from '@/components/CollectionList';
 import { EmptyState, ErrorState, SkeletonRow } from '@/components/States';
 import { useI18n } from '@/i18n';
+import { useRouteBackButton } from '@/lib/useRouteBackButton';
 
 const SORTS = ['recent', 'value', 'rarest', 'name'] as const;
 
@@ -24,6 +25,7 @@ const INPUT =
   'min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm outline-none placeholder:text-white/35 focus:border-accent/60';
 
 export function CollectionPage() {
+  useRouteBackButton();
   const { t, lang } = useI18n();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);

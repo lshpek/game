@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.errors import ValidationError
 from app.game.collectibles import (
     KINDS,
@@ -20,6 +21,7 @@ from app.game.collectibles import (
 )
 from app.game.countries import COUNTRIES
 from app.models.plates import Country, Plate
+from app.services.catalog import snapshot
 
 
 def roll(client, authed, *, category: str | None = None, country_code: str | None = None, **kw):
@@ -254,6 +256,43 @@ class TestSimCardsInTheCollection:
         # exists for a number on its own.
         assert rows
         assert all(row.plate_type != "PHONE" for row in rows)
+
+
+class TestKindMix:
+    """The SIM line must stay a rarity, and the pool must stay clean."""
+
+    def test_the_generation_pool_has_no_duplicate_layout_codes(self, db):
+        ctx = snapshot(db, settings.rarity_weights).context
+        duplicates: list[str] = []
+        for country in ctx.countries:
+            seen: set[str] = set()
+            for option in ctx.templates_by_country.get(country.code, ()):
+                if option.code in seen:
+                    duplicates.append(f"{country.code}:{option.code}")
+                seen.add(option.code)
+        assert duplicates == []
+
+    def test_sim_cards_stay_a_rarity_of_the_pool(self, db):
+        """A per-template weight factor would let the template *count* decide how
+        often a card appears, so the share is asserted against the whole pool."""
+        ctx = snapshot(db, settings.rarity_weights).context
+        sim = 0.0
+        vehicle = 0.0
+        for country in ctx.countries:
+            for option in ctx.templates_by_country.get(country.code, ()):
+                if option.plate_type == "SIM":
+                    sim += option.weight
+                else:
+                    vehicle += option.weight
+        share = sim / (sim + vehicle)
+        assert 0.02 < share < 0.35, share
+
+    def test_every_playable_country_offers_both_kinds(self, db):
+        ctx = snapshot(db, settings.rarity_weights).context
+        for country in ctx.countries:
+            options = ctx.templates_by_country.get(country.code, ())
+            assert any(option.plate_type == "SIM" for option in options), country.code
+            assert any(option.plate_type != "SIM" for option in options), country.code
 
 
 class TestCountrySeed:

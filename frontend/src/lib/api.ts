@@ -2,7 +2,9 @@
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000';
 
-const TOKEN_STORAGE_KEY = 'number-collector.token';
+// Session storage key. Renamed with the NUMORA rebrand; an old key simply reads as
+// "no token", and the app re-authenticates silently from Telegram initData.
+const TOKEN_STORAGE_KEY = 'numora.token';
 
 export class ApiError extends Error {
   readonly code: string;

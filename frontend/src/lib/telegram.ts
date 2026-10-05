@@ -26,6 +26,13 @@ interface TelegramWebApp {
     notificationOccurred(type: 'error' | 'success' | 'warning'): void;
     selectionChanged(): void;
   };
+  BackButton?: {
+    isVisible?: boolean;
+    show(): void;
+    hide(): void;
+    onClick(handler: () => void): void;
+    offClick(handler: () => void): void;
+  };
   showAlert?(message: string): void;
   openTelegramLink?(url: string): void;
   shareToStory?(mediaUrl: string, params?: Record<string, unknown>): void;
@@ -115,4 +122,39 @@ export function alert(message: string): void {
     return;
   }
   window.alert(message);
+}
+
+/**
+ * Telegram's header back arrow.
+ *
+ * The Mini App has no browser chrome, so without this a sub-screen is a dead end: the
+ * player can only ever tap the bottom nav. The button is registered on mount and
+ * hidden again on unmount, which keeps exactly one owner at a time - two handlers
+ * would both fire and the player would bounce between screens.
+ */
+export function showBackButton(onClick: () => void): () => void {
+  const button = telegram?.BackButton;
+  if (!button) return () => {};
+  try {
+    button.onClick(onClick);
+    button.show();
+  } catch {
+    return () => {};
+  }
+  return () => {
+    try {
+      button.offClick(onClick);
+      button.hide();
+    } catch {
+      // A partially supported client must never break navigation.
+    }
+  };
+}
+
+export function hideBackButton(): void {
+  try {
+    telegram?.BackButton?.hide();
+  } catch {
+    // Unsupported client.
+  }
 }

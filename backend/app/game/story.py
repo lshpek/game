@@ -1,8 +1,13 @@
-"""Deterministic story engine.
+"""Deterministic story engine for the **legacy number line**.
 
 Stories are derived from the number's traits and a small lookup table for
 notable combinations. No AI/network call happens during a roll, so latency and
 cost stay at zero and the same number always gets the same story.
+
+Scope: this module still serves the pre-NUMORA four-digit numbers that the legacy
+boxes and ``/api/legacy/*`` routes convert into NUMORA. Vehicle plates and SIM cards
+do **not** use it - they carry their own kind-specific storytelling - so the
+"four-digit" wording here is accurate for the only data this code ever sees.
 """
 
 from __future__ import annotations

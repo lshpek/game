@@ -62,6 +62,13 @@ class Country(Base, TimestampMixin):
     # fictional operators and editions. Separate from ``config`` because it is owned
     # and validated by ``app.game.sim_cards``.
     sim_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    #: Assigned calling code, printed on the country's SIM cards and searchable so
+    #: "7" finds Russia.
+    calling_code: Mapped[str] = mapped_column(String(16), default="", nullable=False)
+    #: Lower-cased ``code alpha2 name_en name_ru calling_code`` blob used by the
+    #: country search. Kept as a column because ``lower()`` is ASCII-only on SQLite,
+    #: which would otherwise make "россия" unfindable in local development.
+    search_text: Mapped[str] = mapped_column(String(256), default="", nullable=False, index=True)
     # Continent / album grouping, e.g. "EUROPE".
     region_group: Mapped[str] = mapped_column(String(24), index=True, default="", nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

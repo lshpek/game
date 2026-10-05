@@ -31,7 +31,7 @@ const emptyContext: StartContext = {
 
 /** Deterministic local id so browser-only development is stable per device. */
 function devTelegramId(): number {
-  const key = 'number-collector.dev-id';
+  const key = 'numora.dev-id';
   try {
     const existing = window.localStorage.getItem(key);
     if (existing) return Number(existing);

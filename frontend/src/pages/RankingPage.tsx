@@ -5,12 +5,14 @@ import { leaderboard } from '@/services/api';
 import { GameCard } from '@/components/GameCard';
 import { EmptyState, ErrorState, LoadingSpinner } from '@/components/States';
 import { useI18n } from '@/i18n';
+import { useRouteBackButton } from '@/lib/useRouteBackButton';
 
 const PERIODS = ['daily', 'weekly', 'alltime'] as const;
 
 const CATEGORIES = ['COLLECTION', 'COUNTRIES', 'FIRST_DISCOVERIES', 'RARITY', 'ROLLS'] as const;
 
 export function RankingPage() {
+  useRouteBackButton();
   const { t } = useI18n();
   const [period, setPeriod] = useState('daily');
   const [category, setCategory] = useState('COLLECTION');

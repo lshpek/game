@@ -345,6 +345,8 @@ def collection(
         target=int(overview["total_plates"]),
         duplicates_count=duplicates_count,
         total_dealer_value=total_dealer + duplicate_copies,
+        # Echoed so the UI can label the screen without a second request.
+        country_code=effective_country,
     )
 
 

@@ -1,4 +1,4 @@
-name: number-collector
+name: numora
 
 services:
   postgres:

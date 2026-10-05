@@ -69,9 +69,14 @@ VEHICLE_PLATE_TYPES: frozenset[str] = frozenset(
 #: Stored ``plate_type`` for new vehicle templates.
 DEFAULT_VEHICLE_PLATE_TYPE = "STANDARD"
 
-#: SIM cards enter the pool at a fraction of the plate weight, so they stay a
-#: collectible rarity rather than replacing the flagship object.
-SIM_WEIGHT_FACTOR = 0.12
+#: Total weight the SIM card pool contributes *per country*.
+#:
+#: A country generates many SIM templates (operators x printed groupings x editions),
+#: so a per-template factor would make the pool size - not this constant - decide how
+#: often a card appears, and SIMs would quietly become the common case. Normalising the
+#: *total* keeps SIM cards a rarity: against a ~7.5-weight vehicle pool that is roughly
+#: one roll in seven.
+SIM_POOL_WEIGHT = 1.2
 
 #: Accepted client aliases, lower-cased.
 _ALIASES: dict[str, CollectibleKind] = {
@@ -148,9 +153,15 @@ def sim_templates(country_code: str) -> tuple[TemplateDef, ...]:
     if not is_playable(country_code):
         return ()
 
+    operators = sim_cards.operators_for(country_code)
+    patterns = sim_cards.sim_patterns(country_code)
+    # Weight is normalised across the whole pool, so a country with more operators or
+    # editions is not silently more likely to produce a card.
+    unit = SIM_POOL_WEIGHT / (len(operators) * len(patterns) * _edition_weight_total())
+
     templates: list[TemplateDef] = []
-    for op_code, _latin, _local in sim_cards.operators_for(country_code):
-        for index, pattern in enumerate(sim_cards.sim_patterns(country_code)):
+    for op_code, _latin, _local in operators:
+        for index, pattern in enumerate(patterns):
             for edition, weight, floor in sim_cards.EDITIONS:
                 templates.append(
                     TemplateDef(
@@ -159,7 +170,7 @@ def sim_templates(country_code: str) -> tuple[TemplateDef, ...]:
                             f"{edition.lower()}_{index + 1}"
                         ),
                         pattern=pattern,
-                        weight=weight * SIM_WEIGHT_FACTOR,
+                        weight=weight * unit,
                         plate_type=SIM_PLATE_TYPE,
                         rarity_floor=floor,
                         config={
@@ -171,6 +182,11 @@ def sim_templates(country_code: str) -> tuple[TemplateDef, ...]:
                     )
                 )
     return tuple(templates)
+
+
+def _edition_weight_total() -> float:
+    """Sum of the edition weights, so a normalised pool is template-count agnostic."""
+    return sum(weight for _edition, weight, _floor in sim_cards.EDITIONS) or 1.0
 
 
 def templates_for_kind(country_code: str, kind: CollectibleKind) -> tuple[TemplateDef, ...]:

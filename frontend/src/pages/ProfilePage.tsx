@@ -8,8 +8,10 @@ import { GameCard, ProgressBar, Section } from '@/components/GameCard';
 import { SocialPanel } from '@/components/SocialPanel';
 import { ErrorState, LoadingSpinner } from '@/components/States';
 import { useI18n } from '@/i18n';
+import { useRouteBackButton } from '@/lib/useRouteBackButton';
 
 export function ProfilePage() {
+  useRouteBackButton();
   const { lang, t } = useI18n();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);

@@ -16,7 +16,6 @@ import time
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.game import collectibles
 from app.game.countries import COUNTRIES as CATALOG_COUNTRIES
 from app.game.plate_generator import GenerationContext, RegionOption, TemplateOption
 from app.game.plate_visuals import serialize_visual
@@ -122,24 +121,9 @@ def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnap
     active_codes = {c.code for c in countries}
     engine_countries = tuple(c for c in CATALOG_COUNTRIES if c.code in active_codes)
 
-    # SIM card layouts are owned by the kind module rather than the country tables,
-    # so a new collectible kind never has to be threaded through country configuration.
-    for code in active_codes:
-        for definition in collectibles.sim_templates(code):
-            templates_by_country[code] = (
-                *templates_by_country.get(code, ()),
-                TemplateOption(
-                    code=definition.code,
-                    pattern=definition.pattern,
-                    weight=definition.weight,
-                    plate_type=definition.plate_type,
-                    rarity_floor=definition.rarity_floor,
-                    requires_region="R" in (definition.pattern or ""),
-                    multiplier=1.0,
-                    config=dict(definition.config),
-                ),
-            )
-
+    # SIM card layouts are seeded alongside the vehicle layouts by the same
+    # reconciliation pass, so the database is the single source of truth for the
+    # generation pool. Adding them here as well would double their weight.
     context = GenerationContext(
         countries=engine_countries,
         regions_by_country=regions_by_country,
@@ -173,7 +157,6 @@ def invalidate() -> None:
 def country_card(country: Country) -> dict[str, object]:
     """Serialisable country payload used by the WORLD screen and the selector."""
     config = country.config or {}
-    sim_config = country.sim_config or {}
     return {
         "id": country.id,
         "code": country.code,
@@ -184,7 +167,7 @@ def country_card(country: Country) -> dict[str, object]:
         "region_group": country.region_group,
         "currency_code": config.get("currency_code", "USD"),
         "currency_symbol": config.get("currency_symbol", "$"),
-        "calling_code": sim_config.get("calling_code", ""),
+        "calling_code": country.calling_code,
         "weight": config.get("weight", 1.0),
         "visual": serialize_visual(config.get("visual", "european")),
         "sort_order": country.sort_order,

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationError
@@ -89,15 +89,9 @@ def list_countries(
 
     term = (search or "").strip()
     if term:
-        needle = f"%{term.lower()}%"
-        conditions.append(
-            or_(
-                func.lower(Country.code).like(needle),
-                func.lower(func.coalesce(Country.iso_alpha2, "")).like(needle),
-                func.lower(Country.name_en).like(needle),
-                func.lower(Country.name_ru).like(needle),
-            )
-        )
+        # One lower-cased blob per country keeps the match portable: SQLite's
+        # ``lower()`` is ASCII-only, so "россия" would never match a Cyrillic name.
+        conditions.append(Country.search_text.contains(term.lower()))
 
     base = select(Country).where(*conditions)
     rows = list(db.execute(base.order_by(Country.sort_order, Country.id)).scalars().all())

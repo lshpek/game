@@ -20,6 +20,11 @@ What this migration adds
     operators and editions. Written for locked countries too, so a future unlock only
     needs layouts.
 
+``countries.calling_code`` / ``countries.search_text``
+    The calling code as a searchable column, plus a lower-cased blob of every field a
+    player might type. ``lower()`` is ASCII-only on SQLite, so without the blob
+    "россия" would be findable in production and silently unfindable in development.
+
 ``plates.details``
     Kind-specific payload. SIM cards carry ``operator``, ``series``, ``edition`` and
     the synthetic number printed on the card. Empty for vehicle plates.
@@ -81,9 +86,14 @@ def upgrade() -> None:
                 server_default=_JSON_EMPTY,
             )
         )
+        batch.add_column(sa.Column("calling_code", sa.String(length=16), nullable=False, server_default=""))
+        batch.add_column(
+            sa.Column("search_text", sa.String(length=256), nullable=False, server_default="")
+        )
     with op.batch_alter_table("countries") as batch:
         batch.create_index(batch.f("ix_countries_iso_alpha2"), ["iso_alpha2"], unique=True)
         batch.create_index(batch.f("ix_countries_is_playable"), ["is_playable"], unique=False)
+        batch.create_index(batch.f("ix_countries_search_text"), ["search_text"], unique=False)
 
     # Widen the display columns: ISO official names are longer than 64 characters.
     with op.batch_alter_table("countries") as batch:
@@ -123,10 +133,20 @@ def _fold_phone_into_sim() -> None:
         sa.text("UPDATE plate_templates SET plate_type = 'SIM' WHERE plate_type = 'PHONE'")
     )
     op.execute(sa.text("UPDATE plates SET plate_type = 'SIM' WHERE plate_type = 'PHONE'"))
+    # The legacy tag lists this row could carry. Rewriting only these exact shapes
+    # keeps the statement portable: JSON surgery differs between SQLite and
+    # PostgreSQL, and a row that already has richer tags must keep them.
     op.execute(
         sa.text(
             "UPDATE plates SET tags = '[\"sim\", \"synthetic\"]' "
-            "WHERE plate_type = 'SIM' AND (tags IS NULL OR tags = '[]')"
+            "WHERE plate_type = 'SIM' AND tags IN "
+            "('[]', '[\"phone\"]', '[\"phone\", \"synthetic\"]')"
+        )
+    )
+    op.execute(
+        sa.text(
+            "UPDATE plates SET tags = REPLACE(tags, '\"phone\", ', '') "
+            "WHERE plate_type = 'SIM' AND tags LIKE '%\"phone\"%'"
         )
     )
 
@@ -141,13 +161,16 @@ def downgrade() -> None:
 
     with op.batch_alter_table("countries") as batch:
         batch.alter_column(
-            "region_group", type_=sa.String(length=16), existing_type=sa.String(length=24)
+            "region_group", type_=sa.String(length=24), existing_type=sa.String(length=16)
         )
         batch.alter_column("flag", type_=sa.String(length=8), existing_type=sa.String(length=16))
         batch.alter_column("name_ru", type_=sa.String(length=64), existing_type=sa.String(length=96))
         batch.alter_column("name_en", type_=sa.String(length=64), existing_type=sa.String(length=96))
+        batch.drop_index(batch.f("ix_countries_search_text"))
         batch.drop_index(batch.f("ix_countries_is_playable"))
         batch.drop_index(batch.f("ix_countries_iso_alpha2"))
+        batch.drop_column("search_text")
+        batch.drop_column("calling_code")
         batch.drop_column("sim_config")
         batch.drop_column("is_playable")
         batch.drop_column("iso_alpha2")

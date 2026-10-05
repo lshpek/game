@@ -233,7 +233,7 @@ class TestLabService:
                 "name_en": country.name_en,
                 "name_ru": country.name_ru,
                 "region_group": country.region_group,
-                "calling_code": (country.sim_config or {}).get("calling_code", ""),
+                "calling_code": country.calling_code,
                 "is_playable": bool(country.is_playable),
                 "templates": template_counts.get(int(country.id), 0),
             }

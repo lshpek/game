@@ -314,7 +314,7 @@ PRIORITY_ORDER: tuple[str, ...] = (
     "ESP", "PRT", "NLD", "BEL", "CHE", "AUT", "POL", "CZE", "SVK", "HUN", "ROU",
     "BGR", "GRC", "SWE", "NOR", "DNK", "FIN", "ISL", "IRL", "EST", "LVA", "LTU",
     "UKR", "BLR",
-    "KOR", "CHN", "IND", "SAU", "THA", "SGP", "NZL",
+    "KOR", "CHN", "IND", "TUR", "ISR", "SAU", "THA", "SGP", "AUS", "NZL",
     "ZAF",
 )
 
@@ -351,6 +351,8 @@ PLAYABLE_TUNING: dict[str, tuple[str, float, float, float]] = {
     "LTU": ("nordic", 1.5, 0.95, 1.0),
     "UKR": ("cis", 3.0, 0.75, 1.04),
     "BLR": ("cis", 2.2, 0.8, 1.04),
+    "TUR": ("mideast", 3.0, 1.0, 1.02),
+    "ISR": ("mideast", 1.8, 1.1, 1.04),
     "KOR": ("asia_compact", 2.6, 1.2, 1.06),
     "CHN": ("asia_compact", 4.0, 0.9, 1.08),
     "IND": ("asia_wide", 3.6, 0.75, 1.05),
@@ -358,6 +360,7 @@ PLAYABLE_TUNING: dict[str, tuple[str, float, float, float]] = {
     "THA": ("asia_wide", 2.2, 0.85, 1.04),
     "SGP": ("asia_compact", 2.0, 1.3, 1.08),
     "NZL": ("oceania", 1.8, 1.05, 1.02),
+    "AUS": ("oceania", 2.6, 1.1, 1.04),
     "ZAF": ("africa", 2.2, 0.9, 1.04),
 }
 
