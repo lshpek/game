@@ -408,7 +408,10 @@ def garage(
     )
 
     world = WorldService(db, settings.rarity_weights)
-    overview = world.overview(user)
+    # Aggregates only: the home screen needs the totals, not the atlas, and building
+    # 60 country cards on every app open is the one thing that made this endpoint
+    # expensive once the catalogue grew to the full ISO list.
+    economy = world.economy_context(user)
     level = ProgressionService(db).current_level(user)
     event = EventService(db).serialize()
 
@@ -420,7 +423,13 @@ def garage(
         "regions_count": int(user.regions_count),
         "first_discoveries": int(user.first_discoveries_count),
         "best_collector_value": int(user.best_collector_value),
-        "world_progress": overview["progress"],
+        "world_progress": economy["progress"],
+        # The world target, sent rather than reconstructed by the client from the
+        # progress fraction.
+        "collection_target": int(economy["total_plates"]),
+        "playable_countries": int(economy["playable_total"]),
+        "locked_countries": int(economy["locked_total"]),
+        "total_dealer_value": int(economy["total_dealer_value"]),
         "level": level.to_dict(),
         "event": event,
         "albums_completed": [

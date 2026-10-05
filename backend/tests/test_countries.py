@@ -385,6 +385,36 @@ class TestCatalogueReconciliation:
         assert plate.details["synthetic_number"] == plate.plate_text
 
 
+class TestGarageStaysCheap:
+    """The home screen must not pay for the whole atlas on every app open."""
+
+    def test_the_garage_reports_the_world_target(self, client, authed):
+        headers = authed(880070)["headers"]
+        client.post("/api/roll", headers=headers, json={})
+        data = client.get("/api/garage", headers=headers).json()
+        assert data["plates_count"] >= 1
+        assert data["collection_target"] > 0
+        assert data["playable_countries"] >= 40
+        assert data["locked_countries"] >= 100
+        # The target counts playable layouts only: a locked country would make every
+        # player's progress look worse than it is.
+        world = client.get("/api/world?limit=1", headers=headers).json()
+        assert data["collection_target"] == world["total_plates"]
+
+    def test_the_garage_target_matches_the_world_total(self, client, authed):
+        headers = authed(880071)["headers"]
+        garage = client.get("/api/garage", headers=headers).json()
+        world = client.get("/api/world?limit=1", headers=headers).json()
+        assert garage["collection_target"] == world["total_plates"]
+
+    def test_the_garage_does_not_ship_the_atlas(self, client, authed):
+        headers = authed(880072)["headers"]
+        data = client.get("/api/garage", headers=headers).json()
+        # No per-country payloads: the home screen needs totals, not 60 cards.
+        assert "countries" not in data
+        assert set(data) >= {"plates_count", "world_progress", "collection_target"}
+
+
 class TestPlayerFlowIntegration:
     """select country -> roll -> collectible -> save -> reload -> still there."""
 

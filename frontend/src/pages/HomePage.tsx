@@ -54,7 +54,15 @@ export function HomePage() {
     if (activePayload) applyCountry(activePayload);
   }, [activePayload, applyCountry]);
 
-  const activeCountry = activeCountryQueryCountry(activePayload?.country);
+  // Narrow to what the header renders. The full card is already cached in the
+  // active-country store, so this only picks the two fields the button needs.
+  const activeCountry = activePayload?.country
+    ? {
+        flag: activePayload.country.flag ?? '\u{1F30D}',
+        name_ru: activePayload.country.name_ru ?? '',
+        name_en: activePayload.country.name_en ?? '',
+      }
+    : null;
 
   const invalidate = useCallback(() => {
     for (const key of ['daily', 'garage', 'collection', 'leaderboard', 'referrals', 'challenges', 'user', 'countries']) {
@@ -204,7 +212,7 @@ export function HomePage() {
           <GameCard className="space-y-3">
             <ProgressBar
               value={garage.data.plates_count}
-              max={Math.max(garage.data.plates_count / Math.max(garage.data.world_progress, 0.0001), 1)}
+              max={Math.max(garage.data.collection_target ?? 0, garage.data.plates_count, 1)}
               label={t('profile.level', { level: garage.data.level.level })}
               trailing={`${Math.round(garage.data.world_progress * 100)}%`}
             />
@@ -289,14 +297,4 @@ export function HomePage() {
 }
 
 /** Narrow the server payload to what the header renders. */
-function activeCountryQueryCountry(country: unknown) {
-  if (!country || typeof country !== 'object') return null;
-  const item = country as { flag?: string; name_ru?: string; name_en?: string };
-  return {
-    flag: item.flag ?? '\u{1F30D}',
-    name_ru: item.name_ru ?? '',
-    name_en: item.name_en ?? '',
-  };
-}
-
 export default HomePage;

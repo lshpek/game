@@ -329,7 +329,13 @@ export interface GarageData {
   regions_count: number;
   first_discoveries: number;
   best_collector_value: number;
+  /** Fraction of the playable world the player has collected. */
   world_progress: number;
+  /** The world target, so a progress bar never reconstructs it from the fraction. */
+  collection_target?: number;
+  playable_countries?: number;
+  locked_countries?: number;
+  total_dealer_value?: number;
   level: CollectorLevel;
   event: GlobalEvent | null;
   albums_completed: AlbumProgress[];
