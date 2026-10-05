@@ -14,6 +14,7 @@ from app.game.collectibles import CollectibleKind, kind_for_plate_type
 from app.game.plate_formats import serialize_visual
 from app.game.plate_generator import derive_segment_gaps, segment_kinds
 from app.game.plate_rarity import RARITY_COLOR
+from app.game.plate_status import collector_bio
 from app.game.plate_traits import trait_labels
 from app.game.sim_cards import legacy_operator_label
 
@@ -129,6 +130,16 @@ def plate_card(
         "traits": traits,
         "tags": list(plate.tags or []),
         "story": plate.story or "",
+        "collector_bio": collector_bio(
+            rarity=plate.rarity,
+            kind=kind.value,
+            country_code=plate.country_code,
+            letter_groups=list(plate.letter_parts or []),
+            traits=traits,
+            region_code=plate.region.code if plate.region else None,
+            region_name_en=plate.region.name_en if plate.region else "",
+            region_name_ru=plate.region.name_ru if plate.region else "",
+        ),
         "is_secret": bool(plate.is_secret),
         "season_code": plate.season_code,
         "discovery_count": int(plate.discovery_count),
@@ -148,6 +159,10 @@ def plate_card(
             "name_en": country.name_en if country else "",
             "name_ru": country.name_ru if country else "",
             "flag": country.flag if country else "",
+        },
+        "reel_alphabets": {
+            "letters": str((country.config or {}).get("alphabet") or "ABCDEFGHIJKLMNOPQRSTUVWXYZ") if country else "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "digits": "0123456789",
         },
         "region": (
             {"code": region.code, "name_en": region.name_en, "name_ru": region.name_ru}

@@ -304,7 +304,7 @@ class TestProviderWeighting:
         )
         weak = compute_rarity_score(plain, provider_modifier=MIN_PROVIDER_MODIFIER)
         strong = compute_rarity_score(plain, provider_modifier=MAX_PROVIDER_MODIFIER)
-        assert strong - weak <= 6
+        assert strong == weak
         assert _tier(strong) != "LEGENDARY"
         assert _tier(strong) != "MYTHIC"
 
@@ -323,9 +323,7 @@ class TestProviderWeighting:
         )
         weak = compute_rarity_score(special, provider_modifier=MIN_PROVIDER_MODIFIER)
         strong = compute_rarity_score(special, provider_modifier=MAX_PROVIDER_MODIFIER)
-        assert strong > weak
-        # The pattern, not the brand, is what moved it.
-        assert strong - weak < weak
+        assert strong == weak
 
     def test_an_unknown_provider_code_resolves_to_nothing(self):
         assert provider_by_code("nope") is None

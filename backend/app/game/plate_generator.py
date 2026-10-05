@@ -29,16 +29,17 @@ from app.game.collectibles import (
 )
 from app.game.countries import CountryDef
 from app.game.plate_patterns import PlateAnalysis, analyze_plate
+from app.game.plate_status import status_series_for
 from app.game.plate_rarity import (
     Rarity,
     compute_rarity_score,
     natural_rarity,
+    rarity_rank,
     resolve_final_rarity,
 )
 from app.game.plate_templates import (
     ParsedTemplate,
     Token,
-    coerce_region_code,
     normalize_plate,
     parse_template,
 )
@@ -50,6 +51,20 @@ from app.game.sim_cards import card_details, details_to_dict
 # A roll never repeats the same serial twice in a row: the generator retries
 # (a handful of times) before falling back to the last candidate.
 MAX_GENERATION_ATTEMPTS = 8
+
+# Rarer targets get a larger bounded candidate pool. The tier itself is sampled once
+# from the exact global weights; candidates are accepted only when their own patterns
+# earn that tier. If no exact match is found, the best candidate at or below the target
+# is returned rather than allowing luck to promote it.
+RARITY_CANDIDATE_BUDGET: dict[Rarity, int] = {
+    Rarity.COMMON: 16,
+    Rarity.UNCOMMON: 32,
+    Rarity.RARE: 96,
+    Rarity.EPIC: 256,
+    Rarity.LEGENDARY: 512,
+    Rarity.MYTHIC: 1024,
+    Rarity.SECRET: 2048,
+}
 
 # Upper bound for a targeted admin-test generation. Bounded on purpose: the test
 # lab must never spin, even when the requested outcome is statistically absurd.
@@ -198,11 +213,6 @@ def render_template(
     parts: list[str] = []
     chars: list[tuple[str, str]] = []  # (kind, character) in print order
 
-    # The 0/5 region rule is enforced at the *only* place a region code becomes
-    # printed text, so the stored, rendered and analysed strings can never
-    # disagree about what the region was.
-    printed_region = coerce_region_code(country_code, region_code)
-
     for part in parsed.parts:
         if part.is_literal():
             literal = str(part.text)
@@ -222,8 +232,8 @@ def render_template(
             text = choices[rng.randint(0, len(choices) - 1)]
         elif kind == "R":
             # An empty region slot must not leave a dangling separator.
-            parts.append(printed_region or "")
-            chars.extend(("region", ch) for ch in (printed_region or ""))
+            parts.append(region_code or "")
+            chars.extend(("region", ch) for ch in (region_code or ""))
             continue
         else:  # pragma: no cover - parse_template rejects unknown kinds
             text = ""
@@ -382,33 +392,22 @@ def build_generated_plate(
     honoured for COMMON. When set, it wins outright - and the value is still
     derived from the real analysis, so a forced plate never gets a made-up price.
     """
-    multipliers = event_multipliers or {}
     parsed_region = region.code if region else None
     analysis = analyze_plate(
         plate_text,
         region_code=parsed_region,
-        rarity_floor=template.rarity_floor,
+        # A template label is not a pattern and cannot elevate generated rarity.
+        rarity_floor="COMMON",
         plate_type=template.plate_type,
         country_tag=country.tag,
         is_secret=False,
         season_code=season_code,
     )
 
-    raw_event = float(multipliers.get(country.code, 1.0))
-    event_modifier = 1.0 + min(0.35, max(0.0, raw_event - 1.0) * 0.2)
-
-    # The SIM line's operator weighting. Narrow and bounded on purpose: a brand colours a
-    # card, it never decides the tier.
-    provider_rarity = clamp_modifier(_config_value(template.config, "provider_rarity_modifier"))
     provider_value = clamp_modifier(_config_value(template.config, "provider_value_modifier"))
 
     score = compute_rarity_score(
         analysis,
-        country_modifier=country.rarity_modifier,
-        template_multiplier=template.multiplier,
-        event_modifier=event_modifier,
-        novelty_bonus=6.0 if discovery_count == 0 else 0.0,
-        provider_modifier=provider_rarity,
     )
 
     nat = natural_rarity(analysis)
@@ -421,6 +420,7 @@ def build_generated_plate(
         force_secret=force_secret,
     )
 
+    status_series = status_series_for(country.code, analysis.letters)
     dealer_value, collector_value = value_for_analysis(
         rarity,
         analysis,
@@ -430,7 +430,12 @@ def build_generated_plate(
         template_multiplier=template.multiplier,
         country_value_scale=country.value_scale,
         provider_multiplier=provider_value,
+        collector_multiplier=status_series.collector_multiplier if status_series else 1.0,
     )
+
+    details = _details_for(template, country, plate_text)
+    if status_series is not None:
+        details["status_series"] = status_series.to_dict()
 
     return GeneratedPlate(
         plate_text=plate_text,
@@ -457,7 +462,7 @@ def build_generated_plate(
         display_numbers=list(analysis.digits),
         segment_styles=styles,
         is_secret=rarity is Rarity.SECRET,
-        details=_details_for(template, country, plate_text),
+        details=details,
     )
 
 
@@ -542,10 +547,12 @@ class PlateGenerator:
         category: CollectibleKind | None = None,
         country_code: str | None = None,
     ) -> GeneratedPlate:
-        """Generate one collectible, retrying when the serial was already rejected.
+        """Generate a collectible by accepting candidates that earn the sampled tier.
 
         ``rejected`` lets the service pass the keys the player already owns so a
-        roll reliably produces something new when a fresh plate is possible.
+        roll reliably produces something new when a fresh plate is possible. ``luck`` is
+        a desired tier sampled from the global rarity weights, not a rarity promotion:
+        every accepted result is scored from its own valid pattern.
 
         ``category`` and ``country_code`` only **narrow the eligible pool**. They
         decide which templates may be picked, never what the collectible is worth:
@@ -562,18 +569,35 @@ class PlateGenerator:
         seen: set[tuple[str, str]] = set(rejected or set())
         last: GeneratedPlate | None = None
 
-        for _ in range(MAX_GENERATION_ATTEMPTS):
+        target_rank = rarity_rank(luck)
+        best: GeneratedPlate | None = None
+        best_rank = -1
+        best_score = -1
+
+        for _ in range(RARITY_CANDIDATE_BUDGET.get(luck, MAX_GENERATION_ATTEMPTS)):
             country = pick_country(pool, self.rng)
             region = pick_region(pool, country, self.rng)
             template = pick_template(pool, country, region, self.rng)
             plate = self._attempt(country, region, template, luck)
             last = plate
-            if plate.unique_key not in seen:
+
+            candidate_rank = rarity_rank(plate.rarity)
+            if candidate_rank == target_rank and plate.unique_key not in seen:
                 return plate
+
+            if candidate_rank <= target_rank and (
+                candidate_rank > best_rank
+                or (candidate_rank == best_rank and plate.rarity_score > best_score)
+            ):
+                best = plate
+                best_rank = candidate_rank
+                best_score = plate.rarity_score
             seen.add(plate.unique_key)
 
-        # Extremely unlikely after MAX_GENERATION_ATTEMPTS; returning the last
-        # candidate is better than failing the roll.
+        # A bounded search may not find an exact tier in a narrow country/kind pool.
+        # Return its strongest valid candidate, never an RNG-promoted label.
+        if best is not None:
+            return best
         return last  # type: ignore[return-value]
 
     def _narrow(
@@ -729,6 +753,7 @@ class PlateGenerator:
 
 __all__ = [
     "MAX_GENERATION_ATTEMPTS",
+    "RARITY_CANDIDATE_BUDGET",
     "TARGETED_MAX_ATTEMPTS",
     "GeneratedPlate",
     "GenerationContext",

@@ -8,8 +8,9 @@ different text ends up in the atlas.
 from __future__ import annotations
 
 import pytest
+import random
 
-from app.game.countries import COUNTRIES, LATIN, PLAYABLE_CODES
+from app.game.countries import COUNTRIES, LATIN, PLAYABLE_CODES, RUSSIAN_PLATE_LETTERS
 from app.game.plate_formats import (
     COUNTRY_ACCENTS,
     COUNTRY_FORMATS,
@@ -23,6 +24,7 @@ from app.game.plate_formats import (
     theme_for,
     visual_for,
 )
+from app.game.plate_generator import render_template
 from app.game.plate_templates import parse_template
 
 PLAYABLE = [country for country in COUNTRIES if country.code in set(PLAYABLE_CODES)]
@@ -48,6 +50,31 @@ class TestCoverage:
         playable = {country.code for country in PLAYABLE}
         orphans = sorted(set(COUNTRY_FORMATS) - playable)
         assert orphans == [], f"format rows for countries that are not playable: {orphans}"
+
+    def test_every_playable_template_draws_only_from_its_declared_alphabet(self):
+        for country in PLAYABLE:
+            for template in country.templates:
+                parsed = parse_template(template.pattern)
+                for part in parsed.parts:
+                    if not part.is_literal() and part.kind in ("L", "A"):
+                        assert set(part.choices or country.alphabet) <= set(country.alphabet), (
+                            country.code,
+                            template.code,
+                        )
+                region = country.regions[0].code if country.regions else None
+                rendered, _styles = render_template(
+                    parsed,
+                    alphabet=country.alphabet,
+                    region_code=region,
+                    rng=random.Random(17),
+                    country_code=country.code,
+                )
+                assert rendered
+
+    def test_playable_region_codes_are_unique_within_each_country(self):
+        for country in PLAYABLE:
+            codes = [region.code for region in country.regions]
+            assert len(codes) == len(set(codes)), country.code
 
     @pytest.mark.parametrize("country", PLAYABLE, ids=lambda c: c.code)
     def test_a_country_is_not_a_generic_card_with_different_text(self, country):
@@ -285,6 +312,7 @@ class TestGeorgia:
         assert georgia.alphabet == LATIN
         assert georgia.letter_style == "LATIN"
         assert georgia.visual == "ge"
+        assert not georgia.regions
 
     def test_the_georgian_format_is_two_letters_three_digits_two_letters(self):
         """
@@ -300,6 +328,56 @@ class TestGeorgia:
         assert parsed.signature() == "LL?DDD?LL"
         assert parsed.letter_slots == 4
         assert parsed.digit_slots == 3
+
+
+class TestRussianPlateData:
+    def test_only_the_permitted_cyrillic_letters_are_generated(self):
+        russia = next(country for country in COUNTRIES if country.code == "RUS")
+        assert russia.alphabet == RUSSIAN_PLATE_LETTERS == "АВЕКМНОРСТУХ"
+        assert len(russia.alphabet) == 12
+
+    def test_other_non_latin_countries_use_their_plate_script(self):
+        countries = {country.code: country for country in COUNTRIES}
+        assert countries["KAZ"].alphabet == LATIN
+        assert countries["ARM"].alphabet == LATIN
+        japan = countries["JPN"]
+        assert japan.letter_style == "HIRAGANA"
+        assert set(japan.alphabet) <= set(
+            "あいうえかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるろわ"
+        )
+        assert next(t for t in japan.templates if t.code == "jp_standard").pattern == "DDD L DDDD"
+
+    def test_every_russian_vehicle_layout_uses_a_modern_registered_shape(self):
+        russia = next(country for country in COUNTRIES if country.code == "RUS")
+        patterns = {template.code: template.pattern for template in russia.templates}
+        assert patterns["ru_standard"] == "LDDD LL DD"
+        assert patterns["ru_truck"] == "LDDD LL DD"
+        assert patterns["ru_moto"] == "DDDD LL DD"
+        assert not {"ru_moscow", "ru_special", "ru_gov"} & patterns.keys()
+
+    def test_numeric_regions_are_country_catalogue_entries_not_a_generated_grid(self):
+        russia = next(country for country in COUNTRIES if country.code == "RUS")
+        assert {region.code for region in russia.regions} == {
+            "02", "16", "23", "40", "50", "52", "54", "61", "63", "66", "77", "78"
+        }
+
+    def test_selected_country_region_codes_match_plate_identifiers(self):
+        countries = {country.code: country for country in COUNTRIES}
+        assert "F" in {region.code for region in countries["DEU"].regions}
+        assert "HE" not in {region.code for region in countries["DEU"].regions}
+        assert {region.code for region in countries["FRA"].regions} <= {
+            "75", "69", "13", "33", "59", "29"
+        }
+        assert {region.code for region in countries["UKR"].regions} <= {"AA", "BH", "BC", "AE"}
+        assert {region.code for region in countries["CHN"].regions} <= {"粤", "沪", "京"}
+
+    def test_every_russian_letter_slot_uses_only_legal_letters(self):
+        russia = next(country for country in COUNTRIES if country.code == "RUS")
+        for template in russia.templates:
+            parsed = parse_template(template.pattern)
+            for part in parsed.parts:
+                if not part.is_literal() and part.kind == "L":
+                    assert set(part.choices or russia.alphabet) <= set(RUSSIAN_PLATE_LETTERS)
 
 
 class TestRussia:

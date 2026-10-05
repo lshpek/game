@@ -12,6 +12,7 @@ import RarityBadge from './RarityBadge';
 import PriceDisplay from './PriceDisplay';
 import SimCardVisual from './SimCardVisual';
 import SymbolReel from './SymbolReel';
+import CollectorBioPanel from './CollectorBioPanel';
 import VehiclePlateVisual from './VehiclePlateVisual';
 
 /**
@@ -273,6 +274,9 @@ export default function Reveal({
                   displaySegments={card.display_segments}
                   displaySegmentGaps={card.display_segment_gaps}
                   displaySegmentKinds={card.display_segment_kinds}
+                  countryCode={card.country.code}
+                  letterAlphabet={card.reel_alphabets?.letters}
+                  digitAlphabet={card.reel_alphabets?.digits}
                   final={
                     <motion.div
                       className="w-full"
@@ -401,6 +405,8 @@ export default function Reveal({
                           ))}
                         </div>
                       ) : null}
+
+                      <CollectorBioPanel bio={card.collector_bio} />
 
                       {/* 5. First discovery: a status on the card, never a feed. */}
                       {isFirstDiscovery && (

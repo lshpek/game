@@ -58,8 +58,8 @@ import { REEL_SECONDS, SPIN_WINDOW, symbolStops } from './reelTiming';
 const CYCLE = 9;
 
 /** The letters and digits a column may show, in a fixed order so a spin reads as cycling. */
-const LETTERS = 'ABCDEFGHJKLMNPRSTUVWXYZ'.split('');
-const DIGITS = '0123456789'.split('');
+const FALLBACK_LETTERS = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+const FALLBACK_DIGITS = '0123456789';
 
 /** One reel column's worth of state. */
 interface Column {
@@ -87,6 +87,9 @@ export function SymbolReel({
   displaySegments,
   displaySegmentGaps,
   displaySegmentKinds,
+  countryCode,
+  letterAlphabet,
+  digitAlphabet,
 }: {
   /** Synthetic preview frames from the server. */
   frames: ReelFrame[];
@@ -101,6 +104,9 @@ export function SymbolReel({
   displaySegments: string[];
   displaySegmentGaps: boolean[];
   displaySegmentKinds: string[];
+  countryCode: string;
+  letterAlphabet?: string;
+  digitAlphabet?: string;
 }) {
   const t = useT();
   const reported = useRef(false);
@@ -115,8 +121,15 @@ export function SymbolReel({
    * letter/digit hierarchy, which is what makes each column cycle the right alphabet.
    */
   const columns = useMemo(
-    () => buildColumns(plateText, displaySegmentKinds, displaySegments, displaySegmentGaps),
-    [plateText, displaySegmentKinds, displaySegments, displaySegmentGaps],
+    () => buildColumns(
+      plateText,
+      displaySegmentKinds,
+      displaySegments,
+      displaySegmentGaps,
+      letterAlphabet,
+      digitAlphabet,
+    ),
+    [plateText, displaySegmentKinds, displaySegments, displaySegmentGaps, letterAlphabet, digitAlphabet],
   );
   const stops = useMemo(() => symbolStops(columns.length), [columns.length]);
 
@@ -125,7 +138,7 @@ export function SymbolReel({
   // locks, so the object never changes underneath a settled number.
   const preview: ReelFrame | null =
     frames.length > 0 ? frames[Math.min(frame, frames.length - 1)] ?? null : null;
-  const surface = done ? visual : (preview?.visual ?? visual);
+  const surface = !done && preview?.country_code === countryCode ? preview.visual : visual;
 
   useEffect(() => {
     if (settled) {
@@ -418,6 +431,8 @@ export function buildColumns(
   kinds: string[],
   segments: string[],
   gaps: boolean[] = [],
+  letterAlphabet = FALLBACK_LETTERS,
+  digitAlphabet = FALLBACK_DIGITS,
 ): Column[] {
   /*
    * Expand the grouped segments back into per-character positions.
@@ -456,11 +471,11 @@ export function buildColumns(
     // A position holding a non-alphanumeric mark (a separator the server already
     // excluded, a `+` on a phone number) keeps its own character and does not spin.
     const digit = kind === 'digit' || kind === 'mixed' || kind === 'region' ? /\d/.test(char) : false;
-    const spinner = /^[A-Z0-9]$/.test(char);
+    const alphabet = digit ? digitAlphabet : letterAlphabet;
+    const spinner = alphabet.includes(char);
     if (!spinner) {
       return { target: char, cycle: [], digit, gap, fixed: true };
     }
-    const alphabet = digit ? DIGITS : LETTERS;
     // The cycle walks the target's own alphabet forward to land on it, so the reel never
     // has to jump backwards at the end - a backwards jump is the tell that an odometer is
     // faked rather than driven.
@@ -474,5 +489,5 @@ export function buildColumns(
   });
 }
 
-export { CYCLE, DIGITS, LETTERS, REEL_SECONDS, SPIN_WINDOW, symbolStops };
+export { CYCLE, FALLBACK_DIGITS, FALLBACK_LETTERS, REEL_SECONDS, SPIN_WINDOW, symbolStops };
 export default SymbolReel;

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import CollectibleVisualFrame from '@/components/CollectibleVisualFrame';
 import RollReel from '@/components/RollReel';
+import { buildColumns } from '@/components/SymbolReel';
 import SimCardVisual from '@/components/SimCardVisual';
 import VehiclePlateVisual from '@/components/VehiclePlateVisual';
 import { readFileSync } from 'node:fs';
@@ -381,5 +382,21 @@ describe('Collectible kinds', () => {
     );
     expect(document.querySelector('.sim-body')).not.toBeNull();
     expect(document.querySelector('.plate-frame')).toBeNull();
+  });
+
+  it('cycles Cyrillic characters only from the server-provided country alphabet', () => {
+    const allowed = 'АВЕКМНОРСТУХ';
+    const columns = buildColumns(
+      'А777',
+      ['letter', 'digit'],
+      ['А', '777'],
+      [false, true],
+      allowed,
+      '0123456789',
+    );
+    expect(columns[0]?.target).toBe('А');
+    expect(columns[0]?.cycle).toHaveLength(9);
+    expect(columns[0]?.cycle.every((symbol) => allowed.includes(symbol))).toBe(true);
+    expect(columns.slice(1).every((column) => column.cycle.every((symbol) => /\d/.test(symbol)))).toBe(true);
   });
 });

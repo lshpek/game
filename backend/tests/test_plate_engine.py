@@ -9,6 +9,13 @@ from __future__ import annotations
 import pytest
 
 from app.game.countries import COUNTRIES
+from app.game.plate_generator import (
+    RegionOption,
+    TemplateOption,
+    build_generated_plate,
+    render_template,
+    styles_for_text,
+)
 from app.game.plate_patterns import analyze_plate, split_plate
 from app.game.plate_rarity import (
     RARITY_RANK,
@@ -20,6 +27,7 @@ from app.game.plate_rarity import (
     resolve_final_rarity,
     score_rarity,
 )
+from app.game.plate_status import RUSSIAN_STATUS_SERIES, collector_bio, status_series_for
 from app.game.plate_stories import build_plate_story
 from app.game.plate_templates import normalize_plate, parse_template
 from app.game.plate_traits import PLATE_TRAITS
@@ -124,6 +132,17 @@ class TestTemplateParsing:
             for template in country.templates:
                 parse_template(template.pattern)
 
+    @pytest.mark.parametrize("region_code", ["77", "78", "50", "23", "16"])
+    def test_numeric_region_codes_render_without_rewriting(self, region_code):
+        plate, _styles = render_template(
+            parse_template("R"),
+            alphabet="АВЕКМНОРСТУХ",
+            region_code=region_code,
+            rng=None,
+            country_code="RUS",
+        )
+        assert plate == region_code
+
 
 class TestPatterns:
     def test_split_runs(self):
@@ -193,6 +212,17 @@ class TestRarityEngine:
         lucky = natural_rarity(analyze_plate("7777 AB"))
         assert RARITY_RANK[lucky.value] > RARITY_RANK[plain.value]
 
+    def test_global_target_weights_are_exact(self):
+        assert load_rarity_weights() == {
+            "COMMON": 54.0,
+            "UNCOMMON": 30.0,
+            "RARE": 13.0,
+            "EPIC": 2.5,
+            "LEGENDARY": 0.4,
+            "MYTHIC": 0.09,
+            "SECRET": 0.01,
+        }
+
     def test_a_boring_plate_never_reaches_legendary(self):
         """The whole point: rarity must be earned by patterns."""
         analysis = analyze_plate("482 AB")
@@ -204,7 +234,7 @@ class TestRarityEngine:
         )
         assert rarity in (Rarity.COMMON, Rarity.UNCOMMON)
 
-    def test_template_floor_is_respected(self):
+    def test_template_floor_cannot_promote_an_ordinary_plate(self):
         analysis = analyze_plate("482 AB")
         rarity = resolve_final_rarity(
             natural=natural_rarity(analysis),
@@ -213,17 +243,29 @@ class TestRarityEngine:
             traits=analysis.traits,
             template_floor="RARE",
         )
-        assert rarity is Rarity.RARE
+        assert rarity is Rarity.COMMON
 
-    def test_luck_can_lift_but_never_lower(self):
+    def test_random_luck_cannot_promote_an_ordinary_plate(self):
         analysis = analyze_plate("482 AB")
         rarity = resolve_final_rarity(
-            natural=Rarity.RARE,
-            luck=Rarity.COMMON,
+            natural=Rarity.COMMON,
+            luck=Rarity.LEGENDARY,
             score=compute_rarity_score(analysis),
             traits=analysis.traits,
         )
-        assert rarity is Rarity.RARE
+        assert rarity is Rarity.COMMON
+
+    def test_provider_and_discovery_modifiers_do_not_change_quality(self):
+        analysis = analyze_plate("482 AB")
+        plain = compute_rarity_score(analysis)
+        assert compute_rarity_score(
+            analysis,
+            country_modifier=3,
+            template_multiplier=4,
+            event_modifier=5,
+            novelty_bonus=100,
+            provider_modifier=1.2,
+        ) == plain
 
     def test_secret_requires_an_explicit_flag(self):
         assert (
@@ -298,6 +340,70 @@ class TestValuation:
         assert compute_values(Rarity.RARE, ["triple"], discovery_count=5) == compute_values(
             Rarity.RARE, ["triple"], discovery_count=5
         )
+
+    def test_status_series_boosts_collector_value_not_dealer_value(self):
+        plain = compute_values(Rarity.EPIC, ["triple"])
+        associated = compute_values(Rarity.EPIC, ["triple"], collector_multiplier=1.75)
+        assert associated[0] == plain[0]
+        assert associated[1] > plain[1]
+
+
+class TestPlateStatus:
+    def test_requested_russian_series_have_qualified_categories(self):
+        assert set(RUSSIAN_STATUS_SERIES) == {
+            "АМР", "ЕКХ", "ММР", "КОО", "АОО", "ААА", "ММС", "РМР", "ВОР", "МУР", "ООО", "МММ"
+        }
+        assert status_series_for("RUS", ["А", "МР"]).category == "PUBLIC_ASSOCIATION"
+        assert status_series_for("RUS", ["М", "ММ"]).category == "AESTHETIC_ONLY"
+        assert status_series_for("USA", ["A", "MR"]) is None
+
+    def test_epic_bio_is_structured_and_makes_no_ownership_claim(self):
+        bio = collector_bio(
+            rarity="EPIC",
+            kind="VEHICLE_PLATE",
+            country_code="RUS",
+            letter_groups=["А", "МР"],
+            traits=["triple", "symmetric_plate"],
+            region_code="77",
+            region_name_en="Moscow",
+            region_name_ru="Москва",
+        )
+        assert bio is not None
+        assert bio["status_category"] == "PUBLIC_ASSOCIATION"
+        assert bio["series_code"] == "АМР"
+        assert bio["region_code"] == "77"
+        assert "triple" in bio["pattern_codes"]
+        assert "owner" in str(bio["association_en"])
+
+    def test_bio_is_omitted_below_epic(self):
+        assert collector_bio(
+            rarity="RARE", kind="VEHICLE_PLATE", country_code="RUS",
+            letter_groups=["А", "МР"], traits=["triple"],
+        ) is None
+
+    def test_status_metadata_is_attached_to_a_generated_collectible(self):
+        russia = next(country for country in COUNTRIES if country.code == "RUS")
+        template_def = next(template for template in russia.templates if template.code == "ru_standard")
+        template = TemplateOption(
+            code=template_def.code,
+            pattern=template_def.pattern,
+            weight=template_def.weight,
+            plate_type=template_def.plate_type,
+            rarity_floor=template_def.rarity_floor,
+            requires_region=True,
+        )
+        region = RegionOption("77", "Moscow", "Москва", 1.0)
+        generated = build_generated_plate(
+            plate_text="А777МР 77",
+            country=russia,
+            region=region,
+            template=template,
+            luck=Rarity.SECRET,
+            styles=styles_for_text("А777МР 77", "77"),
+        )
+        assert generated.details["status_series"]["code"] == "АМР"
+        assert generated.details["status_series"]["category"] == "PUBLIC_ASSOCIATION"
+        assert generated.rarity is not Rarity.SECRET
 
 
 class TestStories:

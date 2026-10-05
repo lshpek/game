@@ -30,7 +30,7 @@ from app.core.locks import user_lock
 from app.core.timeutils import utcnow
 from app.game.collectibles import CollectibleCategory, CollectibleKind, kind_for_plate_type
 from app.game.plate_generator import PlateGenerator
-from app.game.plate_rarity import RARITY_RANK, Rarity, pity_weights, rarity_rank
+from app.game.plate_rarity import RARITY_RANK, Rarity, rarity_rank
 from app.game.plate_valuation import duplicate_sale_value
 from app.game.rng import Rng, default_rng, weighted_choice
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
@@ -131,14 +131,8 @@ class PlateRollService:
         ).scalar_one_or_none()
 
     def _luck_rarity(self, user: User) -> Rarity:
-        """Roll the luck tier, softened by bad-luck protection."""
-        weights = pity_weights(
-            self.settings.rarity_weights,
-            rare_streak=int(user.pity_rare_streak),
-            epic_streak=int(user.pity_epic_streak),
-            legendary_streak=int(user.pity_legendary_streak),
-        )
-        return Rarity(weighted_choice(weights, self.rng))
+        """Sample the desired rarity from the configured global target weights."""
+        return Rarity(weighted_choice(self.settings.rarity_weights, self.rng))
 
     def _numora_drop(self, rank: int) -> int:
         if self.rng.random() > NUMORA_DROP_CHANCE:

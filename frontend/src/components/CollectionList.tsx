@@ -4,6 +4,7 @@ import { formatCoins, rarityColor } from '@/lib/format';
 import { PriceDisplay } from '@/components/PriceDisplay';
 import { useI18n } from '@/i18n';
 import CollectibleVisual from './CollectibleVisual';
+import CollectorBioPanel from './CollectorBioPanel';
 import { RarityBadge, TraitChip } from './RarityBadge';
 import type { PlateCard } from '@/types';
 
@@ -129,6 +130,7 @@ export function CollectionList({
                 {item.story ? (
                   <p className="t-caption leading-relaxed text-white/65">{item.story}</p>
                 ) : null}
+                <CollectorBioPanel bio={item.collector_bio} />
                 {item.reason_labels.length ? (
                   <div className="flex flex-wrap gap-1.5">
                     {item.reason_labels.map((label, traitIndex) => (

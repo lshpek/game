@@ -135,7 +135,7 @@ class TestNextTarget:
         service = GoalService(db)
         target = service.next_target(_fake_user(), country_code="RUS")
         # With an empty collection nothing is near completion, so the country goal is used.
-        assert target["code"] in {"country_region", "country_operator", "mission", "album", "rarity", "first_discovery", "keep_rolling", "collection"}
+        assert target["code"] in {"country_set", "country_region", "country_operator", "mission", "album", "rarity", "first_discovery", "keep_rolling", "collection"}
 
     def test_the_near_term_window_is_bounded(self):
         assert NEAR_TERM >= 1

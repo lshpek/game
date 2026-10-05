@@ -34,7 +34,9 @@ from app.game.plate_formats import COUNTRY_FORMATS
 
 LATIN = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CYRILLIC = "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+RUSSIAN_PLATE_LETTERS = "АВЕКМНОРСТУХ"
 JAPANESE = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヰヱヲン"
+JAPANESE_PLATE_KANA = "あいうえかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるろわ"
 GEORGIAN = "აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ"
 ARMENIAN = "ԱԲԳԴԵԶԷԸԹԺԻԼԽԾԿՀՁՂՃՄՅՆՇՈՉՊՋՌՍՎՏՐՑՒՓՔՕՖ"
 
@@ -476,7 +478,7 @@ DE_REGIONS = (
     RegionDef("B", "Berlin", "Берлин", 3.0),
     RegionDef("M", "Munich", "Мюнхен", 3.0),
     RegionDef("HH", "Hamburg", "Гамбург", 2.4),
-    RegionDef("HE", "Frankfurt", "Франкфурт", 2.2),
+    RegionDef("F", "Frankfurt", "Франкфурт", 2.2),
     RegionDef("S", "Stuttgart", "Штутгарт", 2.0),
     RegionDef("K", "Cologne", "Кёльн", 2.0),
     RegionDef("D", "Dusseldorf", "Дюссельдорф", 1.9),
@@ -506,24 +508,13 @@ AM_REGIONS = (
     RegionDef("08", "Tavush", "Тавуш", 1.3),
 )
 
-GE_REGIONS = (
-    RegionDef("TB", "Tbilisi", "Тбилиси", 4.0),
-    RegionDef("BT", "Batumi", "Батуми", 2.4),
-    RegionDef("KL", "Kutaisi", "Кутаиси", 2.2),
-    RegionDef("RL", "Rustavi", "Рустави", 1.8),
-    RegionDef("GQ", "Gori", "Гори", 1.6),
-    RegionDef("OZ", "Ozurgeti", "Озургети", 1.6),
-    RegionDef("TK", "Telavi", "Телави", 1.4),
-    RegionDef("SN", "Senaki", "Сенаки", 1.3),
-)
-
 FR_REGIONS = (
-    RegionDef("IDF", "Ile-de-France", "Иль-де-Франс", 3.2),
-    RegionDef("ARA", "Auvergne-Rhone-Alpes", "Овернь-Рона-Альп", 2.4),
-    RegionDef("PAC", "Provence-Alpes-Cote d'Azur", "Прованс", 2.2),
-    RegionDef("OCC", "Occitanie", "Окситания", 2.0),
-    RegionDef("NAQ", "Nouvelle-Aquitaine", "Новая Аквитания", 1.8),
-    RegionDef("BRE", "Brittany", "Бретань", 1.8),
+    RegionDef("75", "Paris", "Париж", 3.2),
+    RegionDef("69", "Rhone", "Рона", 2.4),
+    RegionDef("13", "Bouches-du-Rhone", "Буш-дю-Рон", 2.2),
+    RegionDef("33", "Gironde", "Жиронда", 2.0),
+    RegionDef("59", "Nord", "Нор", 1.8),
+    RegionDef("29", "Finistere", "Финистер", 1.8),
 )
 
 IT_REGIONS = (
@@ -571,25 +562,19 @@ GB_REGIONS = (
 
 #: Optional region sets for a few more playable countries.
 EXTRA_REGIONS: dict[str, tuple[RegionDef, ...]] = {
-    "ESP": (
-        RegionDef("MD", "Madrid", "Мадрид", 3.0),
-        RegionDef("CT", "Catalonia", "Каталония", 2.4),
-        RegionDef("AN", "Andalusia", "Андалусия", 2.2),
-        RegionDef("PV", "Basque Country", "Страна басков", 1.8),
-    ),
     "POL": (
-        RegionDef("MZ", "Mazovia", "Мазовия", 3.0),
-        RegionDef("SL", "Silesia", "Силезия", 2.2),
-        RegionDef("PM", "Pomerania", "Поморье", 1.8),
-        RegionDef("PMK", "Greater Poland", "Великая Польша", 1.8),
-        RegionDef("LB", "Lublin", "Люблин", 1.6),
-        RegionDef("OP", "Opole", "Ополе", 1.4),
+        RegionDef("W", "Warsaw", "Варшава", 3.0),
+        RegionDef("S", "Silesian Voivodeship", "Силезское воеводство", 2.2),
+        RegionDef("G", "Gdansk", "Гданьск", 1.8),
+        RegionDef("P", "Poznan", "Познань", 1.8),
+        RegionDef("L", "Lublin", "Люблин", 1.6),
+        RegionDef("O", "Opole", "Ополе", 1.4),
     ),
     "UKR": (
-        RegionDef("KV", "Kyiv", "Киев", 3.4),
-        RegionDef("OD", "Odesa", "Одесса", 2.4),
-        RegionDef("LV", "Lviv", "Львов", 2.2),
-        RegionDef("DN", "Dnipro", "Днепр", 1.8),
+        RegionDef("AA", "Kyiv", "Киев", 3.4),
+        RegionDef("BH", "Odesa", "Одесса", 2.4),
+        RegionDef("BC", "Lviv", "Львов", 2.2),
+        RegionDef("AE", "Dnipro", "Днепр", 1.8),
     ),
     "BRA": (
         RegionDef("SP", "Sao Paulo", "Сан-Паулу", 3.4),
@@ -602,9 +587,9 @@ EXTRA_REGIONS: dict[str, tuple[RegionDef, ...]] = {
         RegionDef("DL", "Delhi", "Дели", 2.2),
     ),
     "CHN": (
-        RegionDef("GD", "Guangdong", "Гуандун", 3.0),
-        RegionDef("SH2", "Shanghai", "Шанхай", 2.8),
-        RegionDef("BJ", "Beijing", "Пекин", 2.8),
+        RegionDef("粤", "Guangdong", "Гуандун", 3.0),
+        RegionDef("沪", "Shanghai", "Шанхай", 2.8),
+        RegionDef("京", "Beijing", "Пекин", 2.8),
     ),
     "AUS": (
         RegionDef("NSW", "New South Wales", "Новый Южный Уэльс", 3.0),
@@ -618,8 +603,8 @@ EXTRA_REGIONS: dict[str, tuple[RegionDef, ...]] = {
     ),
     "ZAF": (
         RegionDef("WC", "Western Cape", "Западный Кап", 2.6),
-        RegionDef("GT", "Gauteng", "Гаутенг", 2.4),
-        RegionDef("KZ", "KwaZulu-Natal", "КваЗулу-Натал", 1.8),
+        RegionDef("GP", "Gauteng", "Гаутенг", 2.4),
+        RegionDef("KZN", "KwaZulu-Natal", "КваЗулу-Натал", 1.8),
     ),
     "ARE": AE_REGIONS,
 }
@@ -637,19 +622,16 @@ CURATED: tuple[CountryDef, ...] = (
         currency_code="RUB",
         currency_symbol="₽",
         weight=18.0,
-        alphabet=CYRILLIC,
+        alphabet=RUSSIAN_PLATE_LETTERS,
         letter_style="CYRILLIC",
         visual="cis_right_region",
         sort_order=1,
         playable=True,
         regions=RU_REGIONS,
         templates=(
-            TemplateDef("ru_standard", "LDDD LL DD", 6.0),
-            TemplateDef("ru_moscow", "LDDDLLL DD", 2.0),
-            TemplateDef("ru_truck", "LDDD LLL DD", 1.0, plate_type="COMMERCIAL"),
-            TemplateDef("ru_moto", "L DDDD DD", 0.8, plate_type="MOTORCYCLE"),
-            TemplateDef("ru_special", "X[6789] DDD LL DD", 0.6, plate_type="SPECIAL", rarity_floor="UNCOMMON"),
-            TemplateDef("ru_gov", "DDD LLL DD", 0.3, plate_type="GOVERNMENT_STYLE", rarity_floor="RARE"),
+            TemplateDef("ru_standard", "LDDD LL DD", 8.9),
+            TemplateDef("ru_truck", "LDDD LL DD", 1.0, plate_type="COMMERCIAL"),
+            TemplateDef("ru_moto", "DDDD LL DD", 0.8, plate_type="MOTORCYCLE"),
         ),
     ),
     CountryDef(
@@ -688,8 +670,8 @@ CURATED: tuple[CountryDef, ...] = (
         currency_code="KZT",
         currency_symbol="₸",
         weight=11.0,
-        alphabet=CYRILLIC,
-        letter_style="CYRILLIC",
+        alphabet=LATIN,
+        letter_style="LATIN",
         value_scale=0.8,
         rarity_modifier=1.08,
         visual="cis_right_kaz",
@@ -822,8 +804,8 @@ CURATED: tuple[CountryDef, ...] = (
         currency_code="JPY",
         currency_symbol="¥",
         weight=6.0,
-        alphabet=JAPANESE,
-        letter_style="KANJI",
+        alphabet=JAPANESE_PLATE_KANA,
+        letter_style="HIRAGANA",
         value_scale=1.6,
         rarity_modifier=1.15,
         visual="japan",
@@ -831,11 +813,7 @@ CURATED: tuple[CountryDef, ...] = (
         playable=True,
         regions=JP_REGIONS,
         templates=(
-            TemplateDef("jp_standard", "LL DD LL DD", 5.0),
-            TemplateDef("jp_business", "L DDD DD DD", 2.0, plate_type="COMMERCIAL"),
-            TemplateDef("jp_kei", "LL DD DD LLL L", 1.0),
-            TemplateDef("jp_heavy", "DD LL DD", 0.8, plate_type="COMMERCIAL", rarity_floor="UNCOMMON"),
-            TemplateDef("jp_diplomatic", "DD LL DD DD", 0.25, plate_type="DIPLOMATIC_STYLE", rarity_floor="RARE"),
+            TemplateDef("jp_standard", "DDD L DDDD", 5.0),
         ),
     ),
     CountryDef(
@@ -894,8 +872,8 @@ CURATED: tuple[CountryDef, ...] = (
         currency_code="AMD",
         currency_symbol="֏",
         weight=5.0,
-        alphabet=ARMENIAN,
-        letter_style="ARMENIAN",
+        alphabet=LATIN,
+        letter_style="LATIN",
         value_scale=0.75,
         rarity_modifier=1.05,
         visual="eu_long",
@@ -904,9 +882,6 @@ CURATED: tuple[CountryDef, ...] = (
         regions=AM_REGIONS,
         templates=(
             TemplateDef("am_standard", "DD LL DDD", 5.0),
-            TemplateDef("am_new", "LL DDD DD", 3.0),
-            TemplateDef("am_moto", "L DDDDD", 0.7, plate_type="MOTORCYCLE"),
-            TemplateDef("am_gov", "DD LL DDD", 0.3, plate_type="GOVERNMENT_STYLE", rarity_floor="RARE"),
         ),
     ),
     CountryDef(
@@ -929,13 +904,10 @@ CURATED: tuple[CountryDef, ...] = (
         visual="ge",
         sort_order=12,
         playable=True,
-        regions=GE_REGIONS,
+        regions=(),
         templates=(
             # The current Georgian format: two letters, three digits, two letters.
             TemplateDef("ge_standard", "LL-DDD-LL", 6.0),
-            # A slightly older shape that is still widely seen on the road.
-            TemplateDef("ge_legacy", "LL DDDD LL", 2.0),
-            TemplateDef("ge_moto", "LLL DDDD", 0.7, plate_type="MOTORCYCLE"),
         ),
     ),
 )

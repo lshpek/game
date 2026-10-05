@@ -260,6 +260,24 @@ class VehiclePlateDetails(BaseModel):
     family: str = ""
 
 
+class CollectorBio(BaseModel):
+    """Structured, server-authored explanation for an Epic+ find."""
+
+    kind: str
+    status_category: str | None = None
+    series_code: str | None = None
+    series_latin_code: str | None = None
+    association_en: str
+    association_ru: str
+    region_code: str | None = None
+    region_name_en: str = ""
+    region_name_ru: str = ""
+    pattern_codes: list[str] = Field(default_factory=list)
+    pattern_labels_en: list[str] = Field(default_factory=list)
+    pattern_labels_ru: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
 class PlateCard(BaseModel):
     """Canonical collectible representation used everywhere in the app."""
 
@@ -289,6 +307,7 @@ class PlateCard(BaseModel):
     traits: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     story: str = ""
+    collector_bio: CollectorBio | None = None
     is_secret: bool = False
     season_code: str | None = None
     discovery_count: int = 0
@@ -303,6 +322,7 @@ class PlateCard(BaseModel):
     dealer_value: int = 0
 
     country: CountryRef = Field(default_factory=CountryRef)
+    reel_alphabets: dict[str, str] = Field(default_factory=dict)
     region: RegionRef | None = None
     template: TemplateRef = Field(default_factory=TemplateRef)
     visual: PlateVisualSchema = Field(default_factory=PlateVisualSchema)

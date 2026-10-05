@@ -66,7 +66,11 @@ def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnap
         .unique()
         .all()
     )
-    regions = list(db.execute(select(Region).order_by(Region.id)).scalars().all())
+    regions = list(
+        db.execute(select(Region).where(Region.is_active.is_(True)).order_by(Region.id))
+        .scalars()
+        .all()
+    )
     templates = list(
         db.execute(
             select(PlateTemplate)

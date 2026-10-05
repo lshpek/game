@@ -213,67 +213,12 @@ def normalize_plate(text: str) -> str:
     return re.sub(r"\s+", " ", "".join(chars)).strip()
 
 
-#: Which countries print a numeric **region code** on the plate itself.
-#:
-#: This is a statement about *print layout*, not about which countries have
-#: regions. Countries whose region block is a real identifier - a US state
-#: abbreviation, a German registration city, a French department - print letters,
-#: and the 0/5 rule has nothing to do with them. The list is exactly the
-#: countries whose printed region block is digits in the real format: the CIS
-#: standard (right-hand compartment) and Kazakhstan's numeric code.
-#:
-#: A country not in this table keeps its region *label* and loses nothing: the
-#: region still names the find, it simply is not printed as a number, so the
-#: "must end in 0 or 5" rule is never forced onto a plate that has no such
-#: number anywhere.
-NUMERIC_REGION_COUNTRIES: frozenset[str] = frozenset({"RUS", "KAZ", "BLR"})
-
-
-def region_uses_numeric_code(country_code: str) -> bool:
-    """Whether a country's printed region block is a number subject to the 0/5 rule."""
-    return str(country_code or "").strip().upper() in NUMERIC_REGION_COUNTRIES
-
-
-#: The exact region numbers a numeric-region country may print: every multiple of
-#: five from 10 to 95, i.e. the two-digit numbers ending in 0 or 5.
-#:
-#: ``10, 15, 20, 25, ... 90, 95``. Never ``...1, 2, 3, 4, 6, 7, 8, 9``, and
-#: never a bare ``0`` or ``5``: real numeric region codes are two digits, and the
-#: rule is about the *last digit* of an identifier a player reads as a region.
-VALID_NUMERIC_REGIONS: tuple[str, ...] = tuple(f"{value:02d}" for value in range(10, 100, 5))
-
-
-def coerce_region_code(country_code: str, region_code: str | None) -> str | None:
-    """Snap a printed region code onto the 0/5 grid where the rule applies.
-
-    ``None`` (and any non-numeric region - ``CA``, ``IDF``, ``DXB``) is returned
-    untouched: the rule only ever constrains a *numeric* printed region, and a
-    lettered region is not a number that could end in the wrong digit.
-    """
-    if not region_code:
-        return region_code
-    text = str(region_code)
-    if not text.isdigit() or not region_uses_numeric_code(country_code):
-        return region_code
-    if text in VALID_NUMERIC_REGIONS:
-        return text
-    # Snap to the nearest allowed value; ties round up so a mid-range code never
-    # falls below 10 (the smallest real numeric region code).
-    value = int(text)
-    nearest = min(VALID_NUMERIC_REGIONS, key=lambda item: (abs(int(item) - value), -int(item)))
-    return nearest
-
-
 __all__ = [
     "MAX_PATTERN_LENGTH",
-    "NUMERIC_REGION_COUNTRIES",
     "TOKEN_KINDS",
-    "VALID_NUMERIC_REGIONS",
     "Literal",
     "ParsedTemplate",
     "Token",
-    "coerce_region_code",
     "normalize_plate",
     "parse_template",
-    "region_uses_numeric_code",
 ]

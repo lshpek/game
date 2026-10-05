@@ -86,6 +86,7 @@ def compute_values(
     country_value_scale: float = 1.0,
     premium_multiplier: float = 1.0,
     provider_multiplier: float = 1.0,
+    collector_multiplier: float = 1.0,
 ) -> tuple[int, int]:
     """Return ``(dealer_value_numora, collector_value_local)``."""
     rarity_code = rarity.value if isinstance(rarity, Rarity) else str(rarity).upper()
@@ -105,7 +106,15 @@ def compute_values(
     multiplier = max(1.0, min(VALUE_MULTIPLIER_CAP, multiplier))
 
     dealer = max(1, round(base * multiplier))
-    local = max(1, round(dealer * LOCAL_PER_NUMORA * max(0.2, country_value_scale)))
+    local = max(
+        1,
+        round(
+            dealer
+            * LOCAL_PER_NUMORA
+            * max(0.2, country_value_scale)
+            * max(1.0, min(2.5, collector_multiplier))
+        ),
+    )
     return dealer, local
 
 
@@ -127,6 +136,7 @@ def value_for_analysis(
     template_multiplier: float = 1.0,
     country_value_scale: float = 1.0,
     provider_multiplier: float = 1.0,
+    collector_multiplier: float = 1.0,
 ) -> tuple[int, int]:
     """Convenience wrapper deriving the multipliers from the analysis."""
     return compute_values(
@@ -139,6 +149,7 @@ def value_for_analysis(
         special_pattern="special_run" in analysis.traits or "special_code" in analysis.traits,
         country_value_scale=country_value_scale,
         provider_multiplier=provider_multiplier,
+        collector_multiplier=collector_multiplier,
     )
 
 

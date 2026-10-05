@@ -116,6 +116,22 @@ export interface PlateDiscoverer {
   photo_url: string | null;
 }
 
+export interface CollectorBio {
+  kind: CollectibleKind;
+  status_category: 'OFFICIAL' | 'DOCUMENTED' | 'PUBLIC_ASSOCIATION' | 'COLLECTOR_ASSOCIATION' | 'AESTHETIC_ONLY' | null;
+  series_code: string | null;
+  series_latin_code: string | null;
+  association_en: string;
+  association_ru: string;
+  region_code: string | null;
+  region_name_en: string;
+  region_name_ru: string;
+  pattern_codes: string[];
+  pattern_labels_en: string[];
+  pattern_labels_ru: string[];
+  reason_codes: string[];
+}
+
 /**
  * The kinds of collectible a player can hunt.
  *
@@ -182,6 +198,9 @@ export interface PlateCard {
   traits: string[];
   tags: string[];
   story: string;
+  collector_bio: CollectorBio | null;
+  /** Server-owned symbol sets used only for the roll animation. */
+  reel_alphabets: { letters: string; digits: string };
   is_secret: boolean;
   season_code: string | null;
   discovery_count: number;

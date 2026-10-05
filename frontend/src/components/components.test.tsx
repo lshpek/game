@@ -198,4 +198,40 @@ describe('CollectionList', () => {
     );
     expect(screen.getAllByText(/MTS/).length).toBeGreaterThan(0);
   });
+
+  it('shows the structured Epic+ collector biography without ownership claims', () => {
+    render(
+      <CollectionList
+        items={[
+          plate({
+            collector_bio: {
+              kind: 'VEHICLE_PLATE',
+              status_category: 'PUBLIC_ASSOCIATION',
+              series_code: 'АМР',
+              series_latin_code: 'AMR',
+              association_en: 'Publicly discussed; ownership is not verified.',
+              association_ru: 'Публично обсуждается; владение не подтверждено.',
+              region_code: '77',
+              region_name_en: 'Moscow',
+              region_name_ru: 'Москва',
+              pattern_codes: ['triple'],
+              pattern_labels_en: ['Triple'],
+              pattern_labels_ru: ['Тройка'],
+              reason_codes: ['status_series', 'pattern', 'region', 'rarity'],
+            },
+          }),
+        ]}
+        expanded={777}
+        onToggle={vi.fn()}
+        selling={false}
+        onSell={vi.fn()}
+      />,
+    );
+    const bio = screen.getByTestId('collector-bio');
+    expect(bio).toBeInTheDocument();
+    expect(screen.getByText('Why this number is valuable')).toBeInTheDocument();
+    expect(bio).toHaveTextContent(/АМР \(AMR\) · Public association, unverified/);
+    expect(screen.getByText('Publicly discussed; ownership is not verified.')).toBeInTheDocument();
+    expect(bio).toHaveTextContent(/Moscow \(77\)/);
+  });
 });

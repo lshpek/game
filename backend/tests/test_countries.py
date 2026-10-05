@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from app.game.countries import COUNTRIES, PLAYABLE_CODES, country_by_code, is_playable
 from app.game.iso_countries import ISO_BY_ALPHA2, ISO_COUNTRIES, iso_country
-from app.models.plates import Country, Plate, UserPlate
+from app.models.plates import Country, Plate, Region, UserPlate
 from app.models.user import User
 from app.seed import seed_countries
 
@@ -222,6 +222,13 @@ class TestActiveCountryDrivesTheRoll:
         data = client.post("/api/roll", headers=headers, json={}).json()
         assert data["plate"]["country"]["code"] == "ITA"
 
+    def test_russian_roll_exposes_its_server_owned_reel_alphabet(self, client, authed):
+        headers = authed(880019)["headers"]
+        client.post("/api/countries/active", json={"code": "RUS"}, headers=headers)
+        data = client.post("/api/roll", headers=headers, json={}).json()
+        assert data["plate"]["reel_alphabets"]["letters"] == "АВЕКМНОРСТУХ"
+        assert data["plate"]["reel_alphabets"]["digits"] == "0123456789"
+
     def test_the_client_never_restates_the_country_to_the_server(self, client, authed):
         """With no country in the query, the stored selection decides."""
         headers = authed(880021)["headers"]
@@ -294,6 +301,12 @@ class TestCollectionFilters:
         response = client.get("/api/collection?kind=PHONE_NUMBER", headers=headers)
         assert response.status_code == 422
         assert response.json()["error"]["code"] == "BAD_CATEGORY"
+
+    def test_georgia_roll_does_not_attach_a_nonexistent_plate_region(self, client, authed):
+        headers = authed(880018)["headers"]
+        client.post("/api/countries/active", json={"code": "GEO"}, headers=headers)
+        data = client.post("/api/roll", headers=headers, json={}).json()
+        assert data["plate"]["region"] is None
 
     def test_the_collection_has_no_phone_number_kind(self, client, authed):
         headers = authed(880030)["headers"]
@@ -374,6 +387,25 @@ class TestCatalogueReconciliation:
         after = {row.code for row in db.execute(select(Country)).scalars().all()}
         assert "ZZZ" in after
         assert before <= after
+
+    def test_regions_removed_from_metadata_are_retired_not_generated(self, db):
+        georgia = db.execute(select(Country).where(Country.code == "GEO")).scalar_one()
+        db.add(
+            Region(
+                country_id=georgia.id,
+                code="TB",
+                name_en="Old city code",
+                name_ru="Старый код города",
+                config={},
+                is_active=True,
+            )
+        )
+        db.flush()
+        seed_countries(db)
+        old = db.execute(
+            select(Region).where(Region.country_id == georgia.id, Region.code == "TB")
+        ).scalar_one()
+        assert old.is_active is False
 
     def test_existing_plates_are_untouched_by_the_catalogue(self, client, authed, db):
         headers = authed(880050)["headers"]

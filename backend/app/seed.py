@@ -71,6 +71,7 @@ def seed_countries(db: Session) -> int:
         country.sim_config = sim_config(definition)
         db.flush()
 
+        expected_region_codes = {region_def.code for region_def in definition.regions}
         for index, region_def in enumerate(definition.regions):
             region = db.execute(
                 select(Region).where(
@@ -86,6 +87,13 @@ def seed_countries(db: Session) -> int:
             region.config = {"weight": region_def.weight, **region_def.config}
             region.sort_order = index
             region.is_active = True
+
+        old_regions = db.execute(
+            select(Region).where(Region.country_id == country.id)
+        ).scalars().all()
+        for region in old_regions:
+            if region.code not in expected_region_codes:
+                region.is_active = False
 
         db.flush()
 

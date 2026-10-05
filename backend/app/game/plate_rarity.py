@@ -88,8 +88,7 @@ RARITY_COLOR: dict[str, str] = {
     Rarity.SECRET.value: "#22d3ee",
 }
 
-# Score thresholds mapping a final score onto a rarity. Tuned so an ordinary
-# plate never lands above Uncommon and a plate must *earn* Legendary/Mythic.
+# Score thresholds map intrinsic pattern quality onto a rarity.
 SCORE_THRESHOLDS: tuple[tuple[int, Rarity], ...] = (
     (120, Rarity.MYTHIC),
     (78, Rarity.LEGENDARY),
@@ -98,9 +97,12 @@ SCORE_THRESHOLDS: tuple[tuple[int, Rarity], ...] = (
     (10, Rarity.UNCOMMON),
 )
 
-# Secret is reserved: an extreme score plus a special combination.
+# Secret requires an extreme number pattern plus a second independent feature.
 SECRET_MIN_SCORE = 105
 SECRET_REQUIRED_TRAIT = "special_run"
+SECRET_COMBINATION_TRAITS = frozenset(
+    {"all_same", "four_of_kind", "triple_letter", "letter_palindrome", "mirrored_letters", "symmetric_plate"}
+)
 
 # Bad-luck protection thresholds (consecutive rolls without a tier).
 PITY_RARE_AFTER = 14
@@ -174,15 +176,8 @@ def max_rarity(*rarities: str | Rarity) -> Rarity:
 
 
 def natural_rarity(analysis: "PlateAnalysis") -> Rarity:
-    """Highest rarity implied by the plate's own trait hints."""
-    from app.game.plate_traits import PLATE_TRAITS
-
-    rarity = Rarity.COMMON
-    for code in analysis.traits:
-        trait = PLATE_TRAITS.get(code)
-        if trait is not None and rarity_rank(trait.rarity_hint) > rarity_rank(rarity):
-            rarity = Rarity(trait.rarity_hint)
-    return rarity
+    """Rarity implied by intrinsic patterns, without luck or template labels."""
+    return score_rarity(sum(analysis.scores.values()))
 
 
 def score_rarity(score: int) -> Rarity:
@@ -202,23 +197,13 @@ def compute_rarity_score(
     novelty_bonus: float = 0.0,
     provider_modifier: float = 1.0,
 ) -> int:
-    """Deterministic score in the 0-200 band.
+    """Deterministic score in the 0-200 band from plate patterns alone.
 
-    Sums the per-trait scores, then applies country/template/event modifiers and a small
-    bonus for a collectible nobody has discovered yet.
-
-    ``provider_modifier`` is the SIM line's operator weighting. It is deliberately narrow
-    (``[0.85, 1.20]``): a famous brand with an ordinary number must stay ordinary, and an
-    ordinary brand with an extraordinary number must still be able to reach the top. The
-    *pattern* is always what moves a card up the ladder; the provider only colours it.
+    The keyword-only modifiers remain accepted for compatibility, but country,
+    template, event, discovery and operator metadata affect value/presentation only.
+    None of them may turn an ordinary registration into a high-rarity find.
     """
-    raw = float(sum(analysis.scores.values()))
-    bonus = sum(code in analysis.traits for code in ("region_match", "rare_template")) * 4
-    total = raw + bonus
-    total *= max(0.5, country_modifier) * max(0.5, template_multiplier) * max(0.5, event_modifier)
-    total *= max(MIN_PROVIDER_SCORE_MODIFIER, min(MAX_PROVIDER_SCORE_MODIFIER, provider_modifier))
-    total += max(0.0, novelty_bonus)
-    return max(0, min(200, round(total)))
+    return max(0, min(200, sum(analysis.scores.values())))
 
 
 def resolve_final_rarity(
@@ -230,18 +215,15 @@ def resolve_final_rarity(
     template_floor: str = "COMMON",
     force_secret: bool = False,
 ) -> Rarity:
-    """Combine natural rarity, luck and score into the authoritative rarity."""
-    if force_secret or (score >= SECRET_MIN_SCORE and SECRET_REQUIRED_TRAIT in traits):
+    """Resolve rarity from intrinsic quality; ``luck`` is a target, never a promotion."""
+    if force_secret or (
+        score >= SECRET_MIN_SCORE
+        and SECRET_REQUIRED_TRAIT in traits
+        and bool(SECRET_COMBINATION_TRAITS.intersection(traits))
+    ):
         return Rarity.SECRET
 
-    candidate = max_rarity(natural, luck, score_rarity(score))
-    floor = Rarity(str(template_floor).upper()) if template_floor else Rarity.COMMON
-    if rarity_rank(floor) > rarity_rank(candidate):
-        candidate = floor
-    # A plate may never sit in SECRET territory without the required pattern.
-    if candidate is Rarity.SECRET:
-        candidate = Rarity.MYTHIC
-    return candidate
+    return score_rarity(score)
 
 
 def pity_weights(

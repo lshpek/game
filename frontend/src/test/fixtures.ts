@@ -197,6 +197,8 @@ export function plate(overrides: Partial<PlateCard> = {}): PlateCard {
     traits: ['all_same', 'four_of_kind'],
     tags: ['special'],
     story: 'Every digit repeats - the purest form of plate repetition.',
+    collector_bio: null,
+    reel_alphabets: { letters: 'АВЕКМНОРСТУХ', digits: '0123456789' },
     is_secret: false,
     season_code: null,
     discovery_count: 3,
