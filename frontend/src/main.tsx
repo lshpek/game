@@ -19,10 +19,14 @@ import './index.css';
 initTelegram();
 
 const container = document.getElementById('root');
-if (container) {
-  createRoot(container).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
-}
+// A missing mount point is a build error, not a runtime condition to code around: failing
+// loudly here beats rendering nothing and shipping a blank screen.
+if (!container) throw new Error('Root element #root is missing');
+
+// `App` owns its own providers, so the tree it renders is self-contained and can be
+// mounted - or tested - without anything being remembered at the entry point.
+createRoot(container).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);

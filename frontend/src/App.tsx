@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 
 import { BottomNav } from '@/components/BottomNav';
 import { LoadingSpinner } from '@/components/States';
@@ -53,6 +53,9 @@ function AppShell() {
   if (status === 'error') {
     return (
       <div
+        // Announced, not just shown: a session failure is the one error the player must
+        // not have to notice for themselves.
+        role="alert"
         className="flex flex-col items-center justify-center gap-4 px-[var(--gutter)] text-center"
         style={{ minHeight: 'var(--app-height)', paddingTop: 'var(--tg-safe-top)' }}
       >
@@ -143,18 +146,38 @@ function ProfileSync() {
   return null;
 }
 
+/**
+ * The query cache.
+ *
+ * A module-level singleton rather than a component-local instance: it has to outlive
+ * re-renders and remounts, or every route change would throw away the cache and the player
+ * would see a spinner for data they already had.
+ *
+ * `refetchOnWindowFocus: false` matters inside a Mini App specifically - Telegram fires
+ * focus/blur on every chat switch, and a default that refetches on focus turns opening a
+ * message into a burst of requests against the roll and collection endpoints.
+ */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 15_000,
+    },
+  },
+});
+
 export default function App() {
   return (
-    <I18nProvider>
-      <TelegramViewport>
-        {/*
-          Opt in to the React Router v7 behaviours to silence upgrade warnings.
-        */}
-        <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <ProfileSync />
-          <AppShell />
-        </HashRouter>
-      </TelegramViewport>
-    </I18nProvider>
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <TelegramViewport>
+          <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ProfileSync />
+            <AppShell />
+          </HashRouter>
+        </TelegramViewport>
+      </I18nProvider>
+    </QueryClientProvider>
   );
 }
