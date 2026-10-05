@@ -234,6 +234,12 @@ def _narrow(
             for code, options in templates.items()
         }
         templates = {code: options for code, options in templates.items() if options}
+        # A country can legitimately have no layout of the requested kind.
+        # Keep only the countries that do, so pick_country never lands on a
+        # country whose template pool is now empty (which would raise in
+        # pick_template instead of scrolling past it).
+        countries = tuple(item for item in countries if item.code in templates)
+        regions = {code: regions.get(code, ()) for code in templates}
     if not templates:
         return context
     return GenerationContext(

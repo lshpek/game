@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from app.core.config import settings
 from app.core.errors import InvalidInitDataError, ValidationError
 from app.core.security import (
     TokenError,
@@ -19,7 +20,9 @@ from app.core.security import (
     verify_init_data,
 )
 
-BOT_TOKEN = "123456:test-bot-token"
+# Sign with the same token the server is configured with, so the
+# endpoint tests exercise the real verify path end to end.
+BOT_TOKEN = settings.bot_token
 
 
 def build_init_data(telegram_id: int = 42, **extra: str) -> str:

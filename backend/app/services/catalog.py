@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.game.countries import COUNTRIES as CATALOG_COUNTRIES
 from app.game.plate_formats import serialize_visual
 from app.game.plate_generator import GenerationContext, RegionOption, TemplateOption
+from app.game.plate_templates import parse_template
 from app.models.plates import Country, PlateTemplate, Region
 
 CACHE_TTL_SECONDS = 60.0
@@ -45,7 +46,14 @@ class CatalogSnapshot:
 
 
 def _requires_region(template: PlateTemplate) -> bool:
-    return "R" in (template.pattern or "")
+    """Whether the layout has a real region slot.
+
+    A substring check is not enough: the letter ``R`` also appears inside
+    choice groups such as ``A[BCDFGHJKLMNPRSTVWXYZ]``, which would falsely
+    mark a layout as region-bound and make it unselectable for a country
+    that has no regions. Only a parsed ``R`` token is a region slot.
+    """
+    return parse_template(template.pattern).has_region_slot
 
 
 def build_snapshot(db: Session, rarity_weights: dict[str, float]) -> CatalogSnapshot:

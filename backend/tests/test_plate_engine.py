@@ -343,6 +343,48 @@ class TestRarityEngine:
             )
             assert generated.rarity is target
 
+    def test_full_pipeline_rarity_distribution_matches_configured_weights(self, db):
+        """The end-to-end pipeline must reproduce the configured rarity shares.
+
+        Luck is sampled from the weights and then biases the *pattern* generation
+        (quality-targeted digits/letters); the final rarity is then scored purely
+        from the resulting patterns. If either link broke, the observed shares
+        would drift from the configuration - this test catches that drift with a
+        chi-square goodness-of-fit over a sample rather than a single seed.
+        """
+        import random
+
+        from app.core.config import settings
+        from app.game.plate_generator import PlateGenerator
+        from app.game.rng import roll_rarity
+        from app.services.catalog import build_snapshot
+
+        weights = load_rarity_weights()
+        total_weight = sum(weights.values())
+        expected = {r.value: weights.get(r.value, 0.0) / total_weight for r in Rarity}
+
+        context = build_snapshot(db, settings.rarity_weights).context
+
+        sample_size = 6_000
+        observed: dict[str, int] = {r.value: 0 for r in Rarity}
+        rng = random.Random(20240607)
+        for _ in range(sample_size):
+            luck = roll_rarity(settings.rarity_weights, rng)
+            generated = PlateGenerator(context, rng).generate(luck=luck)
+            observed[generated.rarity.value] += 1
+
+        # Chi-square goodness-of-fit against the configured weights (6 degrees of
+        # freedom: 7 tiers - 1). The 95th critical value for 6 dof is 12.59.
+        chi_square = 0.0
+        for code, exp_share in expected.items():
+            exp_count = exp_share * sample_size
+            if exp_count > 0:
+                chi_square += (observed[code] - exp_count) ** 2 / exp_count
+        assert chi_square < 12.59, (
+            f"Rarity distribution drifted from configured weights "
+            f"(chi_square={chi_square:.1f}, observed={observed})"
+        )
+
     def test_pity_only_ever_helps(self):
         base = load_rarity_weights()
         protected = pity_weights(base, rare_streak=100, epic_streak=100, legendary_streak=100)
