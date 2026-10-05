@@ -2,23 +2,117 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ============================================================================
+ * NUMORA layout system
+ * ============================================================================
+ *
+ * The whole app is laid out against six variables and nothing else. They are
+ * published as real CSS custom properties so that a single JS measurement can
+ * correct the entire interface at once - which is the only way to stay correct
+ * inside a Telegram Mini App, where the usable height changes when the client
+ * expands, enters fullscreen, opens the keyboard, or the player rotates the
+ * phone.
+ *
+ *   --app-height          usable height of the Mini App, in px
+ *   --tg-safe-top         top inset: status bar / notch / Telegram header
+ *   --tg-safe-bottom      bottom inset: gesture bar / navigation area
+ *   --header-height       the app's own sticky header
+ *   --bottom-nav-height   the app's own bottom navigation
+ *   --tg-keyboard         how much of the viewport the keyboard currently covers
+ *
+ * `--app-height` starts as a viewport-unit chain so the first paint is already
+ * correct before any JavaScript has run, and is then overridden with the exact
+ * pixel height the client reports. `dvh` tracks the dynamic viewport (shrinks
+ * with the keyboard), `svh` is the smallest (never wrong but never maximal),
+ * `lvh` the largest. The plain `%` fallback covers old WebViews.
+ */
 @layer base {
   :root {
     color-scheme: dark;
+
+    --tg-safe-top: env(safe-area-inset-top, 0px);
+    --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --tg-safe-left: env(safe-area-inset-left, 0px);
+    --tg-safe-right: env(safe-area-inset-right, 0px);
+
+    /* Replaced with a measured pixel value by TelegramViewport when available. */
+    --app-height: 100vh;
+    --app-height: 100svh;
+    --app-height: 100dvh;
+
+    --header-height: 56px;
+    --bottom-nav-height: 62px;
+    --tg-keyboard: 0px;
+
+    /* One rhythm for every screen. */
+    --gutter: 16px;
+    --section-gap: 18px;
+    --radius-card: 18px;
+
+    /*
+     * Type scale, mirrored from tailwind.config so raw CSS can use it too.
+     * Cyrillic sits comfortably in Inter; the display face is reserved for
+     * numerals and wordmarks where its geometry is an asset.
+     */
+    --text-display: clamp(2rem, 9vw, 2.75rem);
+    --text-h1: 1.375rem;
+    --text-h2: 1.0625rem;
+    --text-body: 0.9375rem;
+    --text-caption: 0.8125rem;
+    --text-micro: 0.6875rem;
   }
 
-  html,
-  body,
-  #root {
+  @media (min-width: 640px) {
+    :root {
+      --gutter: 20px;
+      --section-gap: 22px;
+    }
+  }
+
+  /*
+   * `100%` of the html element, which is itself the full viewport. Combined with
+   * the JS-published --app-height this gives one source of truth for "how tall
+   * is the usable area".
+   */
+  html {
     height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
-    @apply bg-ink-950 bg-mesh-dark bg-fixed text-white;
-    /* Telegram in-app webviews must never bounce or scroll sideways. */
-    overscroll-behavior-y: contain;
-    /* The collectible is the hero: the app itself never scrolls sideways. */
-    overflow-x: hidden;
+    margin: 0;
+    min-height: 100%;
+    @apply bg-ink-950 bg-mesh-dark text-white font-sans;
+    /*
+     * Telegram's webview must never rubber-band or scroll sideways. `clip` rather
+     * than `hidden` because `hidden` on the body creates a scroll container and
+     * breaks `position: sticky` inside it - which is what the header relies on.
+     */
+    overscroll-behavior-y: none;
+    overflow-x: clip;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root {
+    min-height: 100%;
+    /*
+     * One scroll container for the entire app, sized from the measured viewport.
+     * Content below the fold is unreachable rather than hidden behind the nav.
+     */
+    min-height: var(--app-height, 100dvh);
+  }
+
+  /* Selection and long-press callouts look broken on a physical-object UI. */
+  ::selection {
+    background: rgba(138, 167, 255, 0.28);
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(138, 167, 255, 0.85);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 
   /* Respect notches and the home indicator. */
@@ -34,32 +128,134 @@
 }
 
 @layer components {
+  /*
+   * ---------------------------------------------------------------------------
+   * Surfaces
+   * ---------------------------------------------------------------------------
+   * Six distinct containers, each with its own job. Before, every block on every
+   * screen was the same translucent rounded rectangle, which is what made the UI
+   * read as a set of identical cards instead of a designed hierarchy.
+   */
+
+  /* The default container: quiet, one step above the background. */
   .glass {
-    @apply rounded-2xl border border-white/10 bg-white/[0.045] backdrop-blur-xl;
+    @apply rounded-[18px] border border-white/[0.07] bg-white/[0.035];
   }
 
-  .glass-strong {
-    @apply rounded-2xl border border-white/15 bg-ink-850/80 backdrop-blur-xl;
+  /* Interactive container: the same shape, but it responds to a press. */
+  .glass-interactive {
+    @apply rounded-[18px] border border-white/[0.09] bg-white/[0.045] transition
+           active:scale-[0.99] active:border-white/20;
   }
+
+  /* A raised object holder: the collectible sits on it, so it stays quieter. */
+  .stage {
+    @apply rounded-[22px] border border-white/[0.06]
+           bg-[radial-gradient(120%_100%_at_50%_0%,rgba(255,255,255,0.05),rgba(255,255,255,0.012))];
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* Statistics: no border, no fill - separated by rhythm, not by boxes. */
+  .stat {
+    @apply flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2.5
+           bg-white/[0.03];
+  }
+
+  /* Controls ---------------------------------------------------------------- */
 
   .btn {
-    @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl px-5 text-base font-semibold
-           transition active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-2xl px-5 text-body
+           font-semibold transition duration-150 active:scale-[0.98]
+           disabled:cursor-not-allowed disabled:opacity-45;
   }
 
+  /*
+   * The primary action is an ivory plate, not a coloured glow: it looks like a
+   * physical key rather than a casino chip, and it is the brightest thing in the
+   * interface so the eye lands on it first.
+   */
   .btn-primary {
-    @apply btn bg-gradient-to-br from-accent to-fuchsia-500 text-white shadow-glow;
+    @apply btn bg-gradient-to-b from-[#f4f1ea] to-[#ddd7cb] font-bold text-ink-950;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.7) inset,
+      0 -1px 0 rgba(0, 0, 0, 0.18) inset,
+      0 12px 26px -14px rgba(0, 0, 0, 0.9);
   }
 
   .btn-ghost {
-    @apply btn border border-white/12 bg-white/5 text-white/85;
+    @apply btn border border-white/[0.09] bg-white/[0.04] text-white/85;
+  }
+
+  .btn-quiet {
+    @apply btn min-h-[44px] text-caption text-white/70;
+  }
+
+  /*
+   * A minimum 48px touch target everywhere, applied once rather than remembered
+   * per component.
+   */
+  .tap {
+    @apply relative min-h-[44px] min-w-[44px];
+  }
+
+  /* Typography -------------------------------------------------------------- */
+
+  .t-display {
+    font-family: theme('fontFamily.display');
+    font-size: var(--text-display);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+  }
+
+  .t-h1 {
+    font-size: var(--text-h1);
+    line-height: 1.18;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+
+  .t-h2 {
+    font-size: var(--text-h2);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+    font-weight: 650;
+  }
+
+  .t-body {
+    font-size: var(--text-body);
+    line-height: 1.5;
+  }
+
+  .t-caption {
+    font-size: var(--text-caption);
+    line-height: 1.42;
+  }
+
+  /*
+   * The eyebrow / label step. Uppercase micro text is still uppercase, but the
+   * tracking is 0.06em instead of the 0.2-0.34em the old UI used - wide tracking
+   * is a display effect, and applying it to every label is what made a Russian UI
+   * look thin and gappy.
+   */
+  .t-micro {
+    font-size: var(--text-micro);
+    line-height: 1.35;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+
+  .eyebrow {
+    @apply t-micro uppercase text-white/40;
   }
 
   .number-display {
-    @apply font-display font-bold tabular-nums tracking-tighter;
+    @apply font-display tabular-nums;
+    letter-spacing: -0.02em;
   }
 
-  /* ==========================================================================
+  /*
+   * ==========================================================================
    * The physical collectible: a real license plate.
    *
    * Everything here is vector/CSS only - no image assets - so a plate stays crisp on
@@ -89,7 +285,7 @@
       0 4px 10px rgba(0, 0, 0, 0.4),
       /* rim highlight */
       inset 0 1px 0 rgba(255, 255, 255, 0.5),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+      inset 0 -1px 0 rgba(255, 255, 255, 0.5);
   }
 
   /* The printed face: enamel or reflective, with a bevel so it reads as a surface. */
@@ -119,7 +315,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.16;
+    opacity: var(--plate-grain, 0.16);
     background-image: repeating-linear-gradient(
       0deg,
       rgba(0, 0, 0, 0.05) 0 1px,
@@ -127,10 +323,30 @@
     );
   }
 
-  /* Controlled reflection sweep. `sheen` drives its strength, never its existence. */
+  /*
+   * A few hairline scratches. Real plates are used: three very low-contrast
+   * diagonal lines are enough to break the "perfect vector" read, and no more -
+   * more than that reads as dirt.
+   */
+  .plate-wear::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.45;
+    background-image:
+      linear-gradient(107deg, transparent 21%, rgba(255, 255, 255, 0.5) 21.4%, transparent 22%),
+      linear-gradient(63deg, transparent 61%, rgba(0, 0, 0, 0.06) 61.5%, transparent 62%),
+      linear-gradient(84deg, transparent 42%, rgba(255, 255, 255, 0.35) 42.3%, transparent 43%);
+    mix-blend-mode: overlay;
+  }
+
+  /* The gloss is the topmost surface layer, above the print, as a real face would be. */
   .plate-gloss {
     position: absolute;
     inset: 0;
+    z-index: 3;
     pointer-events: none;
     background: linear-gradient(
       118deg,
@@ -143,6 +359,29 @@
     );
     opacity: var(--plate-sheen, 0.5);
     mix-blend-mode: soft-light;
+  }
+
+  /*
+   * The specular sweep that runs once across the face on reveal. It is a sibling of the
+   * gloss so the two compose, and it is the one element allowed to use `transform`.
+   */
+  .plate-sweep {
+    position: absolute;
+    inset: -20% -60%;
+    z-index: 4;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 42%,
+      rgba(255, 255, 255, 0.5) 50%,
+      transparent 58%
+    );
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+
+  .plate-sweep-run {
+    animation: plate-sweep 900ms cubic-bezier(0.42, 0, 0.24, 1) 1 forwards;
   }
 
   /* The printing area: the serial, its groups and their typographic hierarchy. */
@@ -161,6 +400,14 @@
     letter-spacing: var(--plate-letter-spacing, 0.05em);
     color: var(--plate-text, #111827);
     white-space: nowrap;
+    /*
+     * Raised lettering: a dark drop under a light source from above, exactly how
+     * embossed or raised characters behave. Two shadows only - a long soft shadow
+     * here is a performance cost on every frame of the reveal.
+     */
+    text-shadow:
+      0 1px 0 rgba(255, 255, 255, calc(var(--plate-raise, 0.35))),
+      0 -1px 1px rgba(0, 0, 0, calc(var(--plate-raise, 0.35) * 0.6));
   }
 
   /*
@@ -203,7 +450,11 @@
     opacity: 0.85;
   }
 
-  /* The region's own block, separated from the registration as a real plate does. */
+  /*
+   * The region's own block, separated from the registration as a real plate does.
+   * On a Russian or Kazakh plate this is a separate right-hand compartment with its
+   * own vertical rule - not a suffix of the number.
+   */
   .plate-region-block {
     position: relative;
     z-index: 1;
@@ -222,6 +473,38 @@
     line-height: 1;
   }
 
+  /*
+   * The legend above the region code - `RUS` on a Russian plate. Printed smaller than the
+   * code itself, because on the real format it is subordinate to it.
+   */
+  .plate-region-legend {
+    font-size: 0.62em;
+    letter-spacing: 0.04em;
+    opacity: 0.75;
+  }
+
+  /*
+   * A printed country mark drawn as vectors: the Russian tricolour is the one identifier
+   * NUMORA reproduces literally, because it is the feature that makes a Russian plate
+   * instantly recognisable. Everything else stays a printed code in a band.
+   */
+  .plate-flag-ru {
+    display: block;
+    width: 2.6em;
+    height: 1.6em;
+    border-radius: 1px;
+    background: linear-gradient(
+      to bottom,
+      #ffffff 0%,
+      #ffffff 33.4%,
+      #0039a6 33.4%,
+      #0039a6 66.7%,
+      #d52b1e 66.7%,
+      #d52b1e 100%
+    );
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+
   /* The printed header: a country wordmark, or (for a US plate) the state's own name. */
   .plate-header {
     position: absolute;
@@ -238,10 +521,10 @@
     overflow: hidden;
   }
 
-  /* A mounting bolt. Four on a car plate, two on a US-style plate, none on a moped. */
+  /* A mounting bolt: a studded head with a washer, as on CIS and EU plates. */
   .plate-bolt {
     position: absolute;
-    width: 7%;
+    z-index: 2;
     aspect-ratio: 1;
     border-radius: 50%;
     pointer-events: none;
@@ -256,6 +539,23 @@
       0 1px 1px rgba(255, 255, 255, 0.35);
   }
 
+  /*
+   * A pressed mounting *hole* rather than a bolt head: a dark recess with a bright lower
+   * lip, which is what a screw hole in a metal plate actually looks like. Used for the
+   * North American and Japanese formats.
+   */
+  .plate-hole {
+    position: absolute;
+    z-index: 2;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 38%, #05070c 0%, #14181f 62%, #2b313b 100%);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.9),
+      0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+
   /* A small printed corner mark: sponsor block, crest or class mark. */
   .plate-emblem {
     position: absolute;
@@ -267,24 +567,38 @@
     opacity: 0.75;
   }
 
-  /* ==========================================================================
+  /*
+   * ==========================================================================
    * A collectible SIM card.
    *
-   * The contact module and the moving sheen are what make it read as a physical card
-   * rather than a rounded rectangle. The gold pad is drawn with a single element (no
-   * image asset) so it stays crisp at any size.
+   * The contact module, the moulded bevel and the moving sheen are what make it
+   * read as a physical card rather than a rounded rectangle. The gold pad is drawn
+   * with a single element (no image asset) so it stays crisp at any size.
    * ========================================================================== */
   .sim-body {
     position: relative;
     display: flex;
     aspect-ratio: 1.586;
     overflow: hidden;
-    border-radius: 4%/7%;
+    /* ID-1 cards have a clipped top-left corner; a rounded rectangle does not. */
+    border-radius: 5%/7%;
     background: linear-gradient(155deg, #232733 0%, #12151d 55%, #08090f 100%);
     box-shadow:
       0 18px 40px rgba(0, 0, 0, 0.55),
       inset 0 1px 0 rgba(255, 255, 255, 0.14),
       inset 0 -1px 0 rgba(0, 0, 0, 0.6);
+  }
+
+  /* The moulded edge: a 1px bright rim with a dark inner line, like injection-moulded PVC. */
+  .sim-body::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+      inset 0 0 0 2px rgba(0, 0, 0, 0.35);
   }
 
   .sim-contact {
@@ -318,6 +632,28 @@
       linear-gradient(to bottom, rgba(90, 66, 12, 0.35) 1px, transparent 1px) 0 0 / 100% 33%;
   }
 
+  /*
+   * The printed pad *below* the chip on a full-size SIM: four contact fingers in a
+   * row. Without it the card reads as a rectangle with a gold blob.
+   */
+  .sim-pad {
+    position: absolute;
+    top: 30%;
+    left: 5.5%;
+    display: flex;
+    width: 15.5%;
+    height: 12%;
+    gap: 6%;
+    pointer-events: none;
+  }
+
+  .sim-pad span {
+    flex: 1;
+    border-radius: 1px;
+    background: linear-gradient(180deg, #e8d08a, #b1902f);
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+  }
+
   .sim-sheen {
     position: absolute;
     inset: 0;
@@ -341,6 +677,69 @@
     right: 0;
     height: 9%;
     pointer-events: none;
+  }
+
+  /*
+   * The clipped corner of an ID-1 card, cut on a real 45° bevel. Implemented as a
+   * mask so the card's own background and edge still show through it.
+   */
+  .sim-notch {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 13%;
+    aspect-ratio: 1;
+    pointer-events: none;
+    background: #05070c;
+    -webkit-mask-image: linear-gradient(225deg, transparent 49%, #000 50%);
+    mask-image: linear-gradient(225deg, transparent 49%, #000 50%);
+  }
+
+  /* ==========================================================================
+   * Overlays: bottom sheets and modals
+   * ========================================================================== */
+
+  /* A sheet: rounded top, its own scroll area, safe-area aware bottom padding. */
+  .sheet {
+    @apply relative flex w-full flex-col overflow-hidden rounded-t-[26px] border border-white/[0.08]
+           bg-ink-900;
+    box-shadow: 0 -24px 60px -20px rgba(0, 0, 0, 0.95);
+  }
+
+  /* A scrim that hides the app behind an overlay without a full-screen blur. */
+  .scrim {
+    @apply absolute inset-0 bg-black/70;
+    /* A single cheap blur on a small element; never a full-screen backdrop-filter,
+       which is the most common cause of dropped frames in a Telegram WebView. */
+    backdrop-filter: blur(2px);
+  }
+
+  /*
+   * The bottom navigation is anchored to the viewport. When the keyboard opens, it
+   * translates out of the way instead of sitting under the keyboard where it cannot be
+   * tapped - driven by a class TelegramViewport sets, so the decision lives with the
+   * code that actually measures the keyboard.
+   */
+  .bottom-nav {
+    transition: transform 180ms cubic-bezier(0.16, 0.84, 0.28, 1);
+  }
+
+  .tg-keyboard-open .bottom-nav {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes plate-sweep {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(120%);
+    opacity: 0;
   }
 }
 

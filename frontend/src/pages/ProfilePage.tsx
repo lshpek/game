@@ -1,4 +1,6 @@
+import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
 import { ApiError } from '@/lib/api';
 import { haptic } from '@/lib/telegram';
 import { formatCoins, formatRelativeTime, rarityLabel } from '@/lib/format';
@@ -10,10 +12,35 @@ import { SocialPanel } from '@/components/SocialPanel';
 import { ErrorState, LoadingSpinner } from '@/components/States';
 import { useI18n } from '@/i18n';
 import { useRouteBackButton } from '@/lib/useRouteBackButton';
+import type { DailyStatus, RollBalance } from '@/types';
+
+/**
+ * Project the daily status onto the shared roll-balance shape.
+ *
+ * The two endpoints overlap but are not identical: `/api/daily` reports the daily streak
+ * as well as the bank, and has no `bank_cap`. Rather than loosening `RollBalance` - which
+ * is the authoritative roll contract - the narrower payload is projected onto it, using the
+ * daily allowance as the cap, which is exactly what a cap is.
+ */
+function rollBalanceFrom(status: DailyStatus | undefined): RollBalance | null {
+  if (!status) return null;
+  return {
+    rolls_remaining: status.rolls_remaining,
+    normal_rolls: status.normal_rolls,
+    bonus_rolls: status.bonus_rolls,
+    daily_allowance: status.daily_allowance,
+    bank_cap: status.daily_allowance,
+    resets_at: status.resets_at,
+    next_roll_at: status.next_roll_at,
+    seconds_to_next_roll: status.seconds_to_next_roll,
+    regen_minutes: status.regen_minutes,
+  };
+}
 
 export function ProfilePage() {
   useRouteBackButton();
   const { lang, t } = useI18n();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const profile = useAuthStore((state) => state.profile);
   const startContext = useAuthStore((state) => state.startContext);
@@ -48,46 +75,72 @@ export function ProfilePage() {
 
   return (
     <div className="space-y-5">
-      <header className="flex items-center gap-3">
+      {/*
+        Identity. A bare row rather than a card: the profile is a list of things, and an
+        avatar block wrapped in the same chrome as everything else just becomes one more
+        item competing with them.
+      */}
+      <header className="flex items-center gap-3.5 px-1 pt-1">
         {profile.photo_url ? (
-          <img src={profile.photo_url} alt="" className="h-14 w-14 rounded-full object-cover" />
+          <img
+            src={profile.photo_url}
+            alt=""
+            className="h-14 w-14 shrink-0 rounded-full object-cover ring-1 ring-white/10"
+          />
         ) : (
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/30 text-xl">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-[18px] font-bold text-white/70">
             {profile.display_name.charAt(0).toUpperCase()}
-          </div>
+          </span>
         )}
-        <div className="min-w-0">
-          <h1 className="truncate font-display text-xl font-bold">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate t-h1 text-white">
             {profile.username ? `@${profile.username}` : profile.display_name}
           </h1>
-          <p className="text-xs text-white/45">
-            {t('profile.joined', { when: formatRelativeTime(profile.created_at, t) })}
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            {profile.premium ? (
+              <span className="rounded-md border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold tracking-[0.06em] text-amber-200">
+                PREMIUM
+              </span>
+            ) : null}
+            {profile.is_admin ? (
+              <span className="rounded-md border border-white/15 bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold tracking-[0.06em] text-white/60">
+                ADMIN
+              </span>
+            ) : null}
+            <span className="text-[11px] text-white/35">
+              {t('profile.joined', { when: formatRelativeTime(profile.created_at, t) })}
+            </span>
           </p>
         </div>
       </header>
 
-      <GameCard className="grid grid-cols-2 gap-3 text-center">
+      {/*
+        Six stats in a 3x2 grid rather than one card with six numbers crammed inside it:
+        each number now gets its own touch-sized cell, which is what makes the grid
+        readable at 360px.
+      */}
+      <div className="grid grid-cols-3 gap-2">
         {[
-          { value: formatCoins(profile.coins), label: t('common.coins'), tone: 'text-amber-200' },
-          { value: profile.total_rolls, label: t('common.rolls'), tone: '' },
-          { value: profile.plates_count, label: t('common.plates'), tone: '' },
-          { value: profile.countries_count, label: t('common.countries'), tone: '' },
-          { value: profile.first_discoveries_count, label: t('common.discoveries'), tone: '' },
-          { value: `🔥 ${profile.current_streak}`, label: t('common.streak'), tone: '' },
+          { value: formatCoins(profile.coins), label: t('common.coins'), tone: 'text-brass' },
+          { value: profile.total_rolls, label: t('common.rolls'), tone: 'text-white' },
+          { value: profile.plates_count, label: t('common.plates'), tone: 'text-white' },
+          { value: profile.countries_count, label: t('common.countries'), tone: 'text-white' },
+          { value: profile.first_discoveries_count, label: t('common.discoveries'), tone: 'text-white' },
+          { value: `🔥 ${profile.current_streak}`, label: t('common.streak'), tone: 'text-white' },
         ].map((stat) => (
-          <div key={stat.label}>
-            <p className={`number-display text-2xl ${stat.tone}`}>{stat.value}</p>
-            <p className="text-[11px] uppercase tracking-wider text-white/45">{stat.label}</p>
+          <div key={stat.label} className="stat">
+            <span className={`number-display text-[19px] font-bold ${stat.tone}`}>{stat.value}</span>
+            <span className="t-micro truncate text-white/35">{stat.label}</span>
           </div>
         ))}
-      </GameCard>
+      </div>
 
-      <GameCard className="space-y-2">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-white/60">
+      <GameCard className="space-y-2.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="t-body text-white/60">
             {t('profile.level', { level: profile.collector_level?.level ?? 1 })}
           </span>
-          <span className="font-semibold text-accent-soft">
+          <span className="t-caption font-semibold text-white/70">
             {lang === 'ru' ? profile.collector_level?.title_ru : profile.collector_level?.title_en}
           </span>
         </div>
@@ -97,8 +150,11 @@ export function ProfilePage() {
           label={`${profile.collector_level?.xp_into_level ?? 0} / ${profile.collector_level?.xp_for_level ?? 0} XP`}
         />
         {profile.best_plate_text ? (
-          <p className="pt-1 text-sm text-white/60">
-            {t('profile.bestPlate')}: <span className="number-display text-cyan-300">{profile.best_plate_text}</span>
+          <p className="t-caption text-white/45">
+            {t('profile.bestPlate')}{' '}
+            <span className="number-display font-semibold text-brass">
+              {profile.best_plate_text}
+            </span>
           </p>
         ) : null}
       </GameCard>
@@ -137,9 +193,32 @@ export function ProfilePage() {
           </div>
           {/* The same economy the hunt screen shows: the normal bank, the bonus bank
               and when the next passive roll arrives. */}
-          <RollBalanceLine rolls={daily.data ?? null} compact />
+          <RollBalanceLine rolls={rollBalanceFrom(daily.data)} compact />
         </GameCard>
       )}
+
+      {/*
+        The legacy four-digit line. It is *not* in the bottom navigation any more - the
+        product is a physical collectible atlas, and a rolling-four-digits game sitting in
+        the primary nav told the player otherwise. It stays reachable from here so nothing
+        production-side was removed.
+      */}
+      <button
+        type="button"
+        className="glass-interactive flex w-full items-center gap-3 px-3.5 py-3 text-left"
+        onClick={() => navigate('/legacy')}
+      >
+        <span aria-hidden className="text-[20px] leading-none">
+          {t('boxes.icon')}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block t-body font-semibold text-white">{t('boxes.title')}</span>
+          <span className="block t-micro text-white/35">{t('boxes.subtitle')}</span>
+        </span>
+        <span aria-hidden className="shrink-0 text-[13px] text-white/35">
+          ›
+        </span>
+      </button>
 
       <SocialPanel />
 
@@ -191,3 +270,5 @@ export function ProfilePage() {
     </div>
   );
 }
+
+export default ProfilePage;

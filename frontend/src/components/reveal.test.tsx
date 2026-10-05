@@ -195,12 +195,28 @@ describe('VehiclePlateVisual', () => {
     expect(band.textContent).not.toContain('🇵🇱');
   });
 
-  it('prints the region in its own block for a Russian plate', () => {
+  it('moves the region into its own compartment on a Russian plate', () => {
     render(
-      <VehiclePlateVisual visual={ruVisual} plateText="A777BC 777" regionName="77" />,
+      <VehiclePlateVisual
+        visual={ruVisual}
+        plateText="A777BC 777"
+        displaySegments={['A777BC', '777']}
+        displaySegmentGaps={[false, true]}
+        displaySegmentKinds={['mixed', 'region']}
+        regionCode="777"
+      />,
     );
-    const frame = document.querySelector('.plate-frame') as HTMLElement;
-    expect(frame.querySelector('.plate-region-block')?.textContent).toBe('77');
+    // The compartment carries the printed RUS legend and the region code, in the order the
+    // real format prints them.
+    const block = document.querySelector('.plate-region-block') as HTMLElement;
+    expect(block.textContent).toContain('RUS');
+    expect(block.textContent).toContain('777');
+    // And the registration itself is not suffixed with the code: on a two-compartment
+    // plate the code appears once, in its own compartment.
+    expect(document.querySelector('.plate-print')?.textContent).toBe('A777BC');
+    // The flag is drawn as vectors, not printed as an emoji.
+    expect(block.querySelector('.plate-flag-ru')).not.toBeNull();
+    expect(block.textContent).not.toContain('🇷🇺');
   });
 
   it('prints the state name as the header on a US plate', () => {
@@ -211,26 +227,44 @@ describe('VehiclePlateVisual', () => {
     expect(header.textContent).toBe('California');
   });
 
-  it('mounts the bolt count the recipe asks for', () => {
+  it('draws the mounting hardware the format actually uses', () => {
+    // North American and Japanese plates are fixed with pressed screw holes, not bolts.
     const { unmount } = rtlRender(<VehiclePlateVisual visual={usVisual} plateText="D431K406" />);
-    expect(document.querySelectorAll('.plate-bolt')).toHaveLength(2);
+    expect(document.querySelectorAll('.plate-hole')).toHaveLength(2);
+    expect(document.querySelectorAll('.plate-bolt')).toHaveLength(0);
     unmount();
-    rtlRender(<VehiclePlateVisual visual={ruVisual} plateText="A777BC 777" />);
+
+    // A CIS plate carries four studded bolts in the corners.
+    rtlRender(<VehiclePlateVisual visual={ruVisual} plateText="A777BC 777" regionCode="777" />);
     expect(document.querySelectorAll('.plate-bolt')).toHaveLength(4);
+    expect(document.querySelectorAll('.plate-hole')).toHaveLength(0);
+  });
+
+  it('draws a plate at the proportions its recipe declares', () => {
+    render(<VehiclePlateVisual visual={ruVisual} plateText="A777BC 777" />);
+    const frame = document.querySelector('.plate-frame') as HTMLElement;
+    // 520x112 mm: the object is long and low, which is the whole point.
+    expect(frame.style.aspectRatio).toBe(String(ruVisual.aspect));
+    expect(frame.style.width).toBe(`${ruVisual.width_mm}px`);
+    expect(ruVisual.aspect).toBeGreaterThan(4);
   });
 
   it('prints the exact stored text, groups and gaps included', () => {
     render(
       <VehiclePlateVisual
-        visual={ruVisual}
-        plateText="A777BC 777"
-        displaySegments={['A777BC', '777']}
+        visual={polVisual}
+        plateText="AB 12345"
+        displaySegments={['AB', '12345']}
         displaySegmentGaps={[false, true]}
-        displaySegmentKinds={['mixed', 'digit']}
+        displaySegmentKinds={['letter', 'digit']}
       />,
     );
+    // The printed object reads back as exactly `plate_text`, spaces included, so the
+    // value a player sees, copies and searches are the same string.
     const print = document.querySelector('.plate-print') as HTMLElement;
-    expect(print.textContent).toBe('A777BC 777');
+    expect(print.textContent).toBe('AB 12345');
+    // The whole plate, including any compartment, still carries the full value.
+    expect(document.querySelector('.plate-frame')?.getAttribute('aria-label')).toBe('AB 12345');
   });
 
   it('falls back to character runs when grouped segments are absent', () => {

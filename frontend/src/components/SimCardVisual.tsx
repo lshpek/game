@@ -19,6 +19,19 @@ import type { SimCardConfig, SimCardDetails } from '../types';
  * permanent `SYNTHETIC · GAME COLLECTIBLE` mark sits in the corner. The operator's real
  * tariffs, customers or finances are never implied - the brand influences the game's
  * rarity and value weighting and nothing else.
+ *
+ * ### The physical model
+ *
+ * An ID-1 SIM is 85.60 x 53.98 mm (ratio 1.586) of moulded PVC with:
+ *
+ * * a **clipped top-left corner** on a 45-degree bevel, not a rounded rectangle;
+ * * a **gold contact module** - a chip pad with a notched centre, plus the four
+ *   contact fingers printed below it on a full-size card;
+ * * a **moulded edge**: a 1px bright rim with a dark inner line, which is what
+ *   injection-moulded plastic actually looks like under a light;
+ * * a **printed brand zone** with the operator's mark and wordmark;
+ * * the **number**, grouped the way the country groups it;
+ * * and fine surface wear, because a card that has been in a wallet is not pristine.
  */
 
 interface Props {
@@ -121,11 +134,13 @@ export default function SimCardVisual({
   return (
     <motion.div
       className={`sim-body ${className}`}
-      style={{ width: `${Math.round(330 * scale)}px`, maxWidth: '100%' }}
+      style={{
+        // 85.6mm at scale 1, matching the ID-1 standard the aspect ratio comes from.
+        width: `${Math.round(85.6 * 3.85 * scale)}px`,
+        maxWidth: '100%',
+      }}
       initial={false}
-      animate={
-        animate && !reduced ? { y: [0, -4, 0] } : { y: 0 }
-      }
+      animate={animate && !reduced ? { y: [0, -4, 0] } : { y: 0 }}
       transition={
         animate && !reduced
           ? { duration: 3.6, repeat: Infinity, ease: 'easeInOut' }
@@ -133,7 +148,12 @@ export default function SimCardVisual({
       }
       role="img"
       aria-label={`${brand} SIM card, number ${number}`}
+      data-sim-operator={brand}
     >
+      {/* The clipped corner. Drawn over the body with the page behind showing through,
+          which is exactly how the moulded bevel catches light on a real card. */}
+      <span className="sim-notch" aria-hidden="true" />
+
       {/* The operator's own identity stripe along the top edge. */}
       <span
         className="sim-brand-bar"
@@ -143,7 +163,15 @@ export default function SimCardVisual({
         aria-hidden="true"
       />
 
+      {/* The contact module: the chip pad and, below it, the printed contact fingers. */}
       <span className="sim-contact" aria-hidden="true" />
+      <span className="sim-pad" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+      </span>
+
       <span className="sim-sheen" aria-hidden="true" />
 
       <div className="relative z-10 flex w-full flex-col justify-between p-[6%] pl-[27%]">
@@ -151,30 +179,28 @@ export default function SimCardVisual({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <BrandMark visual={details?.operator_visual ?? 'neutral'} accent={brandAccent} />
-              <span
-                className="truncate text-[clamp(11px,3.6cqw,20px)] font-bold tracking-tight text-white"
-              >
+              <span className="truncate font-display text-[clamp(11px,3.4cqw,19px)] font-bold leading-tight tracking-[-0.01em] text-white">
                 {brand}
               </span>
             </div>
             {details?.operator_local && details.operator_local !== brand && (
-              <span className="block truncate text-[clamp(8px,2.3cqw,12px)] text-white/45">
+              <span className="block truncate text-[clamp(8px,2.2cqw,12px)] text-white/45">
                 {details.operator_local}
               </span>
             )}
           </div>
-          {rarity && (
+          {rarity ? (
             <span
-              className="shrink-0 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[clamp(7px,2cqw,11px)] font-bold tracking-[0.12em] text-white/70"
+              className="shrink-0 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 text-[clamp(7px,1.9cqw,11px)] font-semibold uppercase tracking-[0.08em] text-white/70"
             >
               {rarity}
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* The printed number, grouped the way the country groups it. */}
         <div className="my-[3%]">
-          <span className="block font-mono text-[clamp(15px,6.4cqw,34px)] font-bold leading-tight tracking-[0.06em] text-white tabular-nums">
+          <span className="block font-mono text-[clamp(14px,5.6cqw,30px)] font-bold leading-tight tracking-[0.04em] text-white tabular-nums">
             {number}
           </span>
         </div>
@@ -182,30 +208,28 @@ export default function SimCardVisual({
         <div className="flex items-end justify-between gap-2">
           <div className="min-w-0">
             {details?.series && (
-              <span className="block text-[clamp(8px,2.4cqw,13px)] font-semibold tracking-[0.18em] text-white/70">
+              <span className="block text-[clamp(8px,2.3cqw,13px)] font-semibold tracking-[0.1em] text-white/70">
                 {details.series}
               </span>
             )}
             {details?.edition && (
-              <span className="block text-[clamp(7px,2cqw,11px)] tracking-[0.16em] text-white/45">
+              <span className="block text-[clamp(7px,1.9cqw,11px)] tracking-[0.1em] text-white/45">
                 {details.edition}
               </span>
             )}
             {groups?.length ? (
-              <span className="sr-only-number">
-                {groups.join('-')}
-              </span>
+              <span className="sr-only-number">{groups.join('-')}</span>
             ) : null}
           </div>
           {details?.calling_code && (
-            <span className="shrink-0 text-[clamp(9px,2.6cqw,14px)] font-semibold text-white/60">
+            <span className="shrink-0 text-[clamp(9px,2.5cqw,14px)] font-semibold text-white/60">
               {details.calling_code}
             </span>
           )}
         </div>
 
         {/* The synthetic marker. Always visible, never subtle enough to be missed. */}
-        <span className="mt-[4%] block text-[clamp(6px,1.7cqw,9px)] uppercase tracking-[0.16em] text-white/35">
+        <span className="mt-[4%] block text-[clamp(6px,1.6cqw,9px)] uppercase tracking-[0.12em] text-white/35">
           Synthetic · game collectible
           {details?.operator_is_real === false ? ' · game brand' : ''}
         </span>

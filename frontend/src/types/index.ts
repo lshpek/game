@@ -16,6 +16,11 @@ export const RARITY_ORDER: readonly Rarity[] = [
  * The renderer draws what is here. Nothing about a country's plate shape, typography,
  * identifier band or region placement is decided in this codebase, so adding a country
  * needs no frontend change.
+ *
+ * Geometry note: `width_mm`/`height_mm` are the plate's real standardised size and
+ * `aspect` is derived from them on the server. They are sent together so a client can
+ * use either, but the millimetres are the source of truth - a Russian plate is
+ * 520x112 mm (4.64:1), which is why it renders long and low rather than square.
  */
 export interface PlateVisual {
   theme: string;
@@ -23,6 +28,11 @@ export interface PlateVisual {
   plate_family: string;
   /** Front/rear variant where a country distinguishes them. */
   variant: string;
+  /** Real plate width in millimetres. */
+  width_mm: number;
+  /** Real plate height in millimetres. */
+  height_mm: number;
+  /** width_mm / height_mm, rounded. */
   aspect: number;
   radius: string;
   border_width: string;
@@ -47,23 +57,42 @@ export interface PlateVisual {
   band_text_source: string;
   band_text_color: string;
   band_stars: boolean;
-  band_flag: boolean;
+  /** `null`, or a key such as `"ru"` for a flag drawn as vectors. */
+  band_flag: string | null;
+  band_emblem: string;
   header: string;
   header_align: string;
   /** `region` means "print the region's own name" - a US state's name, for instance. */
   header_source: string;
   header_color: string;
+  /** Vertical offset of the header as a fraction of the plate height. */
+  header_offset: number;
   region_position: string;
   region_style: string;
+  /** Printed width of the right-hand region compartment, as a fraction of plate width. */
+  region_width: number;
+  /** Whether that compartment prints the country's flag above the code. */
+  region_flag: boolean;
+  /** The code printed in the compartment, resolved server-side (e.g. `RUS`). */
+  region_text: string;
   show_flag: boolean;
   show_region_flag: boolean;
-  bolts: number;
+  /** Mounting hardware: `bolts` | `holes` | `none`. */
+  mount: string;
   mount_color: string;
+  /** Size of one mounting feature as a fraction of plate height. */
+  mount_size: number;
   gloss: boolean;
   sheen: number;
+  /** Raised-lettering relief, 0..1. */
+  relief: number;
+  /** Surface grain, 0..1. */
+  grain: number;
   emblem: string;
   /** Compatibility alias for the previous contract. */
   region_badge?: boolean;
+  /** Compatibility alias: the old bolt count. Derived from `mount` by the renderer. */
+  bolts?: number;
 }
 
 export interface PlateCountry {
@@ -168,6 +197,12 @@ export interface PlateCard {
   visual: PlateVisual;
   /** Present for SIM cards, `null` for vehicle plates. */
   details: SimCardDetails | null;
+  /**
+   * How this country prints its SIM cards, when the payload carries it. Present so the
+   * reveal can group the printed number the way the country does; absent means the card
+   * falls back to grouping the printed string itself.
+   */
+  sim_config?: SimCardConfig | null;
   owned: boolean;
   duplicate_count: number;
   /** Copies already sold to the dealer; the final copy stays protected. */

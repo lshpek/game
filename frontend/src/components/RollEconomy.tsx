@@ -1,144 +1,118 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { useI18n, useT } from '../i18n';
-import { DURATION, EASE, useReducedMotion } from '../lib/motion';
-import type { DailyStatus, NextTarget, RollBalance } from '../types';
+import { useT } from '@/i18n';
+import { DURATION, EASE, SPRING, formatCountdown, useReducedMotion } from '@/lib/motion';
+import type { NextTarget, RollBalance } from '@/types';
 
 /**
- * Roll-economy presentation.
+ * The bank, rendered from the server's authoritative state.
  *
- * The numbers all come from the server: the normal bank, the bonus bank, the cap and
- * the instant the next passive roll lands. This file only *renders* them and counts the
- * seconds down. It never grants a roll, never recomputes the cap, and never decides the
- * economy - the countdown is a display convenience, and the server settles every roll
- * against its own clock.
+ * The contract is simple and strict: this component only ever *displays* the bank the
+ * backend returned. It does not compute a refill time, does not decrement a counter on a
+ * timer, and does not guess how many rolls the player has. If the server says there are
+ * 18 rolls, this shows 18; if it says the next arrives at `next_roll_at`, this counts down
+ * to that instant and nothing else.
+ *
+ * That distinction is the whole point. A locally invented refill time means the number on
+ * the hunt screen can disagree with the number the next request would honour - the kind of
+ * discrepancy a player notices immediately and reads as a bug in the economy.
  */
 
-/** Local mirror of the server's countdown, re-synced whenever the server value changes. */
-function useCountdown(target: string | null, serverSeconds: number): number | null {
-  const [remaining, setRemaining] = useState<number | null>(serverSeconds || null);
+/**
+ * Seconds until the next roll, from the server's own timestamp.
+ *
+ * Derived from `next_roll_at` rather than from a local interval, so a player who leaves
+ * the app open and comes back sees the number the server would quote.
+ */
+function secondsUntil(rolls: RollBalance | null): number | null {
+  if (!rolls?.next_roll_at) return null;
+  const target = new Date(rolls.next_roll_at).getTime();
+  if (Number.isNaN(target)) return null;
+  const delta = Math.round((target - Date.now()) / 1000);
+  return delta > 0 ? delta : 0;
+}
+
+/**
+ * A live countdown to the next passive roll.
+ *
+ * Ticks once a second through a single interval and writes to state only when the
+ * displayed string actually changes - so 59 seconds of ticking cost 60 renders, not 3000.
+ */
+export function useRefillCountdown(rolls: RollBalance | null): string | null {
+  const [display, setDisplay] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!target) {
-      setRemaining(null);
-      return;
+    const initial = secondsUntil(rolls);
+    if (initial === null) {
+      setDisplay(null);
+      return undefined;
     }
-    const until = Date.parse(target);
-    if (Number.isNaN(until)) {
-      setRemaining(serverSeconds || null);
-      return;
-    }
-    const tick = () => {
-      const left = Math.max(0, Math.round((until - Date.now()) / 1000));
-      setRemaining(left);
-    };
-    tick();
-    const timer = window.setInterval(tick, 1000);
+    setDisplay(formatCountdown(initial));
+    const timer = window.setInterval(() => {
+      const next = secondsUntil(rolls);
+      if (next === null) return;
+      setDisplay((current) => {
+        const formatted = formatCountdown(next);
+        // No re-render for an unchanged string.
+        return formatted === current ? current : formatted;
+      });
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, [target, serverSeconds]);
+  }, [rolls]);
 
-  return remaining;
+  return display;
 }
 
-/** `1h 04m` / `32m` / `0:07` - short enough for a button, precise enough to be honest. */
-export function formatCountdown(seconds: number): string {
-  if (seconds <= 0) return '0:00';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
-  if (minutes > 0) return `${minutes}m`;
-  return `0:${String(rest).padStart(2, '0')}`;
-}
-
-/**
- * Normalise either economy payload.
- *
- * The hunt screen reads `/garage`, the profile reads `/daily`, and both describe the
- * same server-authoritative economy. Normalising here means the two screens can never
- * drift apart in what they show the player.
- */
-function toBalance(
-  rolls: RollBalance | DailyStatus | null,
-): RollBalance | null {
-  if (!rolls) return null;
-  if ('bank_cap' in rolls) return rolls;
-  return {
-    rolls_remaining: rolls.rolls_remaining,
-    normal_rolls: rolls.normal_rolls,
-    bonus_rolls: rolls.bonus_rolls,
-    daily_allowance: rolls.daily_allowance,
-    bank_cap: rolls.daily_allowance,
-    resets_at: rolls.resets_at,
-    next_roll_at: rolls.next_roll_at,
-    seconds_to_next_roll: rolls.seconds_to_next_roll,
-    regen_minutes: rolls.regen_minutes,
-  };
-}
-
-/**
- * The roll balance, as the player reads it.
- *
- * `18 ROLLS` and, when a passive roll is pending, `+1 IN 32 MIN`. Bonus rolls are shown
- * separately and only when there are any, so the normal bank never looks inflated.
- */
+/** A one-line read of the bank: how many rolls, and when the next one arrives. */
 export function RollBalanceLine({
   rolls,
-  className = '',
   compact = false,
 }: {
-  rolls: RollBalance | DailyStatus | null;
-  className?: string;
+  rolls: RollBalance | null;
   compact?: boolean;
 }) {
   const t = useT();
-  const balance = toBalance(rolls);
-  const remaining = useCountdown(balance?.next_roll_at ?? null, balance?.seconds_to_next_roll ?? 0);
+  const countdown = useRefillCountdown(rolls);
 
-  if (!balance) return null;
-  const total = balance.rolls_remaining;
-  const empty = total <= 0;
+  if (!rolls) {
+    // Absent data reads as absent, never as zero.
+    return (
+      <p className="t-micro text-white/30" data-testid="roll-balance">
+        —
+      </p>
+    );
+  }
 
   return (
-    <div className={`space-y-0.5 text-center ${className}`}>
-      <div
-        className={`font-display font-bold tracking-[0.16em] ${
-          empty ? 'text-rose-300' : 'text-white/85'
-        } ${compact ? 'text-xs' : 'text-sm'}`}
-      >
-        {total} {t('hunt.rolls')}
-      </div>
-      {remaining !== null && remaining > 0 && (
-        <div className="text-[11px] tracking-wide text-white/45">
-          +1 {t('hunt.nextRollIn')} {formatCountdown(remaining)}
-        </div>
-      )}
-      {balance.bonus_rolls > 0 && (
-        <div className="text-[11px] font-semibold tracking-wide text-accent-soft">
-          +{balance.bonus_rolls} {t('hunt.bonus')}
-        </div>
-      )}
-      {empty && (
-        <div className="text-[11px] tracking-wide text-white/45">{t('hunt.noRolls')}</div>
-      )}
+    <div
+      className={`flex min-w-0 flex-col ${compact ? 'items-end gap-0.5' : 'items-start gap-1.5'}`}
+      data-testid="roll-balance"
+    >
+      {/* The count, in words, so it reads as "18 rolls" rather than a bare numeral. */}
+      <span className="number-display text-[15px] font-bold text-white">
+        {t('hunt.rollsCount', { n: rolls.rolls_remaining })}
+      </span>
+      {/* A bonus bank is a distinct thing from the normal one, so it is labelled rather
+          than silently merged into the main number. */}
+      {rolls.bonus_rolls > 0 ? (
+        <span className="t-micro text-brass">+{rolls.bonus_rolls} {t('hunt.bonusRolls')}</span>
+      ) : null}
+      {countdown ? (
+        <span className="t-micro tabular-nums text-white/30" data-testid="roll-countdown">
+          {t('hunt.nextRollIn')} {countdown}
+        </span>
+      ) : null}
     </div>
   );
 }
 
-/** The compact form used inside the roll button. */
-export function CountdownPill({
-  rolls,
-  className = '',
-}: {
-  rolls: RollBalance | null;
-  className?: string;
-}) {
-  const t = useT();
-  const remaining = useCountdown(rolls?.next_roll_at ?? null, rolls?.seconds_to_next_roll ?? 0);
-  if (!rolls || remaining === null || remaining <= 0) return null;
+/** The countdown as a compact pill, for use inside the roll button. */
+export function CountdownPill({ rolls, className = '' }: { rolls: RollBalance | null; className?: string }) {
+  const countdown = useRefillCountdown(rolls);
+  if (!countdown) return null;
   return (
-    <span className={`text-[11px] font-semibold tracking-wide ${className}`}>
-      +1 {t('hunt.in')} {formatCountdown(remaining)}
+    <span className={`t-micro tabular-nums ${className}`} aria-hidden>
+      {countdown}
     </span>
   );
 }
@@ -146,63 +120,63 @@ export function CountdownPill({
 /**
  * The single next objective.
  *
- * Exactly one sentence, assembled from the machine-readable code the backend sent. All
- * the copy lives in i18n, so the sentence is localised and the backend never has to know
- * about language.
+ * A goal, a count and a progress bar - one line, always. The backend sends one objective
+ * at a time on purpose: a screenful of missions is a to-do list, and the hunt screen needs
+ * one thing to pull towards.
  */
-export function NextTargetLine({
-  target,
-  className = '',
-}: {
-  target: NextTarget | null | undefined;
-  className?: string;
-}) {
-  const { lang } = useI18n();
+export function NextTargetLine({ target }: { target: NextTarget | null }) {
   const t = useT();
   const reduced = useReducedMotion();
 
-  const text = useMemo(() => {
-    if (!target) return '';
+  const message = useMemo(() => {
+    if (!target) return t('hunt.alwaysOneObjective');
     switch (target.code) {
-      case 'country_set': {
-        const section =
-          (lang === 'ru' ? target.section_name_ru : target.section_name_en) ?? (target.section_code ?? '');
-        return t('goal.countrySet', { n: target.remaining, section, country: target.country_flag });
-      }
+      case 'country_collect':
+        return t('hunt.targetMoreRegions', { count: target.remaining });
       case 'country_region':
-        return target.remaining === 1
-          ? t('goal.firstRegion', { country: target.country_flag })
-          : t('goal.moreRegions', { n: target.remaining, country: target.country_flag });
-      case 'country_operator':
-        return t('goal.operators', { n: target.remaining });
-      case 'mission':
-        return t('goal.mission', { n: target.remaining });
-      case 'album':
-        return t('goal.album', { n: target.remaining });
-      case 'rarity':
-        return t('goal.findRarity', { rarity: target.rarity ?? 'RARE' });
+        return t('hunt.targetMoreRegions', { count: target.remaining });
       case 'first_discovery':
-        return t('goal.firstDiscovery');
-      case 'collection':
-        return t('goal.firstCollectible');
+        return t('hunt.targetFirstDiscovery', { country: target.country_name_en });
+      case 'album_completion':
+        return t('hunt.targetAlbum');
+      case 'mission':
+        return t('hunt.targetMissions');
+      case 'achievement':
+        return t('hunt.targetAchievements');
       default:
-        return t('goal.keepRolling');
+        return t('hunt.alwaysOneObjective');
     }
-  }, [target, t, lang]);
+  }, [target, t]);
 
-  if (!text) return null;
+  const progress = Math.max(0, Math.min(1, target?.progress ?? 0));
 
   return (
-    <p
-      className={`flex items-center justify-center gap-1.5 text-center text-[11px] leading-snug tracking-wide text-white/50 ${className}`}
-      style={{ transition: reduced ? undefined : `opacity ${DURATION.fade}s ${EASE.out}` }}
-    >
-      <span aria-hidden className="text-accent-soft">
-        ◆
-      </span>
-      {text}
-    </p>
+    <div className="flex w-full flex-col gap-1.5" data-testid="next-target">
+      <div className="flex items-center gap-2">
+        <span className="eyebrow">{t('hunt.objective')}</span>
+        {target?.current !== undefined ? (
+          <span className="number-display text-[11px] tabular-nums text-white/40">
+            {target.current}/{target.target}
+          </span>
+        ) : null}
+      </div>
+      <p className="t-caption text-white/60">{message}</p>
+      <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-accent/60 to-brass/60"
+          style={{
+            width: `${Math.max(progress * 100, 2)}%`,
+            transition: reduced
+              ? 'none'
+              : `width ${DURATION.slide}s ${EASE.out}`,
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
-export default RollBalanceLine;
+export { formatCountdown };
+
+/** Kept so the spring vocabulary for the objective bar stays in one place. */
+export const OBJECTIVE_SPRING = SPRING.settle;

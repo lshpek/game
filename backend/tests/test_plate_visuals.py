@@ -21,6 +21,7 @@ from app.game.plate_visuals import (
     FONT_STACKS,
     PLATE_VISUALS,
     band_text_for,
+    region_text_for,
     serialize_visual,
     visual_for,
 )
@@ -68,15 +69,35 @@ class TestRecipeCoverage:
         assert recipe.plate_family == "eu_long"
 
     def test_aspect_ratios_match_the_physical_families(self):
-        # A European long plate is long; a Russian/Kazakh two-compartment plate is not.
-        assert visual_for("pol").aspect > 4.5
-        assert visual_for("de").aspect > 4.5
-        assert 2.3 < visual_for("ru").aspect < 2.6
-        assert 2.3 < visual_for("kz").aspect < 2.6
-        # A US plate is close to square.
-        assert 1.9 < visual_for("us").aspect < 2.2
-        # Japan is a small two-line plate.
-        assert 2.8 < visual_for("jp").aspect < 3.2
+        """
+        Proportions come from the real standardised size, not from a tuned constant.
+
+        The 520x112 Russian format is the reference the whole product is built around: it
+        is *long* (ratio 4.64), not the squat 2.46 the recipes used to claim. Getting this
+        wrong is what made a plate render as a card with text on it.
+        """
+        # EU long: 520x110.
+        assert abs(visual_for("pol").aspect - 520 / 110) < 0.01
+        assert abs(visual_for("de").aspect - 520 / 110) < 0.01
+        # GOST R 50577-2018 type 1: 520x112, for both CIS formats.
+        assert abs(visual_for("ru").aspect - 520 / 112) < 0.01
+        assert abs(visual_for("kz").aspect - 520 / 112) < 0.01
+        # North America: 305x152.
+        assert abs(visual_for("us").aspect - 305 / 152) < 0.01
+        # Japan: 330x165.
+        assert abs(visual_for("jp").aspect - 330 / 165) < 0.01
+
+    def test_the_aspect_is_always_derived_from_the_declared_millimetres(self):
+        """A recipe can never claim a size and a ratio that disagree."""
+        for theme, recipe in PLATE_VISUALS.items():
+            assert recipe.width_mm > 0, theme
+            assert recipe.height_mm > 0, theme
+            assert recipe.aspect == pytest.approx(recipe.width_mm / recipe.height_mm, abs=0.01), theme
+
+    def test_the_russian_format_declares_its_standardised_size(self):
+        for code in ("ru", "kz"):
+            recipe = visual_for(code)
+            assert (recipe.width_mm, recipe.height_mm) == (520, 112), code
 
     def test_the_eu_countries_carry_a_proper_eu_band(self):
         for code in ("POL", "DEU", "FRA", "ITA"):
@@ -95,13 +116,16 @@ class TestRecipeCoverage:
         assert band_text_for(visual_for("european"), alpha2="SE", alpha3="SWE") == "SE"
 
     def test_the_non_eu_launch_countries_have_their_own_identifier(self):
-        assert band_text_for(visual_for("ru"), alpha3="RUS") == "RUS"
-        assert band_text_for(visual_for("kz"), alpha3="KAZ") == "KAZ"
+        # A CIS plate has no side band: RUS/KAZ are printed in the right-hand
+        # compartment together with the flag and the region code.
+        assert band_text_for(visual_for("ru"), alpha3="RUS") == ""
+        assert region_text_for(visual_for("ru"), alpha3="RUS") == "RUS"
+        assert region_text_for(visual_for("kz"), alpha3="KAZ") == "KAZ"
         # A British plate has no EU band at all.
         assert visual_for("gb").band_position == "none"
         # A US plate prints its state name as the header instead.
         assert visual_for("us").header_source == "region"
-        assert visual_for("us").bolts == 2
+        assert visual_for("us").mount == "holes"
 
     def test_the_uk_recipe_is_a_yellow_rear_plate(self):
         recipe = visual_for("gb")
@@ -109,48 +133,111 @@ class TestRecipeCoverage:
         assert recipe.background.lower().startswith("#f")  # yellow, not white
         assert recipe.background == "#f7d117"
 
-    def test_russia_and_kazakhstan_put_the_region_in_its_own_block(self):
-        for code in ("ru", "kz"):
+    def test_russia_and_kazakhstan_put_the_region_in_its_own_compartment(self):
+        """
+        The two-compartment format, as GOST R 50577-2018 defines it.
+
+        The compartment is separated from the registration by a vertical rule and has a
+        printed width; it is part of the plate's geometry, not an appended suffix.
+        """
+        for code, flag in (("ru", True), ("kz", False)):
             recipe = visual_for(code)
             assert recipe.plate_family == "cis_right_region"
             assert recipe.region_position == "right"
             assert recipe.region_style == "block"
+            assert recipe.region_width > 0.08, code
+            assert recipe.region_flag is flag, code
+            # No EU band: the identifier lives in the compartment, not in a blue stripe.
+            assert recipe.band_position == "none", code
+
+    def test_a_country_with_no_region_compartment_says_so(self):
+        """A format with no separate region block must not reserve space for one."""
+        for code in ("gb", "us", "ca"):
+            recipe = visual_for(code)
+            assert recipe.region_position == "none", code
+            assert recipe.region_width == 0.0, code
 
     def test_germany_and_poland_place_the_region_as_a_badge(self):
         for code in ("de", "pol"):
             assert visual_for(code).region_position == "badge"
 
-    def test_every_recipe_declares_mounting_hardware(self):
+    def test_every_recipe_declares_its_mounting_hardware(self):
+        """``bolts`` | ``holes`` | ``none``, with a printed size when it has any."""
         for theme, recipe in PLATE_VISUALS.items():
-            assert recipe.bolts in (0, 2, 4), theme
-            assert recipe.mount_color.startswith("#")
+            assert recipe.mount in ("bolts", "holes", "none"), theme
+            assert recipe.mount_color.startswith("#"), theme
+            if recipe.mount != "none":
+                assert 0.05 <= recipe.mount_size <= 0.2, theme
+
+    def test_mounting_appearance_matches_the_real_format(self):
+        """CIS and EU plates carry studded bolts; North American and Japanese ones do not."""
+        for code in ("ru", "kz", "de", "pol", "fr", "it", "gb"):
+            assert visual_for(code).mount == "bolts", code
+        for code in ("us", "ca", "jp"):
+            assert visual_for(code).mount == "holes", code
+
+    def test_every_recipe_declares_its_finish(self):
+        """Relief and grain must be present and in range: they are what make the object."""
+        for theme, recipe in PLATE_VISUALS.items():
+            assert 0.0 <= recipe.relief <= 1.0, theme
+            assert 0.0 <= recipe.grain <= 1.0, theme
+            assert 0.0 <= recipe.sheen <= 1.0, theme
 
     def test_the_serialised_recipe_is_complete_for_the_renderer(self):
+        """
+        Every field the renderer reads must be present.
+
+        A missing key means the client silently falls back to a default, which is how one
+        country ends up rendering as a different country's plate.
+        """
         payload = serialize_visual("pol", alpha2="PL", alpha3="POL")
         for key in (
-            "theme",
-            "plate_family",
+            # Physical geometry.
+            "width_mm",
+            "height_mm",
             "aspect",
+            # Surface.
             "background",
             "background_alt",
             "border",
             "text",
             "font_stack",
+            # Typography.
             "letter_spacing",
             "group_gap",
             "digit_scale",
             "letter_scale",
+            # Country identifier.
             "band_position",
             "band_text",
             "band_stars",
+            # Printed header.
             "header_source",
+            "header_offset",
+            # Region placement.
             "region_position",
-            "bolts",
+            "region_width",
+            # Mounting hardware.
+            "mount",
+            "mount_size",
+            # Finish.
             "gloss",
             "sheen",
+            "relief",
+            "grain",
         ):
             assert key in payload, key
         assert payload["font_stack"] == FONT_STACKS["euro"]
+        # The ratio the client renders with is the one the millimetres imply.
+        assert payload["aspect"] == pytest.approx(
+            payload["width_mm"] / payload["height_mm"], abs=0.01
+        )
+
+    def test_the_serialised_recipe_carries_the_region_legend(self):
+        payload = serialize_visual("ru", alpha2="RU", alpha3="RUS")
+        assert payload["region_position"] == "right"
+        assert payload["region_text"] == "RUS"
+        assert payload["region_flag"] is True
 
 
 class TestSegmentKinds:
@@ -178,16 +265,20 @@ class TestCountryApiVisual:
         visual = data["visual"]
         assert visual["theme"] == VISUAL_THEME_BY_CODE[code]
         assert visual["aspect"] > 1.6
-        assert visual["bolts"] in (2, 4)
+        assert visual["mount"] in ("bolts", "holes", "none")
         if code in ("POL", "DEU", "FRA", "ITA"):
             assert visual["band_text"] == {"POL": "PL", "DEU": "D", "FRA": "F", "ITA": "I"}[code]
             assert visual["band_stars"] is True
             assert visual["band_color"] == "#003399"
         if code in ("RUS", "KAZ"):
-            assert visual["band_text"] == {"RUS": "RUS", "KAZ": "KAZ"}[code]
+            # No blue band on a CIS plate; the legend lives in the compartment.
+            assert visual["band_position"] == "none"
+            assert visual["region_text"] == {"RUS": "RUS", "KAZ": "KAZ"}[code]
             assert visual["region_position"] == "right"
+            assert visual["region_width"] > 0.08
         if code == "USA":
             assert visual["header_source"] == "region"
+            assert visual["mount"] == "holes"
         if code == "GBR":
             assert visual["variant"] == "rear"
             assert visual["band_position"] == "none"

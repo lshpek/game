@@ -19,6 +19,8 @@ export const en = {
   'app.retry': 'RETRY',
   'app.profileUnavailable': 'Profile unavailable.',
   'app.language': 'Language',
+  'app.navigation': 'Main navigation',
+  'app.tagline': 'Physical atlas',
   'home.streak': 'Streak',
   'home.dailyReady': 'Daily reward ready',
   'home.dailyRewardHint': '+{coins} Coins and a fresh roll stack',
@@ -52,6 +54,12 @@ export const en = {
   'result.continue': 'Continue',
   'result.aria': 'Roll result',
   'boxes.title': 'Boxes',
+  // The legacy line is a different game from the atlas. It is labelled as such rather
+  // than presented as a second way to play the same one.
+  'boxes.icon': '🎁',
+  'boxes.subtitle': 'The original four-digit line',
+  'legacy.notice':
+    'The original four-digit game. Still fully playable - the atlas of plates and SIM cards is the main game.',
   'boxes.loading': 'Loading boxes…',
   'boxes.error': 'Could not load boxes.',
   'boxes.recent': 'Recent openings',
@@ -212,9 +220,14 @@ export const en = {
   // --- The roll economy ----------------------------------------------------
   'hunt.rolls': 'rolls',
   'hunt.roll': 'ROLL',
-  'hunt.nextRollIn': 'in',
+  // The count as a compact noun phrase: "18 rolls". Separate from `hunt.rollWithCount`,
+  // which is the full sentence an accessible name needs.
+  'hunt.rollsCount': '{n} rolls',
+  'hunt.nextRollIn': 'next in',
   'hunt.in': 'in',
   'hunt.bonus': 'bonus',
+  // The bonus bank is a distinct thing from the normal bank, so it is named.
+  'hunt.bonusRolls': 'bonus rolls',
   'hunt.noRolls': 'No rolls left. The next one regenerates soon.',
   'hunt.noRollsShort': 'NO ROLLS',
   'hunt.rollWithCount': 'Roll. {n} available.',
@@ -274,6 +287,14 @@ export const en = {
   'hunt.empty': 'No finds yet - press ROLL.',
   'hunt.syntheticNote': 'Plates and SIM cards are physical collectibles. Every SIM number is synthetic.',
   'hunt.rollFailed': 'The roll did not complete. Try again.',
+  // One objective at a time: the backend sends exactly one, on purpose.
+  'hunt.objective': 'NEXT',
+  'hunt.alwaysOneObjective': 'Roll to find your first collectible.',
+  'hunt.targetMoreRegions': 'Find {count} more regions',
+  'hunt.targetFirstDiscovery': 'Be first to discover a collectible from {country}',
+  'hunt.targetAlbum': 'Complete one more set',
+  'hunt.targetMissions': 'Finish one more mission',
+  'hunt.targetAchievements': 'Unlock one more achievement',
   'world.overall': 'World complete',
   'world.complete': '✓ Complete',
   'world.almost': '{count} left',

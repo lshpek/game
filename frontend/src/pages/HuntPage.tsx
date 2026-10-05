@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import { CountrySelector } from '@/components/CountrySelector';
 import Reveal from '@/components/Reveal';
-import CollectibleVisual from '@/components/CollectibleVisual';
+import { CollectiblePreview } from '@/components/CollectiblePreview';
 import { NextTargetLine, RollBalanceLine } from '@/components/RollEconomy';
 import RollButton from '@/components/RollButton';
 import { KindSelector } from '@/components/Selectors';
@@ -29,17 +29,27 @@ import type {
 /**
  * The hunt screen: the core loop, and the reason the app exists.
  *
- * The reading order is the loop itself.
+ * The reading order *is* the loop:
  *
  * ```
  * COUNTRY → WHAT TO HUNT → ROLL → REVEAL → KEEP / SHARE / SELL → ROLL AGAIN
  * ```
  *
- * Above the fold there is only what the player needs to roll: where they are hunting,
- * what they are hunting, the balance, the button, and one next objective. Recent find
- * sits below it. No dashboard, no secondary cards competing with the button.
+ * ### Visual hierarchy
  *
- * Two invariants this screen is responsible for:
+ * The screen has exactly one primary action, and everything else is deliberately quieter:
+ *
+ * 1. **Where you are** - the country, one row, one tap.
+ * 2. **What you are hunting** - three segments, not a settings list.
+ * 3. **The button** - the brightest surface in the app, with the bank directly above it.
+ * 4. **The last find** - the physical object, at a size you recognise instantly.
+ * 5. **Progress** - one bar, with the count.
+ * 6. Nothing else. There is no ranking teaser, no mission block, no social prompt.
+ *
+ * That last point is the change from the previous layout, which put six equally-weighted
+ * cards on one screen and made the roll button one of many things to look at.
+ *
+ * ### Invariants this screen owns
  *
  * * **One roll per press.** A double tap is swallowed by a synchronous ref *and* by the
  *   server's idempotency key, so the two layers together make a double roll impossible.
@@ -53,7 +63,7 @@ interface Props {
 }
 
 /**
- * Two pages. A press on the roll button is a *deliberate* action; this window stops one
+ * Two windows. A press on the roll button is a *deliberate* action; this stops one
  * enthusiastic double tap from being read as two rolls.
  */
 const ROLL_COOLDOWN_MS = 400;
@@ -160,8 +170,8 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
    * Sell duplicates from the reveal.
    *
    * Only ever called when `duplicate_count > 0` - the action does not exist otherwise,
-   * so the client cannot construct the invalid `sell(..., max(1, 0))` request that used
-   * to be sent on every single-copy find.
+   * so the client cannot construct the invalid `sell(..., max(1, 0))` request that used to
+   * be sent on every single-copy find.
    */
   const handleSell = useCallback(async () => {
     const card = result?.plate;
@@ -213,6 +223,11 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
     }
   }, [queryClient, result, t]);
 
+  const openCollection = useCallback(() => {
+    trackCollectionOpened('hunt');
+    onOpenCollection?.();
+  }, [onOpenCollection]);
+
   const recentCard: PlateCard | null = garage.data?.recent ?? null;
   const rolls: RollBalance | null =
     result?.rolls ?? garage.data?.rolls ?? profileToRollBalance(profile?.rolls_remaining);
@@ -229,12 +244,9 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
           flag: garage.data.hunt_country_flag ?? '',
         }
       : undefined);
-  const kindLabel = kind
-    ? t(kind === 'SIM_CARD' ? 'category.sim' : 'category.plate')
-    : t('category.all');
 
   return (
-    <div className="flex flex-col gap-5 pb-28" data-testid="hunt-page">
+    <div className="flex flex-col gap-[var(--section-gap)]" data-testid="hunt-page">
       <Reveal
         card={result?.plate ?? null}
         loading={busy}
@@ -249,26 +261,26 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         onOpenCollection={() => {
           trackCollectionOpened('reveal');
           setResult(null);
-          onOpenCollection?.();
+          openCollection();
         }}
       />
 
-      {/* WHERE. One line, then the selector. */}
+      {/* 1. WHERE. */}
       <section className="flex flex-col gap-2" aria-label={t('hunt.aria')}>
-        <div className="flex items-center justify-between px-1">
-          <h2 className="text-[10px] font-black uppercase tracking-[0.32em] text-white/35">
-            {t('hunt.title')}
-          </h2>
-          <button
-            type="button"
-            className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/40 transition hover:text-white/80"
-            onClick={() => activeCode && onOpenCountry?.(activeCode)}
-          >
-            {activeCountryName?.flag} {activeCode ?? t('hunt.world')} · {kindLabel}
-          </button>
+        <div className="flex items-center justify-between">
+          <h2 className="eyebrow">{t('hunt.title')}</h2>
+          {activeCode ? (
+            <button
+              type="button"
+              className="t-micro text-white/40 transition active:scale-95"
+              onClick={() => onOpenCountry?.(activeCode)}
+            >
+              {activeCountryName?.flag} {activeCode}
+            </button>
+          ) : null}
         </div>
         {countryList.isLoading ? (
-          <div className="h-[58px] animate-pulse rounded-2xl bg-white/[0.04]" />
+          <div className="h-[62px] animate-pulse rounded-[18px] bg-white/[0.04]" />
         ) : (
           <CountrySelector
             value={activeCode}
@@ -277,6 +289,10 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
             disabled={busy || switchCountry.isPending}
           />
         )}
+      </section>
+
+      {/* 2. WHAT TO HUNT. */}
+      <section aria-label={t('category.aria')}>
         <KindSelector value={kind} onChange={setKind} disabled={busy} />
       </section>
 
@@ -285,7 +301,7 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
       {(switchCountry.isError || notice?.tone === 'error') && (
         <p
           role="alert"
-          className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"
+          className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 t-caption text-rose-200"
         >
           {notice?.tone === 'error'
             ? notice.text
@@ -293,14 +309,12 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         </p>
       )}
 
-      {/* THE BUTTON. Balance, roll count and countdown, then the control. */}
-      <section className="flex flex-col items-center gap-3">
-        <div className="flex w-full items-center justify-between rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
-          <div className="flex flex-col">
-            <span className="text-[9px] font-bold uppercase tracking-[0.28em] text-white/35">
-              {t('hunt.wallet')}
-            </span>
-            <span className="number-display text-lg font-black tracking-tight text-white">
+      {/* 3. THE BUTTON. Bank and count on one line, then the control. */}
+      <section className="flex flex-col items-center gap-2.5">
+        <div className="flex w-full items-center justify-between rounded-2xl border border-white/[0.07] bg-white/[0.03] px-3.5 py-2.5">
+          <div className="flex min-w-0 flex-col">
+            <span className="eyebrow">{t('hunt.wallet')}</span>
+            <span className="number-display text-[17px] font-bold text-white">
               {formatCoins(coins)}
             </span>
           </div>
@@ -312,14 +326,10 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
           onRoll={handleRoll}
           rolling={busy}
           locked={rollingRef.current}
-          className="max-w-sm"
+          className="max-w-[420px]"
         />
 
         <NextTargetLine target={nextTarget} />
-
-        {completion && (
-          <CountryProgressStrip completion={completion} />
-        )}
       </section>
 
       {/* SUCCESS FEEDBACK. A sale must be acknowledged where the player is looking. */}
@@ -327,7 +337,7 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         {notice?.tone === 'ok' && (
           <motion.p
             role="status"
-            className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-center text-xs text-emerald-200"
+            className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-center t-caption text-emerald-200"
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
@@ -338,43 +348,28 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         )}
       </AnimatePresence>
 
-      {/* RECENT FIND. The physical object, because that is what the player just got. */}
+      {/* 4. THE LAST FIND. The physical object, because that is what they just got. */}
       <section className="flex flex-col gap-2" aria-label={t('hunt.recentFind')}>
-        <h3 className="px-1 text-[10px] font-black uppercase tracking-[0.32em] text-white/35">
-          {t('hunt.recentFind')}
-        </h3>
+        <h2 className="eyebrow">{t('hunt.recentFind')}</h2>
         {garage.isLoading ? (
-          <div className="h-32 animate-pulse rounded-2xl bg-white/[0.04]" />
+          <div className="h-44 animate-pulse rounded-[22px] bg-white/[0.04]" />
         ) : recentCard ? (
-          <motion.button
-            type="button"
-            className="w-full rounded-2xl border border-white/8 bg-white/[0.03] p-4 transition hover:border-white/20"
-            onClick={() => {
-              trackCollectionOpened('recent');
-              onOpenCollection?.();
-            }}
+          <motion.div
             initial={reduced ? false : { opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...SPRING.settle, duration: 0.4 }}
           >
-            <CollectibleVisual card={recentCard} scale={0.52} />
-            <div className="mt-3 flex items-center justify-center gap-2 text-[11px] tracking-wide text-white/45">
-              <span>{recentCard.rarity}</span>
-              <span aria-hidden>·</span>
-              <span>
-                {recentCard.currency_symbol}
-                {recentCard.collector_value.toLocaleString()}
-              </span>
-            </div>
-          </motion.button>
+            <CollectiblePreview card={recentCard} scale={0.66} onOpen={openCollection} />
+          </motion.div>
         ) : (
-          <p className="rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-6 text-center text-sm text-white/35">
-            {t('hunt.empty')}
-          </p>
+          <p className="stage px-4 py-8 text-center t-caption text-white/35">{t('hunt.empty')}</p>
         )}
       </section>
 
-      <p className="text-center text-[11px] leading-relaxed text-white/30">
+      {/* 5. PROGRESS. One bar, one count. */}
+      {completion ? <CountryProgressStrip completion={completion} /> : null}
+
+      <p className="text-center text-[11px] leading-relaxed text-white/25">
         {t('hunt.syntheticNote')}
       </p>
     </div>
@@ -386,16 +381,16 @@ function CountryProgressStrip({ completion }: { completion: CountryCompletion })
   const t = useT();
   const percent = Math.round(completion.progress * 100);
   return (
-    <div className="flex w-full items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-2.5">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/8">
+    <div className="flex w-full items-center gap-3">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
         <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-accent to-fuchsia-500"
+          className="h-full rounded-full bg-gradient-to-r from-accent/70 to-brass/70"
           initial={false}
           animate={{ width: `${percent}%` }}
           transition={{ ...SPRING.settle, duration: 0.5 }}
         />
       </div>
-      <span className="shrink-0 text-[11px] tabular-nums tracking-wide text-white/45">
+      <span className="shrink-0 text-[11px] tabular-nums text-white/40">
         {completion.collected} / {completion.total}
       </span>
       <span className="sr-only-number">
@@ -433,4 +428,5 @@ function profileToRollBalance(remaining: number | undefined): RollBalance | null
     seconds_to_next_roll: 0,
     regen_minutes: 45,
   };
-}export { HuntPage };
+}
+export { HuntPage };

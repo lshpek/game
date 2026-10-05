@@ -197,17 +197,17 @@ export function CollectionPage() {
 
       {/* The set: how far into this country the player is. */}
       {activeQuery.data?.country?.completion ? (
-        <div className="glass space-y-2 p-3">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="font-bold uppercase tracking-[0.16em] text-white/45">
-              {t('collection.completionTitle')}
-            </span>
-            <span className="tabular-nums text-white/60">
-              {activeQuery.data.country.completion.collected} /{' '}
-              {activeQuery.data.country.completion.total}
+        <div className="glass space-y-2.5 p-3">
+          <div className="flex items-center justify-between">
+            <span className="eyebrow">{t('collection.completionTitle')}</span>
+            <span className="number-display text-[13px] font-bold text-white/70">
+              {activeQuery.data.country.completion.collected}
+              <span className="text-white/25">/{activeQuery.data.country.completion.total}</span>
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          {/* Four completion sets. A 2x2 grid on a phone rather than four columns: at
+              360px a four-column grid gives each cell 76px, too narrow for a label. */}
+          <div className="grid grid-cols-2 gap-1.5">
             {activeQuery.data.country.completion.sections.map((section) => (
               <button
                 key={section.code}
@@ -216,15 +216,16 @@ export function CollectionPage() {
                   setPage(1);
                   setTerm('');
                 }}
-                className="rounded-lg border border-white/8 bg-white/[0.03] px-2 py-1.5 text-left"
+                className="stat !items-start !px-2.5 text-left"
               >
-                <span className="block truncate text-[10px] uppercase tracking-[0.12em] text-white/40">
+                <span className="w-full truncate t-micro text-white/40">
                   {lang === 'ru' ? section.name_ru : section.name_en}
                 </span>
                 <span
-                  className={`number-display block text-xs ${section.completed ? 'text-emerald-300' : 'text-white/70'}`}
+                  className={`number-display text-[13px] font-bold ${section.completed ? 'text-emerald-300' : 'text-white/75'}`}
                 >
-                  {section.collected}/{section.total}
+                  {section.collected}
+                  <span className="text-white/25">/{section.total}</span>
                 </span>
               </button>
             ))}
@@ -232,7 +233,7 @@ export function CollectionPage() {
         </div>
       ) : null}
 
-      <p className="text-xs text-white/45">
+      <p className="t-caption text-white/45">
         {meta
           ? t('collection.count', {
               count: meta.total,
@@ -251,7 +252,7 @@ export function CollectionPage() {
       {saleError ? (
         <p
           role="alert"
-          className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200"
+          className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 t-caption text-rose-200"
         >
           {saleError}
         </p>
@@ -271,7 +272,7 @@ export function CollectionPage() {
         </button>
       ) : null}
 
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2.5">
         <form
           className="flex gap-2"
           onSubmit={(event) => {
@@ -307,10 +308,10 @@ export function CollectionPage() {
                   setKind(tab.key);
                   setPage(1);
                 }}
-                className={`min-h-[36px] flex-1 rounded-xl border px-2 text-[11px] font-bold uppercase tracking-[0.16em] transition ${
+                className={`min-h-[42px] flex-1 rounded-xl border px-2 t-caption font-semibold transition ${
                   active
                     ? 'border-white/25 bg-white/[0.12] text-white'
-                    : 'border-white/8 bg-white/[0.03] text-white/45'
+                    : 'border-white/[0.08] bg-white/[0.03] text-white/45'
                 }`}
               >
                 {t(tab.label)}
@@ -328,11 +329,20 @@ export function CollectionPage() {
                 setRarity(code);
                 setPage(1);
               }}
-              className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase ${
-                rarity === code ? 'border-accent/70 bg-accent/25' : 'border-white/10 bg-white/5 text-white/55'
+              className={`flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-full border px-3.5 t-micro transition active:scale-[0.97] ${
+                rarity === code
+                  ? 'border-white/25 bg-white/[0.1] text-white'
+                  : 'border-white/[0.08] bg-white/[0.02] text-white/45'
               }`}
               style={rarity === code && code !== 'ALL' ? { color: rarityColor(code as Rarity) } : undefined}
             >
+              {code !== 'ALL' ? (
+                <span
+                  aria-hidden
+                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  style={{ background: rarityColor(code as Rarity) }}
+                />
+              ) : null}
               {code === 'ALL' ? t('common.all') : code}
             </button>
           ))}
@@ -404,16 +414,19 @@ export function CollectionPage() {
           </FilterChip>
         </div>
 
-        <div className="flex gap-1.5">
+        {/* Sort. A wrapping row rather than four equal segments: "collected at" and
+            "value" are long labels, and equal segments at 360px would truncate both. */}
+        <div className="flex flex-wrap gap-1.5">
           {SORTS.map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => setSort(option)}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] capitalize ${
+              aria-pressed={sort === option}
+              className={`min-h-[38px] flex-1 rounded-xl border px-2.5 t-caption capitalize transition active:scale-[0.97] ${
                 sort === option
-                  ? 'border-white/25 bg-white/10'
-                  : 'border-white/10 bg-transparent text-white/45'
+                  ? 'border-white/25 bg-white/[0.1] text-white'
+                  : 'border-white/[0.08] bg-white/[0.02] text-white/45'
               }`}
             >
               {t(`collection.sort.${option}`)}
@@ -493,10 +506,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase transition ${
+      className={`flex min-h-[38px] shrink-0 items-center rounded-full border px-3.5 t-micro transition active:scale-[0.97] ${
         active
           ? 'border-white/30 bg-white/[0.12] text-white'
-          : 'border-white/10 bg-white/5 text-white/50'
+          : 'border-white/[0.08] bg-white/[0.02] text-white/50'
       }`}
       style={active && accent ? { color: accent, borderColor: `${accent}66` } : undefined}
     >

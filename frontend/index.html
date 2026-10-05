@@ -2,16 +2,47 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      `viewport-fit=cover` is what lets the app paint into the notch and the gesture
+      area at all; the safe-area variables then tell it where not to put content.
+
+      `interactive-widget=resizes-content` makes the visual viewport shrink when the
+      on-screen keyboard opens instead of the page scrolling behind it - without it, an
+      input in the country sheet opens the keyboard *under* the sheet.
+
+      Zoom is deliberately NOT disabled: locking scale to 1 breaks the OS-level pinch
+      and accessibility-zoom paths on Android, and Telegram's own clients ignore it
+      anyway. Nothing in the layout depends on it.
+    -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#05060c" />
-    <meta name="description" content="NUMORA - collect vehicle plates and SIM cards from around the world." />
-    <title>NUMORA — Global collectible atlas</title>
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta
+      name="description"
+      content="NUMORA - collect real vehicle plates and SIM cards from around the world."
+    />
+    <title>NUMORA · Global collectible atlas</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      `display=swap` so text paints immediately in the fallback stack: a Mini App that
+      opens on a slow Android connection must never show an empty box while a webfont
+      downloads.
+    -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Arial+Narrow:wght@500;600;700&display=swap"
+    />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
-  <body class="bg-ink-950 text-white antialiased">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

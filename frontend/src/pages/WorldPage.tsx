@@ -83,18 +83,35 @@ export function WorldPage() {
   if (query.isLoading) return <LoadingSpinner label={t('common.loading')} />;
 
   return (
-    <div className="flex flex-col gap-4 pb-28" data-testid="world-page">
-      <header className="flex flex-col gap-1 px-1">
-        <h1 className="text-lg font-black uppercase tracking-[0.24em] text-white">{t('nav.world')}</h1>
-        <p className="text-xs text-white/45">
-          {t('world.overall')} {Math.round(overall)}% · {query.data?.total_collected ?? 0}/
-          {query.data?.total_plates ?? 0}
+    <div className="flex flex-col gap-4" data-testid="world-page">
+      {/*
+        The atlas header. A title, one number that matters, and nothing else: this screen's
+        job is to let the player scan 250 countries, so the header must not cost them a
+        row of the list.
+      */}
+      <header className="flex flex-col gap-0.5">
+        <h1 className="t-h1 text-white">{t('nav.world')}</h1>
+        <p className="t-caption text-white/50">
+          {t('world.overall')} <span className="font-bold text-white/80">{Math.round(overall)}%</span>
+          <span className="text-white/25"> · </span>
+          {query.data?.total_collected ?? 0}/{query.data?.total_plates ?? 0}
         </p>
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/30">
-          {query.data?.playable_total ?? 0} {t('country.playableCount', { count: '' }).trim()} ·{' '}
+        <p className="t-micro text-white/30">
+          {query.data?.playable_total ?? 0} {t('country.playableCount', { count: '' }).trim()}
+          <span className="text-white/20"> · </span>
           {query.data?.locked_total ?? 0} {t('world.comingSoon')}
         </p>
       </header>
+
+      {/* A single progress bar: the atlas's own completion, in the place you look for it. */}
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+        <motion.div
+          className="h-full rounded-full bg-gradient-to-r from-accent/70 to-brass/70"
+          initial={{ width: 0 }}
+          animate={{ width: `${Math.max(overall, 1)}%` }}
+          transition={SPRING.settle}
+        />
+      </div>
 
       {selectorCountries.length ? (
         <CountrySelector
@@ -117,7 +134,12 @@ export function WorldPage() {
           }
         />
       ) : (
-        <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        /*
+          One column on every phone width. A two-column grid on a 360px screen gives each
+          country 160px, which is not enough for a flag, a name and a progress bar -
+          so the grid only ever appears when there is genuinely room for it.
+        */
+        <ul className="flex flex-col gap-2">
           {countries.map((country) => (
             <CountryCard
               key={country.code}
@@ -189,68 +211,69 @@ function CountryCard({
   return (
     <motion.li
       className={clsx(
-        'relative flex flex-col gap-3 overflow-hidden rounded-2xl border bg-white/[0.03] p-4',
-        locked ? 'border-white/5 opacity-60' : 'border-white/8',
-        boosted && !locked && 'border-amber-300/30',
+        'relative flex flex-col gap-2.5 overflow-hidden rounded-[16px] border bg-white/[0.025] p-3',
+        locked ? 'border-white/[0.04] opacity-60' : 'border-white/[0.07]',
+        boosted && !locked && 'border-amber-300/25',
       )}
-      whileTap={locked || reduced ? undefined : { scale: 0.985 }}
+      whileTap={locked || reduced ? undefined : { scale: 0.99 }}
       data-testid={`world-country-${country.code}`}
       data-locked={locked}
     >
       <div className="flex items-start gap-3">
-        <span className="text-3xl leading-none" aria-hidden>
+        <span className="text-[28px] leading-none" aria-hidden>
           {country.flag}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold uppercase tracking-[0.12em] text-white">{name}</p>
-          <p className="text-[11px] text-white/40">
+          {/* Case is kept: a country name is a proper noun, and uppercasing a 20-character
+              Russian name at 0.2em tracking is what made the old atlas look sparse. */}
+          <p className="truncate t-h2 text-white">{name}</p>
+          <p className="mt-0.5 truncate t-caption text-white/45">
             {locked
               ? `${country.code} · ${t('world.comingSoon')}`
               : `${country.collected} / ${country.total} · ${percent}%`}
           </p>
-          {/* How many formats exist here, and how many regions I have reached. */}
-          {!locked && (
-            <p className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-white/30">
-              {t('world.formats', { count: country.total })} ·{' '}
+          {!locked ? (
+            <p className="mt-0.5 truncate text-[11px] text-white/30">
+              {t('world.formats', { count: country.total })}
+              <span className="text-white/20"> · </span>
               {t('world.regions', {
                 found: country.regions_collected,
                 total: country.regions_total,
               })}
             </p>
-          )}
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          {boosted && (
+          {boosted ? (
             <span className="rounded-md border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-200">
               ×{eventMultiplier?.toFixed(1)}
             </span>
-          )}
+          ) : null}
           {locked ? (
-            <span className="rounded-md border border-amber-300/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-amber-200/70">
+            <span className="rounded-md border border-amber-300/25 px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.06em] text-amber-200/70">
               {t('country.locked')}
             </span>
           ) : country.best_rarity ? (
-            <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60">
+            <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/55">
               {country.best_rarity}
             </span>
           ) : null}
         </div>
       </div>
 
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
         <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-accent to-fuchsia-500"
+          className="h-full rounded-full bg-gradient-to-r from-accent/70 to-brass/70"
           initial={reduced ? false : { width: 0 }}
           animate={{ width: `${Math.max(percent, 2)}%` }}
           transition={SPRING.settle}
-          style={{ width: `${Math.max(percent, 2)}%` }}
         />
       </div>
 
       <div className="flex items-center justify-between gap-2">
         <span
           className={clsx(
-            'text-[10px] font-bold uppercase tracking-[0.18em]',
+            't-micro',
             hook?.tone === 'gold' && 'text-amber-300',
             hook?.tone === 'hot' && 'text-rose-300',
             hook?.tone === 'warm' && 'text-emerald-300',
@@ -264,7 +287,7 @@ function CountryCard({
           <button
             type="button"
             onClick={onHunt}
-            className="min-h-[34px] rounded-full border border-white/12 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/80 transition active:scale-95"
+            className="min-h-[36px] rounded-full border border-white/12 bg-white/[0.04] px-3.5 text-[11px] font-semibold tracking-[0.04em] text-white/80 transition active:scale-95"
           >
             {t('world.huntThisCountry')}
           </button>

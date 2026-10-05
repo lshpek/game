@@ -101,9 +101,11 @@ describe('RollBalanceLine', () => {
         })}
       />,
     );
+    // The total bank is the headline; the bonus part of it is named separately so a
+    // player is never surprised by a roll spending a bonus roll.
     expect(screen.getByText('21 rolls')).toBeInTheDocument();
-    expect(screen.getByText('+3 bonus')).toBeInTheDocument();
-    expect(screen.getByText(/in 20m/)).toBeInTheDocument();
+    expect(screen.getByText('+3 bonus rolls')).toBeInTheDocument();
+    expect(screen.getByText(/next in 20m/)).toBeInTheDocument();
   });
 
   it('formats countdowns compactly', () => {

@@ -36,6 +36,22 @@ export const SPRING = {
   tap: { type: 'spring' as const, stiffness: 520, damping: 32, mass: 0.6 },
 };
 
+/**
+ * Human-friendly countdown.
+ *
+ * `0:07` under a minute, `32m` under an hour, `1h 01m` above. Deliberately compact rather
+ * than a running clock: this string lives inside the roll button, where a `mm:ss` clock
+ * would widen as the minute digit count changes and make the button's label reflow.
+ */
+export function formatCountdown(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0:00';
+  if (seconds < 60) return `0:${Math.floor(seconds).toString().padStart(2, '0')}`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${(minutes % 60).toString().padStart(2, '0')}m`;
+}
+
 /** Milliseconds shared between components so gestures hand off without a jolt. */
 export const DURATION = {
   press: 0.12,
@@ -45,20 +61,24 @@ export const DURATION = {
 } as const;
 
 /**
- * Reveal length by rarity.
+ * Reveal length by rarity, in milliseconds.
  *
- * Scaled by a rarity *reward*, not by randomness: a common find should be fast, a
- * legendary one should feel like an event. These are upper bounds for a presentation the
- * player can always skip - the animation never decides what they got.
+ * The whole ladder sits inside a 1.2-2.2 second band on purpose. It scales by a rarity
+ * *reward*, not by randomness - a common find is fast and quiet, a legendary one feels
+ * like an event - but it never runs long, because a reveal the player has to wait
+ * through is the fastest way to make a game feel slow on the phone they are holding.
+ *
+ * The reveal's staging lives in `Reveal.tsx`; these are the numbers it reads so the
+ * timing table and the sequence stay in one place.
  */
 export const REVEAL_DURATION = {
-  COMMON: 1900,
-  UNCOMMON: 2050,
-  RARE: 2450,
-  EPIC: 2750,
-  LEGENDARY: 3100,
-  MYTHIC: 3400,
-  SECRET: 3600,
+  COMMON: 1250,
+  UNCOMMON: 1400,
+  RARE: 1700,
+  EPIC: 1900,
+  LEGENDARY: 2100,
+  MYTHIC: 2200,
+  SECRET: 2200,
 } as const;
 
 export type RevealTier = keyof typeof REVEAL_DURATION;

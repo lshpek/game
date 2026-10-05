@@ -7,15 +7,35 @@ import type { PlateCard, PlateVisual, PlateSegmentKind } from '../types';
  * A real vehicle registration plate, rendered from the server's country recipe.
  *
  * The component owns *how a plate is drawn* - a metal frame, a bevelled face, mounting
- * bolts, a country identifier band, a separated region block and a controlled
- * reflection. It owns **nothing** about how any country looks: proportions, surface
- * colours, typography, letter spacing, digit sizes, the band, the region placement and
- * the bolt count all arrive in `visual` from the backend. Adding a country therefore
- * needs no change here at all.
+ * hardware, a country identifier band, a separated region compartment and a controlled
+ * reflection. It owns **nothing** about how any country looks: the real physical size,
+ * the surface colours, typography, letter spacing, digit sizes, the band, the region
+ * compartment and the mounting hardware all arrive in `visual` from the backend. Adding
+ * a country therefore needs no change here at all.
  *
- * What it deliberately does not do: use a giant flag emoji as an identifier. The country
- * code is printed small inside a proper side band - the EU blue band with the country's
- * own alpha-2 code where the country uses one.
+ * ### The physical model
+ *
+ * A plate is a pressed metal rectangle with a printed face. Seven layers, in order:
+ *
+ * 1. **Frame** - the metal rim the plate is pressed into, with a highlight along its top
+ *    edge and a dark line along the bottom.
+ * 2. **Face** - the printed field, with an inner bevel top and bottom.
+ * 3. **Grain** - a very low-contrast horizontal texture, so a large light field is not
+ *    flat paper.
+ * 4. **Wear** - three hairline scratches. Real plates are used.
+ * 5. **Print** - the serial, its groups, raised lettering.
+ * 6. **Gloss** - one controlled diagonal reflection whose strength comes from the recipe.
+ * 7. **Mounting** - bolts or pressed holes, drawn on the frame.
+ *
+ * Order matters: the gloss sits *over* the print because that is how a reflective face
+ * behaves, and the wear sits under it for the same reason.
+ *
+ * ### Proportions
+ *
+ * `visual.aspect` is the server's `width_mm / height_mm` for the country's real format -
+ * 4.64 for the Russian 520x112 plate, 4.73 for an EU long plate, 2.01 for a US plate.
+ * The renderer never invents a ratio, because a plate at the wrong ratio is the single
+ * clearest tell that it is a card with text on it rather than a physical object.
  */
 
 interface Props {
@@ -25,11 +45,15 @@ interface Props {
   displaySegmentGaps?: boolean[];
   displaySegmentKinds?: PlateSegmentKind[];
   regionName?: string | null;
+  /** The region's own code, which is what a plate actually prints. */
+  regionCode?: string | null;
   /** Multiplies the printed size. 1 renders at the recipe's natural size. */
   scale?: number;
   className?: string;
   /** Accessible description; defaults to the plate text itself. */
   ariaLabel?: string;
+  /** Runs the one-shot specular sweep. Only the reveal should pass this. */
+  sweep?: boolean;
 }
 
 /** A CSS custom-property bag, typed once. */
@@ -91,9 +115,11 @@ export default function VehiclePlateVisual({
   displaySegmentGaps,
   displaySegmentKinds,
   regionName,
+  regionCode,
   scale = 1,
   className = '',
   ariaLabel,
+  sweep = false,
 }: Props) {
   const segments = useSegments(
     plateText,
@@ -117,44 +143,70 @@ export default function VehiclePlateVisual({
       '--plate-band-color': visual.band_color ?? '#003399',
       '--plate-band-text-color': visual.band_text_color,
       '--plate-header-color': visual.header_color || visual.muted,
-      '--plate-sheen': String(visual.gloss ? Math.min(1, visual.sheen) : 0.12),
+      '--plate-sheen': String(visual.gloss ? Math.min(1, visual.sheen) : 0.08),
       '--plate-bolt-color': visual.mount_color,
-      '--plate-rail': `${Math.max(2, Math.round(4 * scale))}px`,
+      '--plate-rail': `${Math.max(2, Math.round(3 * scale))}px`,
+      '--plate-raise': String(Math.max(0, Math.min(1, visual.relief ?? 0.35))),
+      '--plate-grain': String(Math.max(0, Math.min(1, visual.grain ?? 0.16))),
     }),
     [visual, scale],
   );
 
+  /*
+   * The frame is sized from the recipe's own millimetres, scaled: a 520mm plate at
+   * scale 1 is 520 CSS px wide, which is exactly the physical size on a 1:1 display and
+   * behaves predictably at every other one. `max-width: 100%` is the only thing standing
+   * between the object and a horizontal overflow on a 320px screen.
+   */
   const frameVars = useMemo<StyleVars>(
     () => ({
       ...recipeVars,
       aspectRatio: `${visual.aspect}`,
-      width: `${Math.round(520 * scale)}px`,
+      width: `${Math.round(visual.width_mm * scale)}px`,
       maxWidth: '100%',
     }),
-    [recipeVars, visual.aspect, scale],
+    [recipeVars, visual.aspect, visual.width_mm, scale],
   );
 
-  const faceVars = useMemo<StyleVars>(
-    () => ({
+  const regionText = (regionCode ?? '').trim() || (regionName ?? '').trim();
+
+  /*
+   * A two-compartment plate owns the region segment.
+   *
+   * On the Russian format the registration is `<letter><3 digits><2 letters>` and the
+   * region code lives in its own right-hand compartment. The stored `plate_text` still
+   * contains both, because that is what makes the text searchable - so the renderer has
+   * to *move* the region group into the compartment rather than print it twice. Printing
+   * both was the old behaviour, and a plate with "777" appearing twice reads as a mistake
+   * because on a real plate it appears once.
+   */
+  const hasRegionCompartment = visual.region_position === 'right' && Boolean(regionText);
+  const printed = hasRegionCompartment
+    ? segments.filter((segment) => segment.kind !== 'region')
+    : segments;
+
+  const faceVars = useMemo<StyleVars>(() => {
+    const bandOnLeft = visual.band_position === 'left';
+    const bandOnRight = visual.band_position === 'right';
+    // A two-compartment plate sets its registration left of centre, because the
+    // compartment occupies the right-hand space.
+    const compartment = hasRegionCompartment;
+    return {
       width: '100%',
       height: '100%',
-      gap: `${visual.band_position === 'left' || visual.band_position === 'right' ? 0 : 1}%`,
-      justifyContent:
-        visual.band_position === 'right'
-          ? 'flex-end'
-          : visual.band_position === 'left'
-            ? 'flex-start'
-            : 'center',
-      paddingLeft: visual.band_position === 'left' ? '1.5%' : '3%',
-      paddingRight: visual.band_position === 'right' ? '1.5%' : '3%',
-    }),
-    [visual.band_position],
-  );
+      gap: bandOnLeft || bandOnRight ? 0 : '1%',
+      justifyContent: bandOnRight ? 'flex-end' : bandOnLeft || compartment ? 'flex-start' : 'center',
+      // Inner margins of the printed field. A real plate keeps a generous border so the
+      // registration never runs into the frame.
+      paddingLeft: bandOnLeft ? '1.2%' : compartment ? '3%' : '4%',
+      paddingRight: bandOnRight ? '1.2%' : compartment ? '2%' : '4%',
+    };
+  }, [visual.band_position, hasRegionCompartment]);
 
   const hasBand =
     visual.band_position !== 'none' &&
     Boolean(visual.band_color) &&
-    (Boolean(visual.band_text) || visual.band_flag || visual.band_stars);
+    (Boolean(visual.band_text) || visual.band_stars || Boolean(visual.band_flag));
   const bandWidth = `${Math.max(3, visual.band_width * 100).toFixed(1)}%`;
 
   /**
@@ -167,54 +219,37 @@ export default function VehiclePlateVisual({
    */
   const { fontSize, baseFontPx } = useMemo(() => {
     const longest = Math.max(1, plateText.replace(/\s/g, '').length);
-    const min = Math.round(9 * scale);
-    const max = Math.round(58 * scale);
+    const min = Math.round(7 * scale);
+    const max = Math.round(52 * scale);
     return {
       baseFontPx: max,
-      fontSize: `clamp(${min}px, ${(100 / (longest * 0.72)).toFixed(2)}cqw, ${max}px)`,
+      fontSize: `clamp(${min}px, ${(100 / (longest * 0.62)).toFixed(2)}cqw, ${max}px)`,
     };
   }, [plateText, scale]);
 
   const header = resolveHeader(visual, regionName);
-  const bolts = resolveBolts(visual.bolts);
+  const mounts = resolveMounts(visual.mount, visual.mount_size);
 
   return (
     <div
-      className={`plate-frame plate-texture ${className}`}
+      className={`plate-frame plate-texture plate-wear ${className}`}
       style={{ ...frameVars, containerType: 'inline-size' } as React.CSSProperties}
       role="img"
       aria-label={ariaLabel ?? plateText}
+      data-plate-theme={visual.theme}
+      data-mount={visual.mount}
     >
-      <div
-        className="plate-face"
-        style={faceVars as React.CSSProperties}
-      >
+      <div className="plate-face" style={faceVars as React.CSSProperties}>
         {hasBand && visual.band_position === 'left' && (
-          <div
-            className="plate-band"
-            style={{ width: bandWidth }}
-            aria-hidden="true"
-          >
-            {visual.band_stars && <span className="plate-stars" />}
-            {/* A national emblem, kept small: a plate identifier is a printed mark,
-                not a flag pasted over the object. */}
-            {visual.band_flag && <span style={{ fontSize: '0.6em' }}>★</span>}
-            {visual.band_text && (
-              <span style={{ fontSize: '0.72em' }}>{visual.band_text}</span>
-            )}
-          </div>
+          <PlateBand visual={visual} width={bandWidth} />
         )}
 
         {header && (
           <div
             className="plate-header"
             style={{
-              top: visual.header_align === 'center' ? '7%' : '6%',
-              textAlign: (visual.header_align === 'left'
-                ? 'left'
-                : visual.header_align === 'right'
-                  ? 'right'
-                  : 'center') as React.CSSProperties['textAlign'],
+              top: `${Math.round((visual.header_offset ?? 0.08) * 100)}%`,
+              textAlign: visual.header_align as React.CSSProperties['textAlign'],
               padding: '0 4%',
               fontSize: header.fontSize,
             }}
@@ -223,26 +258,36 @@ export default function VehiclePlateVisual({
           </div>
         )}
 
-        {visual.emblem && (
+        {visual.emblem && visual.emblem !== 'state_tag' ? (
           <span
             className="plate-emblem"
             style={{
-              bottom: '6%',
-              left: '4%',
-              fontSize: '0.42em',
+              bottom: '7%',
+              left: '5%',
+              fontSize: '0.4em',
               color: visual.muted,
             }}
             aria-hidden="true"
           >
             {emblemGlyph(visual.emblem)}
           </span>
-        )}
+        ) : null}
 
+        {/*
+          The printed serial. On a two-compartment plate this block is left-aligned so
+          the registration sits beside the rule rather than centred across the whole
+          face, which is how the format actually reads.
+        */}
         <div
           className="plate-print"
-          style={{ fontSize, gap: visual.group_gap }}
+          style={{
+            fontSize,
+            gap: visual.group_gap,
+            justifyContent: hasRegionCompartment ? 'flex-start' : undefined,
+            textAlign: hasRegionCompartment ? 'left' : undefined,
+          }}
         >
-          {segments.map((segment, index) => (
+          {printed.map((segment, index) => (
             <span
               key={`${segment.text}-${index}`}
               className={SEGMENT_CLASS[segment.kind]}
@@ -252,7 +297,7 @@ export default function VehiclePlateVisual({
                     ? `${visual.digit_scale}em`
                     : `${visual.letter_scale}em`,
                 fontWeight: segment.kind === 'letter' ? 600 : undefined,
-                letterSpacing: segment.gap ? undefined : '0.02em',
+                letterSpacing: segment.gap ? undefined : '0.015em',
               }}
             >
               {/* The gap is a real character, not just spacing: the printed object must
@@ -263,38 +308,42 @@ export default function VehiclePlateVisual({
           ))}
         </div>
 
-        {usesRegionBlock(segments, visual.region_position) && regionName && (
+        {hasRegionCompartment ? (
           <div
             className="plate-region-block"
             style={{
-              fontSize: `${Math.round(0.52 * baseFontPx)}px`,
-              minWidth: '11%',
+              fontSize: `${Math.round(0.46 * baseFontPx)}px`,
+              width: `${Math.round((visual.region_width || 0.13) * 100)}%`,
             }}
-            aria-hidden="true"
           >
-            <span>{regionName}</span>
+            {/* The Russian format prints the flag, the RUS legend, and the region code
+                beneath them - three printed elements, not one string. */}
+            {visual.region_flag ? (
+              <span className="plate-flag-ru" style={{ marginBottom: '0.25em' }} />
+            ) : null}
+            {visual.region_flag || visual.region_text ? (
+              <span className="plate-region-legend">
+                {visual.region_text}
+              </span>
+            ) : null}
+            <span>{regionText}</span>
           </div>
-        )}
+        ) : null}
 
         {hasBand && visual.band_position === 'right' && (
-          <div
-            className="plate-band"
-            style={{ width: bandWidth }}
-            aria-hidden="true"
-          >
-            {visual.band_stars && <span className="plate-stars" />}
-            {visual.band_text && (
-              <span style={{ fontSize: '0.66em' }}>{visual.band_text}</span>
-            )}
-          </div>
+          <PlateBand visual={visual} width={bandWidth} />
         )}
+
+        {/* Wear sits under the gloss: both are surface effects on top of the print. */}
+        {sweep ? <span className="plate-sweep plate-sweep-run" aria-hidden="true" /> : null}
+        <span className="plate-gloss" aria-hidden="true" />
       </div>
 
-      {bolts.map((position, index) => (
+      {mounts.map((position, index) => (
         <span
           key={index}
-          className="plate-bolt"
-          style={position}
+          className={visual.mount === 'holes' ? 'plate-hole' : 'plate-bolt'}
+          style={{ ...position, width: `${Math.round((visual.mount_size ?? 0.11) * 100)}%` }}
           aria-hidden="true"
         />
       ))}
@@ -302,20 +351,46 @@ export default function VehiclePlateVisual({
   );
 }
 
-/**
- * Whether the region is already printed as part of the serial.
- *
- * Some layouts put the region inside the serial (``KZ``'s region template), others keep
- * it in a separate right-hand compartment (``RU``). Printing it twice would be wrong, so
- * the compartment is only drawn when the serial does not already carry it.
- */
-function usesRegionBlock(
-  segments: Array<{ kind: PlateSegmentKind }>,
-  regionPosition: string,
-): boolean {
+/** The country identifier band: an EU blue stripe with stars and the country's code. */
+function PlateBand({ visual, width }: { visual: PlateVisual; width: string }) {
   return (
-    regionPosition === 'right' && !segments.some((segment) => segment.kind === 'region')
+    <div className="plate-band" style={{ width }} aria-hidden="true">
+      {visual.band_stars && <span className="plate-stars" />}
+      {visual.band_flag === 'ru' && <span className="plate-flag-ru" style={{ width: '2em' }} />}
+      {visual.band_text && (
+        <span style={{ fontSize: '0.66em', letterSpacing: '0.03em' }}>{visual.band_text}</span>
+      )}
+    </div>
   );
+}
+
+/**
+ * Mounting hardware positions as percentages of the frame.
+ *
+ * Four positions for a car plate, two for a US-style plate that is slotted rather than
+ * drilled at the corners. Pressed screw holes sit between the corners instead, which is
+ * how a North American plate is actually fixed.
+ */
+function resolveMounts(
+  mount: string,
+  size = 0.11,
+): Array<Record<string, string>> {
+  if (mount === 'none') return [];
+  const half = `${Math.round(size * 50)}%`;
+  if (mount === 'holes') {
+    // Two pressed holes on the horizontal centre line, like a slotted US plate.
+    return [
+      { left: '2%', top: '50%', transform: 'translateY(-50%)' },
+      { right: '2%', top: '50%', transform: 'translateY(-50%)' },
+    ];
+  }
+  // Four corner bolts: the CIS/EU screw-and-washer pattern.
+  return [
+    { left: half, top: half, transform: 'translate(-50%, -50%)' },
+    { right: half, top: half, transform: 'translate(50%, -50%)' },
+    { left: half, bottom: half, transform: 'translate(-50%, 50%)' },
+    { right: half, bottom: half, transform: 'translate(50%, 50%)' },
+  ];
 }
 
 /**
@@ -331,27 +406,10 @@ function resolveHeader(
 ): { text: string; fontSize: string } | null {
   if (visual.header_source === 'region') {
     if (!regionName) return null;
-    return { text: regionName, fontSize: '0.42em' };
+    return { text: regionName, fontSize: '0.4em' };
   }
   if (visual.header_source === 'none' || !visual.header) return null;
-  return { text: visual.header, fontSize: '0.34em' };
-}
-
-/** Bolt positions as percentages of the frame. Four on a car plate, two on a US plate. */
-function resolveBolts(count: number): Array<Record<string, string>> {
-  if (count === 2) {
-    return [
-      { left: '1.2%', top: '50%', transform: 'translateY(-50%)' },
-      { right: '1.2%', top: '50%', transform: 'translateY(-50%)' },
-    ];
-  }
-  if (count !== 4) return [];
-  return [
-    { left: '1.2%', top: '14%' },
-    { right: '1.2%', top: '14%' },
-    { left: '1.2%', bottom: '14%' },
-    { right: '1.2%', bottom: '14%' },
-  ];
+  return { text: visual.header, fontSize: '0.3em' };
 }
 
 /**
@@ -366,8 +424,6 @@ function emblemGlyph(emblem: string): string {
       return '★';
     case 'green_mark':
       return '品';
-    case 'state_tag':
-      return '';
     case 'crest':
       return '◆';
     default:
@@ -396,10 +452,11 @@ export function PlateObject({
         displaySegmentGaps={card.display_segment_gaps}
         displaySegmentKinds={card.display_segment_kinds}
         regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
+        regionCode={card.region?.code ?? null}
         scale={scale}
       />
       {showValue && (
-        <span className="text-xs font-semibold text-white/70">
+        <span className="t-caption font-semibold text-white/70">
           {card.currency_symbol}
           {formatCoins(card.collector_value)}
         </span>

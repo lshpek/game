@@ -13,17 +13,27 @@ from pydantic import BaseModel, Field
 class PlateVisualSchema(BaseModel):
     """The complete country presentation recipe.
 
-    The client renders exactly what is here: aspect ratio, surface, typography, the
-    country identifier band, region placement and mounting hardware. Nothing about a
-    country's plate shape lives in the frontend.
+    The client renders exactly what is here: the plate's real physical size, the surface,
+    the typography, the country identifier band, region placement, mounting hardware and
+    finish. Nothing about a country's plate shape lives in the frontend.
+
+    ``aspect`` is the ratio derived from ``width_mm``/``height_mm``; it is sent alongside
+    them so a client can use either, but the millimetre dimensions are the source of
+    truth and a payload where they disagree is a bug on the server.
     """
 
     theme: str = "european"
     plate_family: str = "eu_long"
     variant: str = "standard"
-    aspect: float = 4.6
+
+    # Physical geometry.
+    width_mm: int = 520
+    height_mm: int = 112
+    aspect: float = 4.643
     radius: str = "6px"
     border_width: str = "2px"
+
+    # Surface.
     background: str = "#f4f6fb"
     background_alt: str = "#e8ecf4"
     border: str = "#1f2937"
@@ -31,6 +41,8 @@ class PlateVisualSchema(BaseModel):
     muted: str = "#6b7280"
     accent: str = "#7c5cff"
     texture: str = "metal"
+
+    # Typography.
     font_stack: str = "display"
     font_stack_key: str = "euro"
     letter_spacing: str = "0.06em"
@@ -38,6 +50,8 @@ class PlateVisualSchema(BaseModel):
     digit_scale: float = 1.0
     letter_scale: float = 0.92
     digit_weight: int = 700
+
+    # Country identifier.
     band_position: str = "left"
     band_color: str | None = None
     band_width: float = 0.0
@@ -45,19 +59,41 @@ class PlateVisualSchema(BaseModel):
     band_text_source: str = "static"
     band_text_color: str = "#ffffff"
     band_stars: bool = False
-    band_flag: bool = False
+    #: ``None`` = no flag; a key such as ``"ru"`` = the tricolour, drawn as vectors.
+    band_flag: str | None = None
+    band_emblem: str = ""
+
+    # Printed header.
     header: str = ""
     header_align: str = "center"
     header_source: str = "static"
     header_color: str = "#6b7280"
+    header_offset: float = 0.08
+
+    # Region placement.
     region_position: str = "inline"
     region_style: str = "block"
+    region_badge: bool = True
+    region_width: float = 0.0
+    #: Whether the right-hand compartment prints the country's flag above the code.
+    region_flag: bool = False
+    #: The code printed in that compartment (e.g. ``RUS``), resolved server-side.
+    region_text: str = ""
     show_flag: bool = True
     show_region_flag: bool = True
-    bolts: int = 4
+
+    # Mounting hardware: ``bolts`` | ``holes`` | ``none``.
+    mount: str = "bolts"
     mount_color: str = "#8a9099"
+    mount_size: float = 0.11
+
+    # Finish.
     gloss: bool = True
     sheen: float = 0.5
+    #: Raised-lettering relief, 0..1.
+    relief: float = 0.35
+    #: Surface grain, 0..1.
+    grain: float = 0.16
     emblem: str = ""
 
 

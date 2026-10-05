@@ -1,87 +1,92 @@
-import { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import clsx from 'clsx';
-import { useI18n, type DictKey } from '@/i18n';
-import { haptic } from '@/lib/telegram';
+
+import { useT } from '@/i18n';
+import { SPRING, useReducedMotion } from '@/lib/motion';
+import { hapticCue } from '@/lib/telegram';
 import type { CollectibleKind } from '@/types';
 
 /**
- * Kind picker: a game-mode selector, not a form field.
+ * What you are hunting: ALL / PLATES / SIM.
  *
- * NUMORA has exactly two kinds, so the three states are ALL / PLATES / SIM. They sit
- * in one row so switching costs a single tap - hunting is the loop, and a player
- * should never walk through screens to change what they are hunting.
+ * Exactly the two collectible kinds NUMORA has, plus the option not to filter. There is no
+ * `PHONE_NUMBER`: a phone number is printed on a SIM card, not a separate collectible, and
+ * offering a third option here would tell the player the opposite.
+ *
+ * Three equally-weighted segments, because a segmented control is what this is: they are
+ * mutually exclusive and always all visible. Using a dropdown would hide the SIM line
+ * behind a tap, and a SIM is one of the two things you can collect.
  */
 
-const KIND_ORDER: Array<CollectibleKind | 'ALL'> = ['ALL', 'VEHICLE_PLATE', 'SIM_CARD'];
-
-const KIND_LABEL: Record<CollectibleKind | 'ALL', DictKey> = {
-  ALL: 'category.all',
-  VEHICLE_PLATE: 'category.plate',
-  SIM_CARD: 'category.sim',
+type KindTab = {
+  key: CollectibleKind | null;
+  label: 'category.all' | 'category.plate' | 'category.sim';
 };
 
-const KIND_ICON: Record<CollectibleKind | 'ALL', string> = {
-  ALL: '\u{1F30D}',
-  VEHICLE_PLATE: '\u{1F699}',
-  SIM_CARD: '\u{1F4F7}',
-};
+/*
+ * Exactly the two collectible kinds NUMORA has, plus the option not to filter. There is no
+ * `PHONE_NUMBER`: a phone number is printed on a SIM card, not a separate collectible, and
+ * offering a third option here would tell the player the opposite.
+ */
+const TABS: KindTab[] = [
+  { key: null, label: 'category.all' },
+  { key: 'VEHICLE_PLATE', label: 'category.plate' },
+  { key: 'SIM_CARD', label: 'category.sim' },
+];
 
 interface KindSelectorProps {
   value: CollectibleKind | null;
-  onChange: (value: CollectibleKind | null) => void;
+  onChange: (kind: CollectibleKind | null) => void;
   disabled?: boolean;
-  counts?: Partial<Record<CollectibleKind, number>>;
   className?: string;
 }
 
-export function KindSelector({ value, onChange, disabled = false, counts, className }: KindSelectorProps) {
-  const { t } = useI18n();
-
-  const items = useMemo(
-    () =>
-      KIND_ORDER.map((key) => ({
-        key,
-        label: t(KIND_LABEL[key]),
-        icon: KIND_ICON[key],
-        count: key === 'ALL' ? undefined : counts?.[key],
-      })),
-    [counts, t],
-  );
+export function KindSelector({ value, onChange, disabled = false, className }: KindSelectorProps) {
+  const t = useT();
+  const reduced = useReducedMotion();
 
   return (
     <div
-      className={clsx('no-scrollbar flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]', className)}
+      className={clsx(
+        'relative flex gap-1 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-1',
+        className,
+      )}
       role="tablist"
       aria-label={t('category.aria')}
       data-testid="kind-selector"
     >
-      {items.map((item) => {
-        const active = (value ?? 'ALL') === item.key;
+      {TABS.map((tab) => {
+        const active = value === tab.key;
         return (
           <button
-            key={item.key}
+            key={tab.label}
             type="button"
             role="tab"
             aria-selected={active}
             disabled={disabled}
+            data-testid={`kind-${tab.key ?? 'ALL'}`}
             onClick={() => {
-              haptic('light');
-              onChange(item.key === 'ALL' ? null : item.key);
+              if (active) return;
+              hapticCue('tap');
+              onChange(tab.key);
             }}
             className={clsx(
-              'flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold uppercase tracking-[0.14em] transition active:scale-[0.97]',
-              active
-                ? 'border-white/25 bg-white/[0.12] text-white shadow-[0_0_24px_-8px_rgba(255,255,255,0.5)]'
-                : 'border-white/8 bg-white/[0.03] text-white/45',
-              disabled && 'opacity-50',
+              // `relative` over the shared indicator: a shared layout animation needs both
+              // elements in the same stacking context to slide rather than cross-fade.
+              'relative min-h-[44px] flex-1 rounded-xl px-2 t-caption font-semibold transition',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+              active ? 'text-white' : 'text-white/45',
             )}
-            data-testid={`kind-${item.key}`}
           >
-            <span aria-hidden>{item.icon}</span>
-            {item.label}
-            {item.count !== undefined ? (
-              <span className="rounded-full bg-white/10 px-1.5 text-[9px]">{item.count}</span>
+            {active ? (
+              <motion.span
+                layoutId="kind-indicator"
+                className="absolute inset-0 -z-10 rounded-xl bg-white/[0.1]"
+                style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)' }}
+                transition={reduced ? { duration: 0 } : SPRING.tap}
+              />
             ) : null}
+            {t(tab.label)}
           </button>
         );
       })}
@@ -89,5 +94,4 @@ export function KindSelector({ value, onChange, disabled = false, counts, classN
   );
 }
 
-/** Compatibility alias so older imports keep working. */
-export const CategorySelector = KindSelector;
+export default KindSelector;
