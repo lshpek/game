@@ -516,7 +516,6 @@ class TestLabService:
             template=template_option,
             luck=target or Rarity.COMMON,
             styles=styles,
-            force_secret=target is Rarity.SECRET,
         )
 
         if grant_to is None:

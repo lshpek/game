@@ -25,7 +25,7 @@ import type { PlateCard, PlateVisual, PlateSegmentKind } from '../types';
  * 4. **Wear** - three hairline scratches. Real plates are used.
  * 5. **Print** - the serial, its groups, raised lettering.
  * 6. **Gloss** - one controlled diagonal reflection whose strength comes from the recipe.
- * 7. **Mounting** - bolts or pressed holes, drawn on the frame.
+ * 7. **Edge** - a clean pressed-metal rim with no decorative mounting circles.
  *
  * Order matters: the gloss sits *over* the print because that is how a reflective face
  * behaves, and the wear sits under it for the same reason.
@@ -153,7 +153,6 @@ export default function VehiclePlateVisual({
       '--plate-band-text-color': visual.band_text_color,
       '--plate-header-color': visual.header_color || visual.muted,
       '--plate-sheen': String(visual.gloss ? Math.min(1, visual.sheen) : 0.08),
-      '--plate-bolt-color': visual.mount_color,
       '--plate-rail': `${Math.max(2, Math.round(3 * scale))}px`,
       '--plate-raise': String(Math.max(0, Math.min(1, visual.relief ?? 0.35))),
       '--plate-grain': String(Math.max(0, Math.min(1, visual.grain ?? 0.16))),
@@ -253,8 +252,6 @@ export default function VehiclePlateVisual({
   }, [plateText, scale]);
 
   const header = resolveHeader(visual, regionName);
-  const mounts = resolveMounts(visual.mount, visual.mount_size);
-
   return (
     <div
       className={`plate-frame plate-texture plate-wear ${className}`}
@@ -368,14 +365,6 @@ export default function VehiclePlateVisual({
         <span className="plate-gloss" aria-hidden="true" />
       </div>
 
-      {mounts.map((position, index) => (
-        <span
-          key={index}
-          className={visual.mount === 'holes' ? 'plate-hole' : 'plate-bolt'}
-          style={{ ...position, width: `${Math.round((visual.mount_size ?? 0.11) * 100)}%` }}
-          aria-hidden="true"
-        />
-      ))}
     </div>
   );
 }
@@ -414,35 +403,6 @@ function PlateBand({ visual, width }: { visual: PlateVisual; width: string }) {
       )}
     </div>
   );
-}
-
-/**
- * Mounting hardware positions as percentages of the frame.
- *
- * Four positions for a car plate, two for a US-style plate that is slotted rather than
- * drilled at the corners. Pressed screw holes sit between the corners instead, which is
- * how a North American plate is actually fixed.
- */
-function resolveMounts(
-  mount: string,
-  size = 0.11,
-): Array<Record<string, string>> {
-  if (mount === 'none') return [];
-  const half = `${Math.round(size * 50)}%`;
-  if (mount === 'holes') {
-    // Two pressed holes on the horizontal centre line, like a slotted US plate.
-    return [
-      { left: '2%', top: '50%', transform: 'translateY(-50%)' },
-      { right: '2%', top: '50%', transform: 'translateY(-50%)' },
-    ];
-  }
-  // Four corner bolts: the CIS/EU screw-and-washer pattern.
-  return [
-    { left: half, top: half, transform: 'translate(-50%, -50%)' },
-    { right: half, top: half, transform: 'translate(50%, -50%)' },
-    { left: half, bottom: half, transform: 'translate(-50%, 50%)' },
-    { right: half, bottom: half, transform: 'translate(50%, 50%)' },
-  ];
 }
 
 /**

@@ -87,6 +87,7 @@ class PlateAnalysis:
     tags: list[str]
     letter_pattern: str = ""
     reasons: list[str] = field(default_factory=list)
+    region_code: str | None = None
 
     @property
     def numbers(self) -> str:
@@ -381,6 +382,7 @@ def analyze_plate(
     plate_text: str,
     *,
     region_code: str | None = None,
+    quality_digits: str | None = None,
     rarity_floor: str = "COMMON",
     plate_type: str = "STANDARD",
     country_tag: str = "",
@@ -394,7 +396,11 @@ def analyze_plate(
     # The region code is context, not part of the serial. When the plate ends
     # with the region code we strip it from the core so ``A777AA 77`` is judged
     # on its serial 777 rather than on the combined 77777.
-    numeric_core = "".join(digits)
+    numeric_core = (
+        "".join(char for char in quality_digits if char.isdigit())
+        if plate_type in _DIGIT_JUDGED_TYPES and quality_digits is not None
+        else "".join(digits)
+    )
     if (
         region_code
         and region_code.isdigit()
@@ -435,7 +441,8 @@ def analyze_plate(
     # come out as an ordinary plate. These detectors read the digit structure
     # directly, so rarity is a property of the number itself.
     if plate_type in _DIGIT_JUDGED_TYPES:
-        for code in detect_phone_traits(plate_text):
+        pattern_text = quality_digits if quality_digits is not None else plate_text
+        for code in detect_phone_traits(pattern_text):
             if code not in scores:
                 scores[code] = PHONE_TRAIT_WEIGHTS.get(code, 4)
                 traits.append(code)
@@ -462,6 +469,7 @@ def analyze_plate(
         ),
         letter_pattern=letter_signature(letters),
         reasons=reasons,
+        region_code=region_code,
     )
 
 

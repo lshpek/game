@@ -115,58 +115,73 @@ class SimFormat:
 #: Hand-tuned groupings for the countries that ship playable on day one.
 #: ``prefixes`` are stylised national-looking blocks; ``groups`` are digit-run lengths.
 _FORMATS: dict[str, SimFormat] = {
-    "RUS": SimFormat("+7", (("900", 3.0), ("903", 2.0), ("912", 1.5)), (3, 3, 2, 2)),
+    "RUS": SimFormat("+7", (("900", 3.0), ("903", 2.0), ("912", 1.5)), (3, 4)),
     "USA": SimFormat("+1", (("201", 1.0), ("415", 1.0), ("646", 1.0)), (3, 4)),
     "CAN": SimFormat("+1", (("604", 1.0), ("416", 1.0)), (3, 4)),
-    "MEX": SimFormat("+52", (("55", 1.0), ("81", 1.0)), (3, 3, 4)),
-    "BRA": SimFormat("+55", (("11", 1.0), ("21", 1.0)), (4, 4, 4)),
-    "ARG": SimFormat("+54", (("11", 1.0),), (2, 4, 4)),
-    "CHL": SimFormat("+56", (("9", 1.0),), (1, 4, 4)),
-    "COL": SimFormat("+57", (("300", 1.0), ("601", 1.0)), (3, 3, 4)),
-    "GBR": SimFormat("+44", (("7700", 2.0), ("7800", 1.5)), (6, 6)),
+    "MEX": SimFormat("+52", (("55", 1.0), ("81", 1.0)), (4, 4)),
+    "BRA": SimFormat("+55", (("11", 1.0), ("21", 1.0)), (4, 5)),
+    "ARG": SimFormat("+54", (("911", 1.0),), (4, 4)),
+    "CHL": SimFormat("+56", (("9", 1.0),), (4, 4)),
+    "COL": SimFormat("+57", (("300", 1.0), ("601", 1.0)), (3, 4)),
+    "GBR": SimFormat("+44", (("7700", 2.0), ("7800", 1.5)), (6,)),
     "DEU": SimFormat("+49", (("151", 2.0), ("170", 1.0)), (4, 4), alt_groups=((8,),)),
     "FRA": SimFormat("+33", (("6", 1.0), ("7", 0.6)), (2, 2, 2, 2)),
-    "ITA": SimFormat("+39", (("3", 1.0),), (3, 7)),
-    "ESP": SimFormat("+34", (("6", 1.0),), (3, 3, 3)),
-    "PRT": SimFormat("+351", (("9", 1.0),), (3, 3, 3)),
-    "NLD": SimFormat("+31", (("6", 1.0),), (8, 1)),
-    "BEL": SimFormat("+32", (("4", 1.0),), (9, 2)),
-    "CHE": SimFormat("+41", (("79", 1.0),), (9, 2)),
-    "AUT": SimFormat("+43", (("660", 1.0),), (7, 4)),
-    "POL": SimFormat("+48", (("512", 1.0), ("601", 1.0)), (3, 3, 3)),
-    "CZE": SimFormat("+420", (("601", 1.0),), (3, 3, 3)),
+    "ITA": SimFormat("+39", (("3", 1.0),), (4, 5)),
+    "ESP": SimFormat("+34", (("6", 1.0),), (3, 5)),
+    "PRT": SimFormat("+351", (("9", 1.0),), (4, 4)),
+    "NLD": SimFormat("+31", (("6", 1.0),), (8,)),
+    "BEL": SimFormat("+32", (("4", 1.0),), (2, 2, 2, 2)),
+    "CHE": SimFormat("+41", (("79", 1.0),), (3, 2, 2)),
+    "AUT": SimFormat("+43", (("660", 1.0),), (3, 4)),
+    "POL": SimFormat("+48", (("512", 1.0), ("601", 1.0)), (3, 3)),
+    "CZE": SimFormat("+420", (("601", 1.0),), (3, 3)),
     "SVK": SimFormat("+421", (("9", 1.0),), (3, 3, 2)),
-    "HUN": SimFormat("+36", (("20", 1.0), ("30", 1.0)), (2, 3, 4)),
-    "ROU": SimFormat("+40", (("72", 1.0),), (3, 3, 3)),
-    "BGR": SimFormat("+359", (("87", 1.0),), (3, 3, 4)),
-    "GRC": SimFormat("+30", (("69", 1.0),), (3, 4, 4)),
-    "SWE": SimFormat("+46", (("70", 1.0),), (3, 3, 4)),
-    "NOR": SimFormat("+47", (("40", 1.0), ("4", 0.4)), (3, 2, 3)),
-    "DNK": SimFormat("+45", (("20", 1.0),), (2, 2, 2, 2)),
-    "FIN": SimFormat("+358", (("40", 1.0), ("50", 1.0)), (3, 3, 4)),
-    "ISL": SimFormat("+354", (("6", 1.0),), (3, 3, 3)),
-    "IRL": SimFormat("+353", (("8", 1.0),), (3, 3, 4)),
+    "HUN": SimFormat("+36", (("20", 1.0), ("30", 1.0)), (3, 4)),
+    "ROU": SimFormat("+40", (("72", 1.0),), (3, 4)),
+    "BGR": SimFormat("+359", (("87", 1.0),), (3, 4)),
+    "GRC": SimFormat("+30", (("69", 1.0),), (4, 4)),
+    "SWE": SimFormat("+46", (("70", 1.0),), (3, 2, 2)),
+    "NOR": SimFormat("+47", (("4", 1.0), ("9", 0.4)), (3, 2, 2)),
+    "DNK": SimFormat("+45", (("20", 1.0),), (2, 2, 2)),
+    "FIN": SimFormat("+358", (("40", 1.0), ("50", 1.0)), (3, 4)),
+    "ISL": SimFormat("+354", (("6", 1.0),), (3, 3)),
+    "IRL": SimFormat("+353", (("85", 1.0),), (3, 4)),
     "EST": SimFormat("+372", (("5", 1.0),), (3, 4)),
-    "LVA": SimFormat("+371", (("2", 1.0),), (3, 3, 3)),
-    "LTU": SimFormat("+370", (("6", 1.0),), (3, 3, 3)),
-    "UKR": SimFormat("+380", (("50", 1.0), ("67", 1.0)), (3, 3, 3)),
-    "BLR": SimFormat("+375", (("29", 1.0),), (3, 3, 2, 2)),
-    "KAZ": SimFormat("+7", (("700", 2.0), ("747", 1.5)), (3, 3, 2, 2)),
-    "JPN": SimFormat("+81", (("90", 1.0),), (3, 4)),
+    "LVA": SimFormat("+371", (("2", 1.0),), (3, 4)),
+    "LTU": SimFormat("+370", (("6", 1.0),), (3, 4)),
+    "UKR": SimFormat("+380", (("50", 1.0), ("67", 1.0)), (3, 4)),
+    "BLR": SimFormat("+375", (("29", 1.0),), (3, 4)),
+    "KAZ": SimFormat("+7", (("700", 2.0), ("747", 1.5)), (3, 4)),
+    "JPN": SimFormat("+81", (("90", 1.0),), (4, 4)),
     "KOR": SimFormat("+82", (("10", 1.0),), (4, 4)),
-    "CHN": SimFormat("+86", (("139", 1.0), ("158", 1.0)), (4, 4, 4)),
-    "IND": SimFormat("+91", (("987", 1.0), ("900", 1.0)), (5, 5)),
-    "TUR": SimFormat("+90", (("532", 1.0),), (3, 3, 2, 2)),
-    "ISR": SimFormat("+972", (("54", 1.0),), (3, 3, 3)),
-    "ARE": SimFormat("+971", (("50", 1.0),), (3, 3, 4)),
-    "SAU": SimFormat("+966", (("50", 1.0),), (3, 3, 4)),
-    "THA": SimFormat("+66", (("8", 1.0),), (3, 3, 3)),
+    "CHN": SimFormat("+86", (("139", 1.0), ("158", 1.0)), (4, 4)),
+    "IND": SimFormat("+91", (("987", 1.0), ("900", 1.0)), (3, 4)),
+    "TUR": SimFormat("+90", (("532", 1.0),), (3, 4)),
+    "ISR": SimFormat("+972", (("54", 1.0),), (3, 4)),
+    "ARE": SimFormat("+971", (("50", 1.0),), (3, 4)),
+    "SAU": SimFormat("+966", (("50", 1.0),), (3, 4)),
+    "THA": SimFormat("+66", (("8", 1.0),), (4, 4)),
     "SGP": SimFormat("+65", (("8", 1.0), ("9", 0.8)), (4, 4)),
-    "AUS": SimFormat("+61", (("4", 1.0),), (3, 3, 3)),
-    "NZL": SimFormat("+64", (("21", 1.0),), (3, 3, 4)),
-    "ARM": SimFormat("+374", (("77", 1.0),), (3, 3, 2, 2)),
-    "GEO": SimFormat("+995", (("555", 1.0),), (3, 3, 3)),
-    "ZAF": SimFormat("+27", (("82", 1.0),), (3, 3, 3)),
+    "AUS": SimFormat("+61", (("4", 1.0),), (4, 4)),
+    "NZL": SimFormat("+64", (("21", 1.0),), (3, 4)),
+    "ARM": SimFormat("+374", (("77", 1.0),), (3, 3)),
+    "GEO": SimFormat("+995", (("555", 1.0),), (3, 3)),
+    "ZAF": SimFormat("+27", (("82", 1.0),), (3, 4)),
+}
+
+# National significant number lengths for the supported synthetic mobile formats.
+# This independent contract makes an accidental extra template group fail at startup
+# instead of producing an overlong printed line.
+COUNTRY_NSN_LENGTHS: dict[str, int] = {
+    "RUS": 10, "USA": 10, "CAN": 10, "MEX": 10, "BRA": 11, "ARG": 11,
+    "CHL": 9, "COL": 10, "GBR": 10, "DEU": 11, "FRA": 9, "ITA": 10,
+    "ESP": 9, "PRT": 9, "NLD": 9, "BEL": 9, "CHE": 9, "AUT": 10,
+    "POL": 9, "CZE": 9, "SVK": 9, "HUN": 9, "ROU": 9, "BGR": 9,
+    "GRC": 10, "SWE": 9, "NOR": 8, "DNK": 8, "FIN": 9, "ISL": 7,
+    "IRL": 9, "EST": 8, "LVA": 8, "LTU": 8, "UKR": 9, "BLR": 9,
+    "KAZ": 10, "JPN": 10, "KOR": 10, "CHN": 11, "IND": 10, "TUR": 10,
+    "ISR": 9, "ARE": 9, "SAU": 9, "THA": 9, "SGP": 9, "AUS": 9,
+    "NZL": 9, "ARM": 8, "GEO": 9, "ZAF": 9,
 }
 
 
@@ -191,16 +206,58 @@ def sim_format(country_code: str) -> SimFormat:
 def sim_patterns(country_code: str) -> tuple[str, ...]:
     """One template pattern per distinct grouping of a country's numbers."""
     fmt = sim_format(country_code)
+    expected_length = COUNTRY_NSN_LENGTHS.get(str(country_code or "").upper())
     seen: list[str] = []
     for prefix, _weight in fmt.prefixes:
         head = f"+{fmt.calling_code.lstrip('+')}"
         for groups in fmt.groupings():
+            if expected_length is not None and len(prefix) + sum(groups) != expected_length:
+                raise ValueError(f"Invalid synthetic SIM length for {country_code}: {prefix} {groups}")
             pattern = f"{head} {prefix} " + " ".join("D" * size for size in groups)
             if pattern not in seen:
                 seen.append(pattern)
     if not seen:  # pragma: no cover - every format defines at least one grouping
         seen.append(fmt.pattern())
     return tuple(seen)
+
+
+def parse_sim_number(country_code: str, number: str) -> tuple[str, str] | None:
+    """Return canonical grouping and variable digits for a valid country SIM number."""
+    code = str(country_code or "").strip().upper()
+    fmt = sim_format(code)
+    expected_length = COUNTRY_NSN_LENGTHS.get(code)
+    raw = str(number or "")
+    if any(
+        not character.isdigit()
+        and not character.isspace()
+        and character not in "+-()."
+        for character in raw
+    ):
+        return None
+    digits = "".join(character for character in raw if character.isdigit())
+    calling_digits = fmt.calling_code.lstrip("+")
+    if expected_length is None or not digits.startswith(calling_digits):
+        return None
+
+    national = digits[len(calling_digits):]
+    if len(national) != expected_length:
+        return None
+
+    for prefix, _weight in fmt.prefixes:
+        if not national.startswith(prefix):
+            continue
+        variable = national[len(prefix):]
+        for groups in fmt.groupings():
+            if sum(groups) != len(variable):
+                continue
+            chunks: list[str] = []
+            cursor = 0
+            for size in groups:
+                chunks.append(variable[cursor:cursor + size])
+                cursor += size
+            canonical = " ".join((fmt.calling_code, prefix, *chunks))
+            return canonical, variable
+    return None
 
 
 def operators_for(country_code: str) -> tuple[ProviderDef, ...]:

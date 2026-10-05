@@ -112,6 +112,74 @@ class TestSyntheticNumbers:
             for template in sim_templates(country.code):
                 assert template.pattern.startswith("+" + country.calling_code.lstrip("+"))
 
+    def test_every_playable_country_has_valid_nsn_lengths_and_generated_serials(self):
+        assert {country.code for country in PLAYABLE} == set(sim_cards.COUNTRY_NSN_LENGTHS)
+        for country in PLAYABLE:
+            fmt = sim_cards.sim_format(country.code)
+            expected_length = sim_cards.COUNTRY_NSN_LENGTHS[country.code]
+            for prefix, _weight in fmt.prefixes:
+                for groups in fmt.groupings():
+                    assert len(prefix) + sum(groups) == expected_length, country.code
+            template = sim_templates(country.code)[0]
+            generated = _render_pattern(country.code, template)
+            parsed = sim_cards.parse_sim_number(country.code, generated)
+            assert parsed is not None, (country.code, generated)
+            assert parsed[0] == generated, (country.code, generated, parsed[0])
+            assert len("".join(character for character in generated if character.isdigit())) == (
+                len(fmt.calling_code.lstrip("+")) + expected_length
+            )
+
+    def test_overlong_russian_sim_number_is_rejected(self):
+        assert sim_cards.parse_sim_number("RUS", "+79123597912671") is None
+        assert sim_cards.parse_sim_number("RUS", "fake +7 912 359 7912") is None
+
+    def test_overlong_sim_cannot_become_a_generated_collectible(self):
+        from app.core.errors import ValidationError
+        from app.game.plate_generator import TemplateOption, build_generated_plate, styles_for_text
+        from app.game.plate_rarity import Rarity
+
+        country = next(item for item in COUNTRIES if item.code == "RUS")
+        template_def = sim_templates("RUS")[0]
+        template = TemplateOption(
+            code=template_def.code,
+            pattern=template_def.pattern,
+            weight=template_def.weight,
+            plate_type=template_def.plate_type,
+            rarity_floor=template_def.rarity_floor,
+            requires_region=False,
+            config=dict(template_def.config),
+        )
+        invalid_number = "+79123597912671"
+        with pytest.raises(ValidationError, match="does not match"):
+            build_generated_plate(
+                plate_text=invalid_number,
+                country=country,
+                region=None,
+                template=template,
+                luck=Rarity.SECRET,
+                styles=styles_for_text(invalid_number),
+            )
+
+    def test_variable_digits_alone_score_an_ordinary_sim_as_common_even_at_secret_luck(self):
+        from app.game.plate_patterns import analyze_plate
+        from app.game.plate_rarity import Rarity, compute_rarity_score, resolve_final_rarity
+
+        number = "+7 912 359 7912"
+        parsed = sim_cards.parse_sim_number("RUS", number)
+        assert parsed is not None
+        analysis = analyze_plate(
+            number,
+            plate_type="SIM",
+            quality_digits=parsed[1],
+        )
+        rarity = resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.SECRET,
+            score=compute_rarity_score(analysis),
+            traits=analysis.traits,
+        )
+        assert rarity is Rarity.COMMON
+
     def test_a_printed_number_is_synthetic_and_matches_the_country_block(self, db):
         """Rendered numbers look local but are generated game data."""
         for country in ("RUS", "POL", "USA", "DEU", "JPN", "KAZ"):
@@ -294,10 +362,10 @@ class TestProviderWeighting:
         from app.game.plate_rarity import compute_rarity_score
 
         plain = PlateAnalysis(
-            plate_text="+7 900 123 45 67",
-            digits=list("1234567"),
+            plate_text="+7 900 914 6825",
+            digits=list("9146825"),
             letters=[],
-            numeric_core="1234567",
+            numeric_core="9146825",
             traits=["has_letters"],
             scores={"has_letters": 4},
             tags=[],
@@ -355,3 +423,18 @@ def _render_number(country_code: str) -> str:
         country_code=country_code,
     )
     return plate_text
+
+
+def _render_pattern(country_code: str, template):
+    from app.game.plate_generator import render_template
+    from app.game.plate_templates import parse_template
+    from app.game.rng import default_rng
+
+    country = next(item for item in COUNTRIES if item.code == country_code)
+    return render_template(
+        parse_template(template.pattern),
+        alphabet=country.alphabet,
+        region_code=None,
+        rng=default_rng(),
+        country_code=country_code,
+    )[0]

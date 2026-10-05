@@ -719,41 +719,6 @@
     overflow: hidden;
   }
 
-  /* A mounting bolt: a studded head with a washer, as on CIS and EU plates. */
-  .plate-bolt {
-    position: absolute;
-    z-index: 2;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    pointer-events: none;
-    background: radial-gradient(
-      circle at 34% 30%,
-      #f2f4f7 0%,
-      var(--plate-bolt-color, #8a9099) 46%,
-      #3b4149 100%
-    );
-    box-shadow:
-      inset 0 0 0 1px rgba(0, 0, 0, 0.45),
-      0 1px 1px rgba(255, 255, 255, 0.35);
-  }
-
-  /*
-   * A pressed mounting *hole* rather than a bolt head: a dark recess with a bright lower
-   * lip, which is what a screw hole in a metal plate actually looks like. Used for the
-   * North American and Japanese formats.
-   */
-  .plate-hole {
-    position: absolute;
-    z-index: 2;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    pointer-events: none;
-    background: radial-gradient(circle at 50% 38%, #05070c 0%, #14181f 62%, #2b313b 100%);
-    box-shadow:
-      inset 0 1px 2px rgba(0, 0, 0, 0.9),
-      0 1px 0 rgba(255, 255, 255, 0.4);
-  }
-
   /* A small printed corner mark: sponsor block, crest or class mark. */
   .plate-emblem {
     position: absolute;

@@ -127,6 +127,34 @@ def build_reel(
 
     if not frames:
         return []
+    if kind is None and len(frames) > 1:
+        wanted_country = str(country_code or "").strip().upper() or None
+        available: set[CollectibleKind] = set()
+        for code, options in context.templates_by_country.items():
+            if wanted_country is not None and code != wanted_country:
+                continue
+            available.update(kind_for_plate_type(option.plate_type) for option in options)
+        present = {CollectibleKind(frame.kind) for frame in frames}
+        for missing in sorted(available - present, key=lambda item: item.value):
+            replacement_index = next(
+                (
+                    index
+                    for index in range(len(frames) - 1, -1, -1)
+                    if sum(item.kind == frames[index].kind for item in frames) > 1
+                ),
+                len(frames) - 1,
+            )
+            for _ in range(24):
+                candidate = _one_frame(
+                    context, source, country_code=country_code, kind=missing
+                )
+                if candidate is None:
+                    continue
+                previous = frames[replacement_index - 1] if replacement_index else None
+                if country_code or previous is None or previous.country_code != candidate.country_code:
+                    frames[replacement_index] = candidate
+                    present.add(missing)
+                    break
     if len(frames) == 1:
         # A reel needs at least a couple of frames to scroll.
         frames = frames * 2

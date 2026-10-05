@@ -805,7 +805,14 @@ class TestLab:
         body = response.json()
         assert body["mutated"] is False
         assert body["spent_roll"] is False
-        assert body["plate"]["rarity"] == "MYTHIC"
+        from app.game.plate_rarity import Rarity, resolve_final_rarity
+
+        assert body["plate"]["rarity"] == resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.MYTHIC,
+            score=body["plate"]["rarity_score"],
+            traits=body["plate"]["traits"],
+        ).value
         assert body["plate"]["country_code"] == "USA"
         assert body["plate"]["id"] is None
 
@@ -824,11 +831,19 @@ class TestLab:
         assert settings.rarity_weights_override is None or "MYTHIC" in settings.rarity_weights
 
     @pytest.mark.parametrize("rarity", ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "SECRET"])
-    def test_forced_rarity_is_honoured(self, admin_bot, rarity):
+    def test_requested_rarity_never_overrides_pattern_quality(self, admin_bot, rarity):
         body = admin_bot.post(
             "/testlab/simulate", json={"country_code": "RUS", "rarity": rarity}
         ).json()
-        assert body["plate"]["rarity"] == rarity
+        from app.game.plate_rarity import Rarity, resolve_final_rarity
+
+        plate = body["plate"]
+        assert plate["rarity"] == resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity(rarity),
+            score=plate["rarity_score"],
+            traits=plate["traits"],
+        ).value
 
     def test_forced_country_is_honoured(self, admin_bot):
         body = admin_bot.post("/testlab/simulate", json={"country_code": "JPN"}).json()
@@ -837,7 +852,14 @@ class TestLab:
     def test_mythic_usa_preset(self, admin_bot):
         body = admin_bot.post("/testlab/simulate", json={"preset": "MYTHIC_USA"}).json()
         assert body["plate"]["country_code"] == "USA"
-        assert body["plate"]["rarity"] == "MYTHIC"
+        from app.game.plate_rarity import Rarity, resolve_final_rarity
+
+        assert body["plate"]["rarity"] == resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.MYTHIC,
+            score=body["plate"]["rarity_score"],
+            traits=body["plate"]["traits"],
+        ).value
         assert body["plate"]["dealer_value"] > 0
 
     def test_live_mode_mutates_after_confirmation(self, admin_bot, db, player, op):
@@ -855,7 +877,14 @@ class TestLab:
         data = response.json()["data"]
         assert data["mode"] == "LIVE"
         assert data["mutated"] is True
-        assert data["plate"]["rarity"] == "MYTHIC"
+        from app.game.plate_rarity import Rarity, resolve_final_rarity
+
+        assert data["plate"]["rarity"] == resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.MYTHIC,
+            score=data["plate"]["rarity_score"],
+            traits=data["plate"]["traits"],
+        ).value
         assert data["plate"]["country_code"] == "USA"
         assert data["plates_count"] == 1
 

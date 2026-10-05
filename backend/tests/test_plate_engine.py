@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from app.game.countries import COUNTRIES
+from app.game import sim_cards
 from app.game.plate_generator import (
     RegionOption,
     TemplateOption,
@@ -205,6 +206,7 @@ class TestRarityEngine:
         assert score_rarity(30) is Rarity.RARE
         assert score_rarity(60) is Rarity.EPIC
         assert score_rarity(90) is Rarity.LEGENDARY
+        assert score_rarity(100) is Rarity.MYTHIC
         assert score_rarity(130) is Rarity.MYTHIC
 
     def test_natural_rarity_from_patterns(self):
@@ -267,27 +269,64 @@ class TestRarityEngine:
             provider_modifier=1.2,
         ) == plain
 
-    def test_secret_requires_an_explicit_flag(self):
-        assert (
-            resolve_final_rarity(
-                natural=Rarity.MYTHIC,
-                luck=Rarity.MYTHIC,
-                score=199,
-                traits=["pair"],
-                force_secret=False,
-            )
-            is Rarity.MYTHIC
+    def test_ugly_random_sim_digits_stay_common_even_when_secret_is_targeted(self):
+        number = "+7 912 359 7912"
+        parsed = sim_cards.parse_sim_number("RUS", number)
+        assert parsed is not None
+        analysis = analyze_plate(number, plate_type="SIM", quality_digits=parsed[1])
+        rarity = resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.SECRET,
+            score=compute_rarity_score(analysis),
+            traits=analysis.traits,
         )
-        assert (
-            resolve_final_rarity(
-                natural=Rarity.MYTHIC,
-                luck=Rarity.MYTHIC,
-                score=10,
-                traits=["pair"],
-                force_secret=True,
+        assert rarity is Rarity.COMMON
+
+    def test_overlapping_traits_do_not_stack_to_epic_or_legendary(self):
+        analysis = analyze_plate("A7770BC")
+        assert compute_rarity_score(analysis) == 28
+        assert resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.LEGENDARY,
+            score=compute_rarity_score(analysis),
+            traits=analysis.traits,
+        ) is Rarity.RARE
+
+    def test_region_letters_do_not_contribute_to_pattern_quality(self):
+        with_region = analyze_plate("HH AB 1234", region_code="HH")
+        serial_only = analyze_plate("AB 1234")
+        assert compute_rarity_score(with_region) == compute_rarity_score(serial_only)
+
+    def test_stronger_patterns_step_up_the_rarity_ladder(self):
+        def score_for(digits: str) -> int:
+            return compute_rarity_score(
+                analyze_plate(f"+7 900 {digits}", plate_type="SIM", quality_digits=digits)
             )
-            is Rarity.SECRET
+
+        assert score_rarity(score_for("9146825")) is Rarity.COMMON
+        assert score_rarity(score_for("123")) is Rarity.UNCOMMON
+        assert score_rarity(score_for("777")) is Rarity.RARE
+        assert score_rarity(score_for("12345")) is Rarity.EPIC
+        assert score_rarity(score_for("777777")) is Rarity.LEGENDARY
+        assert score_rarity(score_for("77777777")) is Rarity.MYTHIC
+
+    def test_secret_requires_a_perfect_repeated_number_not_a_flag(self):
+        perfect = analyze_plate(
+            "+7 900 7777777777", plate_type="SIM", quality_digits="7777777777"
         )
+        assert resolve_final_rarity(
+            natural=Rarity.COMMON,
+            luck=Rarity.COMMON,
+            score=compute_rarity_score(perfect),
+            traits=perfect.traits,
+        ) is Rarity.SECRET
+        assert resolve_final_rarity(
+            natural=Rarity.MYTHIC,
+            luck=Rarity.SECRET,
+            score=130,
+            traits=["pair"],
+            force_secret=True,
+        ) is Rarity.MYTHIC
 
     def test_pity_only_ever_helps(self):
         base = load_rarity_weights()

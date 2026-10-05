@@ -90,18 +90,17 @@ RARITY_COLOR: dict[str, str] = {
 
 # Score thresholds map intrinsic pattern quality onto a rarity.
 SCORE_THRESHOLDS: tuple[tuple[int, Rarity], ...] = (
-    (120, Rarity.MYTHIC),
+    (100, Rarity.MYTHIC),
     (78, Rarity.LEGENDARY),
-    (48, Rarity.EPIC),
-    (24, Rarity.RARE),
-    (10, Rarity.UNCOMMON),
+    (55, Rarity.EPIC),
+    (28, Rarity.RARE),
+    (12, Rarity.UNCOMMON),
 )
 
-# Secret requires an extreme number pattern plus a second independent feature.
-SECRET_MIN_SCORE = 105
-SECRET_REQUIRED_TRAIT = "special_run"
-SECRET_COMBINATION_TRAITS = frozenset(
-    {"all_same", "four_of_kind", "triple_letter", "letter_palindrome", "mirrored_letters", "symmetric_plate"}
+SECRET_MIN_SCORE = 130
+SECRET_DIGIT_TRAITS = frozenset({"all_same", "four_of_kind", "quad_repeat"})
+SECRET_LETTER_TRAITS = frozenset(
+    {"triple_letter", "letter_palindrome", "mirrored_letters", "perfect_symmetry"}
 )
 
 # Bad-luck protection thresholds (consecutive rolls without a tier).
@@ -177,7 +176,25 @@ def max_rarity(*rarities: str | Rarity) -> Rarity:
 
 def natural_rarity(analysis: "PlateAnalysis") -> Rarity:
     """Rarity implied by intrinsic patterns, without luck or template labels."""
-    return score_rarity(sum(analysis.scores.values()))
+    return _quality_rarity(compute_rarity_score(analysis), analysis.traits)
+
+
+def _secret_eligible(score: int, traits: list[str]) -> bool:
+    trait_set = set(traits)
+    has_exceptional_mix = bool(SECRET_DIGIT_TRAITS & trait_set) and bool(
+        SECRET_LETTER_TRAITS & trait_set
+    )
+    has_perfect_number = "perfect_symmetry" in trait_set and bool(
+        {"quad_repeat", "all_same", "four_of_kind"} & trait_set
+    )
+    return score >= SECRET_MIN_SCORE and (has_exceptional_mix or has_perfect_number)
+
+
+def _quality_rarity(score: int, traits: list[str]) -> Rarity:
+    if _secret_eligible(score, traits):
+        return Rarity.SECRET
+    candidate = score_rarity(score)
+    return Rarity.MYTHIC if candidate is Rarity.SECRET else candidate
 
 
 def score_rarity(score: int) -> Rarity:
@@ -197,13 +214,119 @@ def compute_rarity_score(
     novelty_bonus: float = 0.0,
     provider_modifier: float = 1.0,
 ) -> int:
-    """Deterministic score in the 0-200 band from plate patterns alone.
+    """Score independent number/letter pattern families without stacking aliases.
 
     The keyword-only modifiers remain accepted for compatibility, but country,
     template, event, discovery and operator metadata affect value/presentation only.
-    None of them may turn an ordinary registration into a high-rarity find.
+    None of them may turn an ordinary registration into a high-rarity find. Within
+    each family, only its strongest feature counts; a triple, lucky label and special
+    code describing the same run do not add together.
     """
-    return max(0, min(200, sum(analysis.scores.values())))
+    digits = "".join(character for character in analysis.numeric_core if character.isdigit())
+    letters = "".join(character for group in analysis.letters for character in group)
+    region_code = str(getattr(analysis, "region_code", "") or "")
+    if region_code and not region_code.isdigit():
+        if letters.startswith(region_code):
+            letters = letters[len(region_code):]
+        elif letters.endswith(region_code):
+            letters = letters[:-len(region_code)]
+
+    digit_score = max(
+        _repeat_quality(digits),
+        _sequence_quality(digits),
+        _mirror_quality(digits),
+        _repeated_block_quality(digits),
+        26 if {"special_run", "special_code", "contains_007", "contains_777", "contains_123"}
+        & set(analysis.traits) else 0,
+    )
+    letter_score = max(
+        _repeat_quality(letters),
+        _sequence_quality(letters),
+        _mirror_quality(letters),
+        _repeated_block_quality(letters),
+    )
+
+    if digit_score >= 28 and letter_score >= 28:
+        score = digit_score + letter_score + (18 if digit_score >= 50 and letter_score >= 45 else 12)
+    else:
+        score = max(digit_score, letter_score)
+    return max(0, min(200, score))
+
+
+def _repeat_quality(value: str) -> int:
+    longest = current = 0
+    previous = ""
+    for character in value:
+        current = current + 1 if character == previous else 1
+        previous = character
+        longest = max(longest, current)
+    if longest >= 10:
+        return 130
+    if longest >= 8:
+        return 108
+    if longest >= 7:
+        return 96
+    if longest >= 6:
+        return 82
+    if longest >= 5:
+        return 68
+    if longest >= 4:
+        return 52
+    if longest >= 3:
+        return 28
+    return 8 if longest == 2 else 0
+
+
+def _sequence_quality(value: str) -> int:
+    longest = current = 1 if value else 0
+    direction = 0
+    for left, right in zip(value, value[1:]):
+        if left.isdigit() and right.isdigit():
+            step = int(right) - int(left)
+        else:
+            step = ord(right) - ord(left)
+        if step in (-1, 1) and direction in (0, step):
+            current += 1
+            direction = step
+        else:
+            current = 1
+            direction = 0
+        longest = max(longest, current)
+    if longest >= 9:
+        return 96
+    if longest >= 7:
+        return 86
+    if longest >= 6:
+        return 76
+    if longest >= 5:
+        return 64
+    if longest >= 4:
+        return 48
+    if longest >= 3:
+        return 22
+    return 0
+
+
+def _mirror_quality(value: str) -> int:
+    if len(value) >= 10 and value == value[::-1]:
+        return 96
+    if len(value) >= 8 and value == value[::-1]:
+        return 80
+    if len(value) >= 6 and value == value[::-1]:
+        return 64
+    if len(value) >= 4 and value == value[::-1]:
+        return 42
+    return 0
+
+
+def _repeated_block_quality(value: str) -> int:
+    if len(value) >= 8 and len(value) % 2 == 0 and value[: len(value) // 2] == value[len(value) // 2 :]:
+        return 68
+    if len(value) >= 6 and len(value) % 2 == 0 and value[: len(value) // 2] == value[len(value) // 2 :]:
+        return 55
+    if len(value) >= 4 and len(value) % 2 == 0 and value[: len(value) // 2] == value[len(value) // 2 :]:
+        return 34
+    return 0
 
 
 def resolve_final_rarity(
@@ -215,15 +338,8 @@ def resolve_final_rarity(
     template_floor: str = "COMMON",
     force_secret: bool = False,
 ) -> Rarity:
-    """Resolve rarity from intrinsic quality; ``luck`` is a target, never a promotion."""
-    if force_secret or (
-        score >= SECRET_MIN_SCORE
-        and SECRET_REQUIRED_TRAIT in traits
-        and bool(SECRET_COMBINATION_TRAITS.intersection(traits))
-    ):
-        return Rarity.SECRET
-
-    return score_rarity(score)
+    """Resolve rarity from intrinsic quality; targets and overrides cannot promote it."""
+    return _quality_rarity(score, traits)
 
 
 def pity_weights(

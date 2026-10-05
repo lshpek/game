@@ -152,10 +152,11 @@ describe('The Georgian plate', () => {
     expect(text).toContain('AB-123-CD');
   });
 
-  it('uses pressed screw holes, not studded bolts', () => {
+  it('renders no decorative mounting circles', () => {
     wrap(<VehiclePlateVisual visual={geVisual} plateText="AB-123-CD" />);
-    expect(document.querySelectorAll('.plate-hole')).toHaveLength(2);
+    expect(document.querySelectorAll('.plate-hole')).toHaveLength(0);
     expect(document.querySelectorAll('.plate-bolt')).toHaveLength(0);
+    expect(STYLESHEET).not.toMatch(/\.plate-(?:bolt|hole)\s*\{/);
   });
 
   it('has no separate region compartment', () => {

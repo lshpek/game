@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+from app.core.errors import ValidationError
 from app.game.collectibles import (
     CollectibleKind,
     kind_for_plate_type,
@@ -46,7 +47,7 @@ from app.game.plate_templates import (
 from app.game.plate_valuation import value_for_analysis
 from app.game.providers import clamp_modifier
 from app.game.rng import weighted_choice
-from app.game.sim_cards import card_details, details_to_dict
+from app.game.sim_cards import card_details, details_to_dict, parse_sim_number
 
 # A roll never repeats the same serial twice in a row: the generator retries
 # (a handful of times) before falling back to the last candidate.
@@ -377,25 +378,31 @@ def build_generated_plate(
     styles: list[dict[str, str]],
     event_multipliers: dict[str, float] | None = None,
     discovery_count: int = 0,
-    force_secret: bool = False,
     season_code: str | None = None,
-    force_rarity: Rarity | None = None,
 ) -> GeneratedPlate:
     """Score, price and package one already-rendered plate.
 
     Single source of truth for "plate text in, collectible out": the roll engine
-    and the admin test lab both go through here, so a forced plate is scored by
-    exactly the same rules as a real one.
-
-    ``force_rarity`` is the admin-only escape hatch: the normal resolver only ever
-    moves a plate *up* the rarity ladder, so a requested rarity could not be
-    honoured for COMMON. When set, it wins outright - and the value is still
-    derived from the real analysis, so a forced plate never gets a made-up price.
+    and the admin test lab both use the same pattern-quality resolver.
     """
     parsed_region = region.code if region else None
+    quality_digits: str | None = None
+    if kind_for_plate_type(template.plate_type) is CollectibleKind.SIM_CARD:
+        parsed_number = parse_sim_number(country.code, plate_text)
+        if parsed_number is None:
+            raise ValidationError(
+                "Generated SIM number does not match its country's synthetic format.",
+                code="BAD_SIM_NUMBER",
+            )
+        canonical_number, quality_digits = parsed_number
+        if canonical_number != plate_text:
+            plate_text = canonical_number
+            styles = styles_for_text(plate_text)
+
     analysis = analyze_plate(
         plate_text,
         region_code=parsed_region,
+        quality_digits=quality_digits,
         # A template label is not a pattern and cannot elevate generated rarity.
         rarity_floor="COMMON",
         plate_type=template.plate_type,
@@ -411,13 +418,12 @@ def build_generated_plate(
     )
 
     nat = natural_rarity(analysis)
-    rarity = force_rarity or resolve_final_rarity(
+    rarity = resolve_final_rarity(
         natural=nat,
         luck=luck,
         score=score,
         traits=analysis.traits,
         template_floor=template.rarity_floor,
-        force_secret=force_secret,
     )
 
     status_series = status_series_for(country.code, analysis.letters)
@@ -514,8 +520,6 @@ class PlateGenerator:
         luck: Rarity,
         *,
         discovery_count: int = 0,
-        force_secret: bool = False,
-        force_rarity: Rarity | None = None,
     ) -> GeneratedPlate:
         parsed = parse_template(template.pattern)
         plate_text, styles = render_template(
@@ -534,8 +538,6 @@ class PlateGenerator:
             styles=styles,
             event_multipliers=self.ctx.event_multipliers,
             discovery_count=discovery_count,
-            force_secret=force_secret,
-            force_rarity=force_rarity,
             season_code=self.ctx.season_code,
         )
 
@@ -676,9 +678,8 @@ class PlateGenerator:
         simply keeps drawing until the requested outcome is reached (bounded, so
         it can never spin forever).
 
-        ``target_rarity`` is honoured by feeding it in as ``luck`` - the engine's
-        own resolver takes the most prestigious of natural/luck/score - so the
-        production RNG configuration is never modified to satisfy a test.
+        ``target_rarity`` only asks the test lab to keep searching. It never overrides
+        intrinsic quality, so this isolated path cannot mint a fake tier.
         """
         countries = self.ctx.countries
         if country_code:
@@ -691,7 +692,6 @@ class PlateGenerator:
         region = self._pick_region(country, region_code)
         template = self._pick_template(country, region, template_code)
         wanted_rarity = target_rarity or luck
-        force_secret = wanted_rarity is Rarity.SECRET
 
         last: GeneratedPlate | None = None
         for _ in range(max(1, max_attempts)):
@@ -700,10 +700,6 @@ class PlateGenerator:
                 region,
                 template,
                 wanted_rarity,
-                force_secret=force_secret,
-                # An explicit target is authoritative, so no retry loop is needed
-                # to reach it: the resolver only ever moves plates up the ladder.
-                force_rarity=target_rarity,
             )
             last = plate
             if plate.rarity is wanted_rarity and (

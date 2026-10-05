@@ -235,16 +235,14 @@ describe('VehiclePlateVisual', () => {
     expect(header.textContent).toBe('California');
   });
 
-  it('draws the mounting hardware the format actually uses', () => {
-    // North American and Japanese plates are fixed with pressed screw holes, not bolts.
+  it('keeps all plate families free of decorative mounting circles', () => {
     const { unmount } = rtlRender(<VehiclePlateVisual visual={usVisual} plateText="D431K406" />);
-    expect(document.querySelectorAll('.plate-hole')).toHaveLength(2);
+    expect(document.querySelectorAll('.plate-hole')).toHaveLength(0);
     expect(document.querySelectorAll('.plate-bolt')).toHaveLength(0);
     unmount();
 
-    // A CIS plate carries four studded bolts in the corners.
     rtlRender(<VehiclePlateVisual visual={ruVisual} plateText="A777BC 777" regionCode="777" />);
-    expect(document.querySelectorAll('.plate-bolt')).toHaveLength(4);
+    expect(document.querySelectorAll('.plate-bolt')).toHaveLength(0);
     expect(document.querySelectorAll('.plate-hole')).toHaveLength(0);
   });
 
