@@ -12,6 +12,7 @@ import { CountrySelector } from '@/components/CountrySelector';
 import { KindSelector } from '@/components/Selectors';
 import { Reveal } from '@/components/Reveal';
 import { I18nProvider } from '@/i18n';
+import { ApiError } from '@/lib/api';
 import { COLLECTIBLE_KINDS } from '@/types';
 import type { CountrySummary, PlateCard, PlateRollResult, SimCardDetails } from '@/types';
 
@@ -546,6 +547,35 @@ describe('hunt screen', () => {
       fireEvent.click(screen.getByTestId('country-option-RUS'));
     });
     await waitFor(() => expect(setActiveMock).toHaveBeenCalledWith('RUS'));
+  });
+
+  it('says so when a roll fails, and stays usable', async () => {
+    rollMock.mockRejectedValueOnce(
+      new ApiError('UNAVAILABLE', 'Service unavailable', 503),
+    );
+    renderWith(<HuntPage />);
+    await waitFor(() => expect(screen.getByTestId('roll-button')).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('roll-button'));
+    });
+    // No dead end: the message is actionable and the button comes back.
+    await waitFor(() => expect(screen.getByText(/unavailable/i)).toBeTruthy());
+    const button = screen.getByTestId('roll-button');
+    expect(button.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('says so when a country switch is refused', async () => {
+    setActiveMock.mockRejectedValueOnce(
+      new ApiError('COUNTRY_LOCKED', 'Antarctica is not available yet.', 422),
+    );
+    renderWith(<HuntPage />);
+    await waitFor(() => expect(screen.getByTestId('active-country')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('active-country'));
+    await waitFor(() => expect(screen.getByTestId('country-option-RUS')).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('country-option-RUS'));
+    });
+    await waitFor(() => expect(screen.getByText(/not available yet/i)).toBeTruthy());
   });
 });
 

@@ -191,6 +191,19 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
           />
         )}
         <KindSelector value={kind} onChange={setKind} disabled={busy} />
+        {/* A failed country switch must say so: the sheet would otherwise close on a
+            country the backend refused and the player would hunt somewhere else
+            without knowing it. */}
+        {switchCountry.isError ? (
+          <p className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            {errorMessage(switchCountry.error, t('country.switchFailed'))}
+          </p>
+        ) : null}
+        {roll.isError ? (
+          <p className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            {errorMessage(roll.error, t('hunt.rollFailed'))}
+          </p>
+        ) : null}
       </section>
 
       {/* Wallet. */}
@@ -278,6 +291,18 @@ export function HuntPage({ onOpenCollection }: { onOpenCollection?: () => void }
       <SocialStrip />
     </div>
   );
+}
+
+/**
+ * Turn a failed request into something the player can act on.
+ *
+ * A silent failure here is worse than the error itself: the roll button would simply
+ * stop working, or a country change would appear to succeed and quietly not.
+ */
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
 }
 
 /** A single quiet row of social proof - never a popup, never above the roll. */
