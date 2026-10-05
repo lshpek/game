@@ -1,8 +1,14 @@
 """Rarity definitions, weights and special-number tables.
 
-Every probability lives here (optionally overridable through the
-``RARITY_WEIGHTS_OVERRIDE`` environment variable as JSON) so tuning the game
-never requires touching the roll logic.
+The **chance table** lives here and nowhere else: :data:`RARITY_WEIGHT_HUNDREDTHS`
+declares the game's fixed chances as integer hundredths of a percent (so 0.01%
+Secret is exactly representable and the total is exactly 100%), and
+:data:`DEFAULT_RARITY_WEIGHTS` is derived from it in percent. Every roll's
+server-side luck draw reads that table, and
+:mod:`app.game.plate_rarity` re-exports it rather than keeping a second copy.
+
+An optional ``RARITY_WEIGHTS_OVERRIDE`` environment variable (JSON) can replace
+the table for a tuning session, validated by :func:`load_rarity_weights`.
 """
 
 from __future__ import annotations
@@ -11,6 +17,8 @@ import json
 from enum import StrEnum
 
 from app.core.errors import ValidationError
+
+# The chance table is declared once, in integer hundredths of a percent, right here.
 
 
 class Rarity(StrEnum):
@@ -36,15 +44,46 @@ RARITY_ORDER: tuple[Rarity, ...] = (
 
 RARITY_RANK: dict[str, int] = {r.value: index for index, r in enumerate(RARITY_ORDER)}
 
-# Percentages must sum to 100; the RNG normalises defensively anyway.
+#: The game's fixed presentation chances, in percent. Authoritative: every roll's
+#: server-side luck draw reads this table and nothing else.
+#:
+#: Expressed as integer **basis-point-like hundredths of a percent** (1/100 of 1%)
+#: so that the tiny tiers are exact in binary floating point: Secret at 0.01% is
+#: ``1`` hundredth-unit, Mythic at 0.09% is ``9``, and the whole table sums to
+#: ``10_000`` hundredth-units = exactly 100%. A float table such as 0.01 would not
+#: be exactly representable and repeated normalisation could drift.
+#:
+#: ```text
+#: Common 54% | Uncommon 30% | Rare 13% | Epic 2.5% | Legendary 0.4%
+#: Mythic 0.09% | Secret 0.01%        total = 100.00%
+#: ```
+#: The game's fixed presentation chances, in percent, as the ONE authoritative
+#: table. Every roll's server-side luck draw reads this and nothing else.
+#:
+#: Stored as integer **hundredths of a percent** so the tiny tiers are exact in
+#: binary floating point: Secret at 0.01% is ``1`` unit, Mythic at 0.09% is ``9``,
+#: and the table sums to ``10_000`` units = exactly 100%. A hand-written float
+#: table would not be exactly representable, and repeated normalisation of
+#: ``0.01`` could drift.
+#:
+#: ```text
+#: Common 54% | Uncommon 30% | Rare 13% | Epic 2.5% | Legendary 0.4%
+#: Mythic 0.09% | Secret 0.01%        total = 100.00%
+#: ```
+RARITY_WEIGHT_HUNDREDTHS: dict[str, int] = {
+    Rarity.COMMON.value: 5_400,
+    Rarity.UNCOMMON.value: 3_000,
+    Rarity.RARE.value: 1_300,
+    Rarity.EPIC.value: 250,
+    Rarity.LEGENDARY.value: 40,
+    Rarity.MYTHIC.value: 9,
+    Rarity.SECRET.value: 1,
+}
+
+#: The same table in percent, derived rather than duplicated, so the figure the
+#: admin panel shows and the figure the RNG uses can never disagree.
 DEFAULT_RARITY_WEIGHTS: dict[str, float] = {
-    Rarity.COMMON.value: 70.0,
-    Rarity.UNCOMMON.value: 20.0,
-    Rarity.RARE.value: 7.0,
-    Rarity.EPIC.value: 2.0,
-    Rarity.LEGENDARY.value: 0.8,
-    Rarity.MYTHIC.value: 0.19,
-    Rarity.SECRET.value: 0.01,
+    code: units / 100.0 for code, units in RARITY_WEIGHT_HUNDREDTHS.items()
 }
 
 RARITY_BASE_VALUE: dict[str, int] = {
@@ -105,7 +144,14 @@ SPECIAL_NUMBER_RARITY: dict[str, Rarity] = {
 
 
 def load_rarity_weights(override_json: str | None = None) -> dict[str, float]:
-    """Return validated rarity weights, honouring an optional JSON override."""
+    """Return validated rarity weights, honouring an optional JSON override.
+
+    The default table is returned **as declared** - never renormalised - so its
+    total is exactly ``100.0`` percent and the declared 0.01% Secret is the
+    rolled 0.01% Secret. An override must itself sum to exactly 100%: silently
+    rescaling a typo'd table would hide it, and a table that does not total 100
+    is a configuration error, not a rounding problem.
+    """
     if not override_json:
         return dict(DEFAULT_RARITY_WEIGHTS)
 
@@ -133,8 +179,14 @@ def load_rarity_weights(override_json: str | None = None) -> dict[str, float]:
     for code in RARITY_ORDER:
         weights.setdefault(code.value, 0.0)
 
-    if sum(weights.values()) <= 0:
-        raise ValidationError("Rarity weights must sum to a positive value.", code="BAD_RARITY_CONFIG")
+    # Exact for any table written in hundredths (54.0 + 30.0 + ... is exact in
+    # binary), and tolerant of one ulp for a table that used repeating fractions.
+    total = sum(weights.values())
+    if abs(total - 100.0) > 1e-9:
+        raise ValidationError(
+            "Rarity weights must sum to exactly 100%.",
+            code="BAD_RARITY_CONFIG",
+        )
     return weights
 
 

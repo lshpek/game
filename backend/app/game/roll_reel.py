@@ -157,6 +157,7 @@ def _one_frame(
         alphabet=country.alphabet,
         region_code=region.code if region else None,
         rng=rng,
+        country_code=country.code,
     )
     segments = display_segments(styles)
     return ReelFrame(

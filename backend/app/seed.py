@@ -206,14 +206,20 @@ def sim_config(definition: CountryDef) -> dict:
 
 
 def seed_providers(db: Session) -> int:
-    """Upsert the mobile operator catalogue.
+    """Upsert the mobile carrier catalogue.
 
-    Idempotent by provider code: existing rows keep their id and are updated in place, so
-    a branding change or a new country is picked up on the next boot without touching a
-    single collectible.
+    Idempotent by carrier code: existing rows keep their id and are updated in
+    place, so a branding change or a new country is picked up on the next boot
+    without touching a single collectible.
+
+    The **active** catalogue is seeded: the game's own fictional NUMORA carriers,
+    every one flagged ``is_real_brand = False``. The retired real-operator
+    catalogue is deliberately *not* written - nothing new may be generated with
+    a real network's brand - while a row a card was already printed with keeps
+    its stored identity in ``plates.details`` and never passes through here.
     """
     created = 0
-    for index, definition in enumerate(providers.PROVIDERS):
+    for index, definition in enumerate(providers.NUMORA_CARRIERS):
         row = db.execute(
             select(SimProvider).where(SimProvider.code == definition.code)
         ).scalar_one_or_none()

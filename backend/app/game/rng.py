@@ -36,7 +36,15 @@ def random_number(rng: Rng) -> str:
 
 
 def normalize_weights(weights: Mapping[str, float]) -> dict[str, float]:
-    """Return weights normalised into probabilities."""
+    """Return weights normalised into probabilities.
+
+    Normalisation is *only* a defensive division: the tables that matter (the
+    chance table, country weights, template weights) are already relative
+    weights, and the chance table sums to exactly 100, so ``weight / total``
+    reproduces the declared percent to within one ulp - including the
+    ``0.0001`` probability of Secret, which survives as a distinct band rather
+    than collapsing into zero.
+    """
     total = sum(weights.values())
     if total <= 0:
         raise ValidationError("Rarity weights must sum to a positive value.", code="BAD_RARITY_CONFIG")
@@ -44,7 +52,14 @@ def normalize_weights(weights: Mapping[str, float]) -> dict[str, float]:
 
 
 def weighted_choice(weights: Mapping[str, float], rng: Rng) -> str:
-    """Pick a key from a weight mapping using a single uniform sample."""
+    """Pick a key from a weight mapping using a single uniform sample.
+
+    One sample, one walk of the cumulative bands in declaration order: the
+    boundaries are ``0 -> 0.54 -> 0.84 -> 0.97 -> 0.995 -> 0.999 -> 0.9999 -> 1``
+    for the game's chance table, so Secret's band is the final ``0.0001``
+    interval and is reachable but never generous. The tail returns the last key
+    rather than raising, because ``rng.random()`` can return ``1.0 - 2**-53``.
+    """
     probabilities = normalize_weights(weights)
     threshold = rng.random()
     cumulative = 0.0

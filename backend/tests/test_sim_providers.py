@@ -1,11 +1,15 @@
-"""The SIM line: real operator brands, synthetic numbers and provider weighting.
+"""The SIM line: fictional NUMORA carriers, synthetic numbers and weighting.
 
 The contract this module protects:
 
-* a card prints a **real, current** operator brand for its country;
-* the number printed on it is **synthetic game data**, never a subscriber line;
-* a provider influences the **game** rarity and value, within narrow bounds;
-* a card written before the provider catalogue existed still renders.
+* a card prints a **fictional NUMORA carrier** - never a real network's
+  brand, so a realistic synthetic number can never read as a real
+  person's subscriber line;
+* the number printed on it is **synthetic game data**, never a subscriber
+  line;
+* a carrier influences the **game** rarity and value, within narrow bounds;
+* a card written before the NUMORA catalogue - or with a real operator from
+  the retired catalogue - still renders with the brand it was printed with.
 """
 
 from __future__ import annotations
@@ -22,10 +26,12 @@ from app.game import sim_cards
 from app.game.collectibles import CollectibleKind, kind_for_plate_type, sim_templates
 from app.game.countries import COUNTRIES
 from app.game.providers import (
+    LEGACY_PROVIDERS,
+    LINE_SIZE,
     MAX_PROVIDER_MODIFIER,
     MIN_PROVIDER_MODIFIER,
+    NUMORA_CARRIERS,
     clamp_modifier,
-    curated_countries,
     provider_by_code,
     providers_for,
 )
@@ -40,53 +46,57 @@ class TestProviderCatalogue:
             line = providers_for(country.code)
             assert len(line) >= 2, country.code
 
-    def test_russia_uses_its_current_real_operators(self):
-        brands = {provider.brand for provider in providers_for("RUS")}
-        assert {"MTS", "MegaFon", "Beeline", "T2"} == brands
+    def test_every_country_prints_numora_carriers(self):
+        """No country ever prints a real network's brand."""
+        universe = {carrier.code for carrier in NUMORA_CARRIERS}
+        for country in PLAYABLE:
+            line = providers_for(country.code)
+            assert len(line) >= 2, country.code
+            # A line never repeats a carrier.
+            assert len({provider.code for provider in line}) == len(line), country.code
+            for provider in line:
+                assert provider.code in universe, (country.code, provider.code)
+                assert provider.real_brand is False, (country.code, provider.code)
+                assert provider.brand, (country.code, provider.code)
 
-    def test_tele2_is_not_used_as_a_russian_brand(self):
-        """Tele2 Russia was rebranded to T2; new content must use the current brand."""
-        codes = {provider.code for provider in providers_for("RUS")}
-        assert "t2" in codes
-        assert "tele2" not in codes
-        brands = " ".join(provider.brand for provider in providers_for("RUS")).lower()
-        assert "tele2" not in brands
+    def test_no_real_operator_is_ever_generated(self):
+        """The retired real-operator catalogue is render-only."""
+        real_codes = {provider.code for provider in LEGACY_PROVIDERS}
+        for country in PLAYABLE:
+            for provider in providers_for(country.code):
+                assert provider.code not in real_codes, (country.code, provider.code)
 
-    def test_poland_uses_its_current_real_operators(self):
-        brands = {provider.brand for provider in providers_for("POL")}
-        assert {"Orange", "Play", "T-Mobile", "Plus"} == brands
-
-    def test_the_launch_countries_all_have_curated_real_brands(self):
-        curated = set(curated_countries())
-        for code in ("RUS", "POL", "KAZ", "DEU", "GBR", "FRA", "ITA", "JPN", "USA", "ARE"):
-            assert code in curated, code
-            for provider in providers_for(code):
-                assert provider.real_brand, (code, provider.code)
-
-    def test_a_country_without_a_curated_line_gets_documented_game_brands(self):
-        line = providers_for("PER")
-        assert line
-        assert all(provider.real_brand is False for provider in line)
-        # Game brands must not be styled as if they were a real carrier.
-        assert all(provider.brand.startswith("PER ") for provider in line)
+    def test_a_line_is_stable_and_drawn_from_the_numora_universe(self):
+        """A country's line is derived from its code alone: identical on
+        every boot, so a card's brand never depends on when it was rolled."""
+        for country in ("RUS", "POL", "PER", "ZZZ"):
+            assert providers_for(country) == providers_for(country)
+            assert len(providers_for(country)) == LINE_SIZE
+        universe = {carrier.brand for carrier in NUMORA_CARRIERS}
+        for country in PLAYABLE:
+            assert {provider.brand for provider in providers_for(country.code)} <= universe
 
     def test_provider_codes_are_unique_and_stable(self):
-        codes = [provider.code for provider in provider_catalogue.PROVIDERS]
+        codes = [carrier.code for carrier in provider_catalogue.NUMORA_CARRIERS]
         assert len(codes) == len(set(codes))
 
-    def test_every_provider_belongs_to_a_real_country_code(self):
+    def test_every_carrier_has_a_home_market(self):
         known = {country.code for country in COUNTRIES}
-        for provider in provider_catalogue.PROVIDERS:
+        for carrier in provider_catalogue.NUMORA_CARRIERS:
+            assert carrier.country in known, carrier.code
+            assert carrier.real_brand is False, carrier.code
+        for provider in provider_catalogue.LEGACY_PROVIDERS:
             assert provider.country in known, provider.code
+            assert provider.real_brand is True, provider.code
 
     def test_modifiers_stay_inside_their_documented_bounds(self):
-        for provider in provider_catalogue.PROVIDERS:
-            assert MIN_PROVIDER_MODIFIER <= provider.rarity_modifier <= MAX_PROVIDER_MODIFIER
-            assert MIN_PROVIDER_MODIFIER <= provider.value_modifier <= MAX_PROVIDER_MODIFIER
+        for carrier in provider_catalogue.NUMORA_CARRIERS:
+            assert MIN_PROVIDER_MODIFIER <= carrier.rarity_modifier <= MAX_PROVIDER_MODIFIER
+            assert MIN_PROVIDER_MODIFIER <= carrier.value_modifier <= MAX_PROVIDER_MODIFIER
 
-    def test_a_provider_can_never_alone_manufacture_a_tier(self):
+    def test_a_carrier_can_never_alone_manufacture_a_tier(self):
         """The spread is deliberately narrow so the *number* always dominates."""
-        values = [provider.rarity_modifier for provider in provider_catalogue.PROVIDERS]
+        values = [carrier.rarity_modifier for carrier in provider_catalogue.NUMORA_CARRIERS]
         assert max(values) - min(values) <= 0.25
 
     def test_clamp_modifier_is_defensive(self):
@@ -119,13 +129,13 @@ class TestSyntheticNumbers:
                 assert [len(chunk) for chunk in digits.split(" ")] == list(fmt.groups), text
 
     def test_generated_numbers_keep_the_country_block(self):
-        for country in ("RUS", "POL", "USA", "DEU"):
-            fmt = sim_cards.sim_format(country)
+        for code in ("RUS", "POL", "USA", "DEU"):
+            fmt = sim_cards.sim_format(code)
             for prefix, _weight in fmt.prefixes:
                 assert any(
                     template.pattern.startswith(f"+{fmt.calling_code.lstrip('+')} {prefix}")
-                    for template in sim_templates(country)
-                ), (country.code, prefix)
+                    for template in sim_templates(code)
+                ), (code, prefix)
 
     def test_an_unconfigured_country_falls_back_to_the_documented_game_block(self):
         fmt = sim_cards.sim_format("PER")
@@ -146,21 +156,22 @@ class TestSyntheticNumbers:
 
 
 class TestProviderOnACard:
-    def test_a_card_carries_a_real_brand_and_its_game_modifiers(self, client, authed):
+    def test_a_card_carries_a_numora_brand_and_its_game_modifiers(self, client, authed):
         session = authed(882_100_002)
+        brands = {provider.brand for provider in providers_for("RUS")}
         seen: set[str] = set()
         for _ in range(8):
             data = client.post(
                 "/api/roll?category=SIM_CARD&country_code=RUS", headers=session["headers"], json={}
             ).json()
             details = data["plate"]["details"]
-            assert details["operator"] in {"MTS", "MegaFon", "Beeline", "T2"}
-            assert details["operator_is_real"] is True
+            assert details["operator"] in brands
+            assert details["operator_is_real"] is False
             assert details["operator_local"]
             assert MIN_PROVIDER_MODIFIER <= details["rarity_modifier"] <= MAX_PROVIDER_MODIFIER
             assert MIN_PROVIDER_MODIFIER <= details["value_modifier"] <= MAX_PROVIDER_MODIFIER
             seen.add(details["operator_code"])
-        assert len(seen) >= 2, "one operator should not monopolise a country"
+        assert len(seen) >= 2, "one carrier should not monopolise a country"
 
     def test_a_card_reports_its_operator_series_and_edition(self, client, authed):
         session = authed(882_100_003)
@@ -196,6 +207,19 @@ class TestProviderOnACard:
         assert payload["operator"]
         assert payload["operator_is_real"] is False
 
+    def test_a_retired_real_operator_resolves_to_its_brand(self):
+        """Generation with a retired code keeps the brand it was printed with."""
+        details = sim_cards.card_details(
+            country_code="RUS",
+            operator_code="mts",
+            edition="ORIGIN",
+            number="+7 900 000 00 01",
+        )
+        assert details.operator == "MTS"
+        assert details.operator_local == "МТС"
+        assert details.operator_is_real is True
+        assert details.operator_accent == "#ff0032"
+
     def test_a_vehicle_plate_has_no_sim_payload(self):
         class _Plate:
             plate_type = "STANDARD"
@@ -207,17 +231,21 @@ class TestProviderOnACard:
 
 
 class TestProviderTemplates:
-    def test_each_provider_gets_its_own_templates(self):
+    def test_each_carrier_gets_its_own_templates(self):
         codes = {template.config["provider_code"] for template in sim_templates("RUS")}
-        assert codes == {"mts", "megafon", "beeline", "t2"}
+        assert codes == {provider.code for provider in providers_for("RUS")}
 
     def test_template_weights_follow_the_provider_weight(self):
-        """A bigger brand is more common inside the game, like any real market."""
+        """A bigger brand is more common inside the game, like any market."""
         totals: dict[str, list[float]] = {}
         for template in sim_templates("RUS"):
             totals.setdefault(template.config["provider_code"], []).append(template.weight)
         averages = {code: sum(values) / len(values) for code, values in totals.items()}
-        assert averages["mts"] > averages["beeline"] > averages["t2"]
+        by_weight = sorted(
+            (provider.weight, provider.code) for provider in providers_for("RUS")
+        )
+        # The heaviest carrier prints the most often, the lightest the least.
+        assert averages[by_weight[-1][1]] > averages[by_weight[0][1]]
 
     def test_no_duplicate_template_codes(self):
         for country in PLAYABLE:
@@ -226,9 +254,9 @@ class TestProviderTemplates:
 
     def test_the_provider_catalogue_is_seeded_and_matches_the_module(self, db):
         rows = db.execute(select(SimProvider)).scalars().all()
-        assert len(rows) == len(provider_catalogue.PROVIDERS)
+        assert len(rows) == len(provider_catalogue.NUMORA_CARRIERS)
         by_code = {row.code: row for row in rows}
-        for definition in provider_catalogue.PROVIDERS:
+        for definition in provider_catalogue.NUMORA_CARRIERS:
             row = by_code[definition.code]
             assert row.brand == definition.brand
             assert row.country_code == definition.country
@@ -251,7 +279,7 @@ class TestProviderTemplates:
         for provider in providers:
             assert provider["code"]
             assert provider["brand"]
-            assert provider["is_real_brand"] is True
+            assert provider["is_real_brand"] is False
             assert MIN_PROVIDER_MODIFIER <= provider["rarity_modifier"] <= MAX_PROVIDER_MODIFIER
         # The compatibility alias is derived from the same catalogue.
         assert [item["code"] for item in data["sim"]["operators"]] == [
@@ -326,5 +354,6 @@ def _render_number(country_code: str) -> str:
         alphabet=country.alphabet,
         region_code=None,
         rng=default_rng(),
+        country_code=country_code,
     )
     return plate_text

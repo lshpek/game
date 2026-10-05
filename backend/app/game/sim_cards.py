@@ -1,7 +1,7 @@
-"""Collectible SIM cards: real operator brands and synthetic printed numbers.
+"""Collectible SIM cards: NUMORA carrier brands and synthetic printed numbers.
 
 A SIM card in NUMORA is a **physical collectible object** - a plastic card with a
-contact module, a printed operator brand, a series and an edition. The number printed on
+contact module, a printed carrier brand, a series and an edition. The number printed on
 it is *information on the card*, never an independent collectible and never a real
 subscriber line.
 
@@ -16,12 +16,14 @@ Every number produced here is synthetic:
 * the number is tagged ``synthetic`` and the card prints a synthetic marker, so no
   downstream consumer can mistake it for a subscriber identity.
 
-Operator catalogue
+Carrier catalogue
 ------------------
-Brands come from :mod:`app.game.providers`: real, current mobile operators for the
-curated countries and documented *game* brands elsewhere. A provider carries two game
-modifiers - rarity and value - which are game balance numbers, not claims about the
-operator's real tariffs, customers or market position.
+Brands come from :mod:`app.game.providers`: the game's own fictional NUMORA
+carriers. A realistic synthetic number under a real operator's brand would read as a
+real person's subscriber line, so nothing new is ever generated with one - the retired
+real-operator catalogue stays renderable only so a card already in a collection keeps
+the brand it was printed with. A carrier carries two game modifiers - rarity and value
+- which are game balance numbers, not claims about any real network.
 
 Format contract
 ---------------
@@ -36,7 +38,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.game.iso_countries import iso_country
-from app.game.providers import ProviderDef, providers_for
+from app.game.providers import (
+    ProviderDef,
+    legacy_operator_label as _catalogue_label,
+    provider_by_code,
+    providers_for,
+)
 
 #: Attached to every generated SIM collectible.
 SYNTHETIC_FLAG = "synthetic"
@@ -197,34 +204,24 @@ def sim_patterns(country_code: str) -> tuple[str, ...]:
 
 
 def operators_for(country_code: str) -> tuple[ProviderDef, ...]:
-    """Operator brands a country may print on a collectible SIM card.
+    """Carrier brands a country may print on a collectible SIM card.
 
-    Real, current operators for curated countries; documented game brands otherwise.
+    A thin, stable alias over the provider catalogue: the SIM line reads
+    "operators" because that is what a card prints, and the catalogue owns
+    the list.
     """
     return providers_for(country_code)
 
 
 def legacy_operator_label(code: str | None) -> str:
-    """Best-effort brand label for a provider code, including retired game brands.
+    """Best-effort brand label for a carrier code, including retired brands.
 
-    Cards printed with the retired fictional operators must still render, so an unknown
-    code falls back to its upper-cased form rather than disappearing.
+    Delegates to the provider catalogue, which resolves both the NUMORA
+    universe and the retired real-operator catalogue, so a card printed
+    with an old brand keeps it. An unknown code is upper-cased, which
+    reads as a code rather than as a claim about any carrier.
     """
-    text = str(code or "").strip()
-    if not text:
-        return ""
-    for provider in operators_for("RUS"):
-        if provider.code == text.lower():
-            return provider.brand
-    from app.game.providers import PROVIDERS, provider_by_code
-
-    found = provider_by_code(text)
-    if found is not None:
-        return found.brand
-    for provider in PROVIDERS:
-        if provider.code == text.lower():
-            return provider.brand
-    return text.upper()
+    return _catalogue_label(code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,7 +271,13 @@ def card_details(
         None,
     )
     if provider is None:
-        # Unknown/retired brand: keep the card printable rather than losing it.
+        # A card generated with a retired brand - a real operator from the
+        # retired catalogue, or a game brand from the first SIM line - keeps
+        # the identity it was printed with, so existing collections never
+        # change. Only a code no catalogue knows at all falls through to a
+        # plain upper-cased label.
+        provider = provider_by_code(operator_code)
+    if provider is None:
         brand = legacy_operator_label(operator_code) or "NUMORA"
         provider = ProviderDef(
             code=operator_code or "unknown",

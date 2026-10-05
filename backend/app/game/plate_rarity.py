@@ -8,8 +8,10 @@ Rarity is never a random label: it is derived from the plate's own patterns.
 * **final rarity** - the more prestigious of the two, then clamped by the
   template floor and the season/event modifiers.
 
-Every probability lives here (overridable through ``RARITY_WEIGHTS_OVERRIDE``) so
-balance changes never require touching roll logic or frontend code.
+Every declared probability lives in :mod:`app.game.rarity` - one table, in exact
+integer hundredths of a percent - and is re-exported here so the plate engine
+has a single import. ``RARITY_WEIGHTS_OVERRIDE`` may replace it for a session;
+scoring, floors and pity logic stay in this module.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from app.core.errors import ValidationError
+from app.game.rarity import DEFAULT_RARITY_WEIGHTS as _RARITY_WEIGHTS
 
 if TYPE_CHECKING:
     from app.game.plate_patterns import PlateAnalysis
@@ -46,16 +49,12 @@ RARITY_ORDER: tuple[Rarity, ...] = (
 
 RARITY_RANK: dict[str, int] = {r.value: index for index, r in enumerate(RARITY_ORDER)}
 
-# Tuned so Common stays frequent but Uncommon+ keeps every session interesting.
-DEFAULT_RARITY_WEIGHTS: dict[str, float] = {
-    Rarity.COMMON.value: 46.0,
-    Rarity.UNCOMMON.value: 30.0,
-    Rarity.RARE.value: 15.0,
-    Rarity.EPIC.value: 6.0,
-    Rarity.LEGENDARY.value: 2.4,
-    Rarity.MYTHIC.value: 0.5,
-    Rarity.SECRET.value: 0.1,
-}
+# The game's fixed presentation chances, mirroring
+# :data:`app.game.rarity.DEFAULT_RARITY_WEIGHTS` exactly. The table lives there
+# (as integer hundredths of a percent, so 0.01% Secret is representable and the
+# total is exactly 100%) and is re-exported here, because the plate engine reads
+# its weights from this module and two *different* tables would be a bug.
+DEFAULT_RARITY_WEIGHTS: dict[str, float] = dict(_RARITY_WEIGHTS)
 
 # Base dealer value (in NUMORA) per rarity. Collector Value is a separate,
 # purely cosmetic local-currency presentation derived from this.

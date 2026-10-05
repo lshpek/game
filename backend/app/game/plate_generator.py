@@ -35,7 +35,13 @@ from app.game.plate_rarity import (
     natural_rarity,
     resolve_final_rarity,
 )
-from app.game.plate_templates import ParsedTemplate, Token, normalize_plate, parse_template
+from app.game.plate_templates import (
+    ParsedTemplate,
+    Token,
+    coerce_region_code,
+    normalize_plate,
+    parse_template,
+)
 from app.game.plate_valuation import value_for_analysis
 from app.game.providers import clamp_modifier
 from app.game.rng import weighted_choice
@@ -176,6 +182,7 @@ def render_template(
     alphabet: str,
     region_code: str | None,
     rng,
+    country_code: str = "",
 ) -> tuple[str, list[dict[str, str]]]:
     """Materialise a template into plate text plus grouped style hints.
 
@@ -190,6 +197,11 @@ def render_template(
     """
     parts: list[str] = []
     chars: list[tuple[str, str]] = []  # (kind, character) in print order
+
+    # The 0/5 region rule is enforced at the *only* place a region code becomes
+    # printed text, so the stored, rendered and analysed strings can never
+    # disagree about what the region was.
+    printed_region = coerce_region_code(country_code, region_code)
 
     for part in parsed.parts:
         if part.is_literal():
@@ -210,8 +222,8 @@ def render_template(
             text = choices[rng.randint(0, len(choices) - 1)]
         elif kind == "R":
             # An empty region slot must not leave a dangling separator.
-            parts.append(region_code or "")
-            chars.extend(("region", ch) for ch in (region_code or ""))
+            parts.append(printed_region or "")
+            chars.extend(("region", ch) for ch in (printed_region or ""))
             continue
         else:  # pragma: no cover - parse_template rejects unknown kinds
             text = ""
@@ -506,6 +518,7 @@ class PlateGenerator:
             alphabet=country.alphabet,
             region_code=region.code if region else None,
             rng=self.rng,
+            country_code=country.code,
         )
         return build_generated_plate(
             plate_text=plate_text,
