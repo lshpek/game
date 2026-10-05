@@ -169,7 +169,7 @@ export function SymbolReel({
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [columns.length, onSettled, settled]);
 
-  if (columns.length === 0) return <>{final}</>;
+  if (columns.length === 0 || settled) return <>{final}</>;
 
   return (
     <div
@@ -447,8 +447,10 @@ export function buildColumns(
     segments.forEach((segment, index) => {
       const kind = kinds[index] ?? 'digit';
       const gap = index > 0 && (gaps[index] ?? true);
+      let firstCharacter = true;
       for (const char of segment) {
-        chars.push({ char, kind, gap: chars.length > 0 && gap });
+        chars.push({ char, kind, gap: chars.length > 0 && gap && firstCharacter });
+        firstCharacter = false;
       }
     });
   } else {

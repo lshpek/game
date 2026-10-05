@@ -603,13 +603,34 @@
     justify-content: center;
     gap: 0.1em;
     flex: 0 0 auto;
-    padding: 0 0.7em;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 0 0.25em;
     border-left: var(--plate-border, 2px) solid var(--plate-border-color, #1f2937);
     background: var(--plate-region-bg, rgba(0, 0, 0, 0.05));
     font-family: var(--plate-font, 'Arial Narrow', sans-serif);
     font-weight: var(--plate-digit-weight, 700);
     color: var(--plate-text, #111827);
     line-height: 1;
+  }
+
+  .plate-region-badge {
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-left: var(--plate-border, 2px) solid var(--plate-border-color, #1f2937);
+    padding: 0 0.15em;
+    font-family: var(--plate-font, 'Arial Narrow', sans-serif);
+    font-size: clamp(7px, 4.5cqw, 14px);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
   }
 
   /*

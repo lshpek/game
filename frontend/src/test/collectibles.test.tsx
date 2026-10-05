@@ -400,4 +400,18 @@ describe('Collectible kinds', () => {
     expect(columns[0]?.cycle.every((symbol) => allowed.includes(symbol))).toBe(true);
     expect(columns.slice(1).every((column) => column.cycle.every((symbol) => /\d/.test(symbol)))).toBe(true);
   });
+
+  it('places a group gap only before the first character in that group', () => {
+    const columns = buildColumns(
+      'AB 12345',
+      ['letter', 'digit'],
+      ['AB', '12345'],
+      [false, true],
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      '0123456789',
+    );
+    expect(columns.map((column) => column.gap)).toEqual([
+      false, false, true, false, false, false, false,
+    ]);
+  });
 });

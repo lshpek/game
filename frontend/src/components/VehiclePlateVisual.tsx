@@ -189,6 +189,7 @@ export default function VehiclePlateVisual({
    * because on a real plate it appears once.
    */
   const hasRegionCompartment = visual.region_position === 'right' && Boolean(regionText);
+  const hasRegionBadge = visual.region_position === 'badge' && Boolean(regionText);
   const printed = hasRegionCompartment
     ? segments.filter((segment) => segment.kind !== 'region')
     : segments;
@@ -207,7 +208,13 @@ export default function VehiclePlateVisual({
       // Inner margins of the printed field. A real plate keeps a generous border so the
       // registration never runs into the frame.
       paddingLeft: bandOnLeft ? '1.2%' : compartment ? '3%' : '4%',
-      paddingRight: bandOnRight ? '1.2%' : compartment ? '2%' : '4%',
+      paddingRight: bandOnRight
+        ? '1.2%'
+        : hasRegionBadge
+          ? `calc(${Math.max(4, visual.region_width * 100)}% + 2%)`
+          : compartment
+            ? '2%'
+            : '4%',
       /*
        * Containment, and this is load-bearing rather than decorative.
        *
@@ -220,7 +227,7 @@ export default function VehiclePlateVisual({
       minWidth: 0,
       overflow: 'hidden',
     };
-  }, [visual.band_position, hasRegionCompartment]);
+  }, [visual.band_position, visual.region_width, hasRegionBadge, hasRegionCompartment]);
 
   const hasBand =
     visual.band_position !== 'none' &&
@@ -340,12 +347,19 @@ export default function VehiclePlateVisual({
             style={{
               fontSize: `${Math.round(0.46 * baseFontPx)}px`,
               width: `${Math.round((visual.region_width || 0.13) * 100)}%`,
+              boxSizing: 'border-box',
+              minWidth: 0,
+              padding: '0 0.25em',
             }}
           >
             {/* The Russian format prints the flag, the RUS legend, and the region code
                 beneath them - three printed elements, not one string. */}
             {visual.region_flag ? (
-              <PlateFlag flag="ru" className="!mb-[0.25em]" />
+              <PlateFlag
+                flag="ru"
+                className="!mb-[0.25em]"
+                style={{ width: '2.1em', height: '1.3em' }}
+              />
             ) : null}
             {visual.region_flag || visual.region_text ? (
               <span className="plate-region-legend">
@@ -353,6 +367,23 @@ export default function VehiclePlateVisual({
               </span>
             ) : null}
             <span>{regionText}</span>
+          </div>
+        ) : null}
+
+        {hasRegionBadge ? (
+          <div
+            className="plate-region-badge"
+            style={{
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: `${Math.max(4, visual.region_width * 100)}%`,
+              background: visual.band_color || visual.accent,
+              color: visual.band_color ? visual.band_text_color : '#ffffff',
+            }}
+            aria-hidden="true"
+          >
+            {regionText}
           </div>
         ) : null}
 

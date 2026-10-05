@@ -216,15 +216,18 @@ describe('VehiclePlateVisual', () => {
     );
     // The compartment carries the printed RUS legend and the region code, in the order the
     // real format prints them.
-    const block = document.querySelector('.plate-region-block') as HTMLElement;
-    expect(block.textContent).toContain('RUS');
-    expect(block.textContent).toContain('777');
+    const compartment = document.querySelector('.plate-region-block') as HTMLElement;
+    expect(compartment).not.toBeNull();
+    expect(compartment.textContent).toContain('RUS');
+    expect(compartment.textContent).toContain('777');
     // And the registration itself is not suffixed with the code: on a two-compartment
     // plate the code appears once, in its own compartment.
     expect(document.querySelector('.plate-print')?.textContent).toBe('A777BC');
+    expect(compartment.style.boxSizing).toBe('border-box');
+    expect(compartment.querySelector('.plate-flag-ru')?.getAttribute('style')).toContain('2.1em');
     // The flag is drawn as vectors, not printed as an emoji.
-    expect(block.querySelector('.plate-flag-ru')).not.toBeNull();
-    expect(block.textContent).not.toContain('🇷🇺');
+    expect(compartment.querySelector('.plate-flag-ru')).not.toBeNull();
+    expect(compartment.textContent).not.toContain('🇷🇺');
   });
 
   it('prints the state name as the header on a US plate', () => {
@@ -233,6 +236,17 @@ describe('VehiclePlateVisual', () => {
     );
     const header = document.querySelector('.plate-header') as HTMLElement;
     expect(header.textContent).toBe('California');
+  });
+
+  it('reserves the recipe-declared region badge area beside the number', () => {
+    render(
+      <VehiclePlateVisual visual={polVisual} plateText="AB 12345" regionCode="MZ" />,
+    );
+    const badge = document.querySelector('.plate-region-badge') as HTMLElement;
+    const face = document.querySelector('.plate-face') as HTMLElement;
+    expect(badge.textContent).toBe('MZ');
+    expect(badge.style.right).toBe('0px');
+    expect(face.style.paddingRight).toContain('calc(');
   });
 
   it('keeps all plate families free of decorative mounting circles', () => {
