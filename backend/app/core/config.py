@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # --- Application ---------------------------------------------------
     app_env: Literal["development", "test", "production"] = "development"
     debug: bool = True
-    app_name: str = "NUMORA — Global collectible numbers"
+    app_name: str = "NUMORA — Global collectible atlas"
     api_prefix: str = "/api"
     secret_key: str = "CHANGE_ME_TO_RANDOM_SECRET"
     jwt_algorithm: str = "HS256"
