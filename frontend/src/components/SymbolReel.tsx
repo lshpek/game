@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 
 import { EASE } from '@/lib/motion';
-import { useI18n } from '@/i18n';
+import { useT } from '@/i18n';
 import type { PlateVisual, ReelFrame } from '@/types';
-import CollectibleVisualFrame from './CollectibleVisualFrame';
-import { REEL_SECONDS, symbolStops } from './reelTiming';
+import { REEL_SECONDS, SPIN_WINDOW, symbolStops } from './reelTiming';
 
 /**
  * The symbol reel.
@@ -54,7 +53,7 @@ import { REEL_SECONDS, symbolStops } from './reelTiming';
  * mounted. Every frame below is a *preview*: synthetic, generated server-side, never
  * stored, never scored, never granted. The reel animates towards a value it was handed.
  */
-import { REEL_SECONDS, SPIN_WINDOW, symbolStops } from './reelTiming';
+
 /** How many distinct symbols each column cycles through before reaching its target. */
 const CYCLE = 9;
 
@@ -66,12 +65,14 @@ const DIGITS = '0123456789'.split('');
 interface Column {
   /** The character this position locks on - the real result's character. */
   target: string;
-  /** The symbols it passes through before it gets there. */
+  /** The symbols it passes through before it gets there. Empty for a fixed character. */
   cycle: string[];
   /** True when the position holds a digit, which decides its symbol set. */
   digit: boolean;
-  /** Milliseconds from the start of the reel until this position locks. */
-  stopAt: number;
+  /** True when a printed group gap precedes this character. */
+  gap: boolean;
+  /** True when the character does not spin - a mark the plate prints as it stands. */
+  fixed: boolean;
 }
 
 export function SymbolReel({
@@ -101,7 +102,7 @@ export function SymbolReel({
   displaySegmentGaps: boolean[];
   displaySegmentKinds: string[];
 }) {
-  const { t } = useT();
+  const t = useT();
   const reported = useRef(false);
   const [done, setDone] = useState(() => settled);
   const [frame, setFrame] = useState(0);
@@ -114,15 +115,17 @@ export function SymbolReel({
    * letter/digit hierarchy, which is what makes each column cycle the right alphabet.
    */
   const columns = useMemo(
-    () => buildColumns(plateText, displaySegmentKinds, displaySegments),
-    [plateText, displaySegmentKinds, displaySegments],
+    () => buildColumns(plateText, displaySegmentKinds, displaySegments, displaySegmentGaps),
+    [plateText, displaySegmentKinds, displaySegments, displaySegmentGaps],
   );
   const stops = useMemo(() => symbolStops(columns.length), [columns.length]);
 
   // The preview object behind the reels. It advances while the reels are still spinning,
-  // so the country design keeps changing - and it stops the instant the first column
+  // so the country design keeps changing - and it freezes the instant the first column
   // locks, so the object never changes underneath a settled number.
-  const preview = frames.length > 0 ? frames[Math.min(frame, frames.length - 1)] : null;
+  const preview: ReelFrame | null =
+    frames.length > 0 ? frames[Math.min(frame, frames.length - 1)] ?? null : null;
+  const surface = done ? visual : (preview?.visual ?? visual);
 
   useEffect(() => {
     if (settled) {
@@ -164,128 +167,89 @@ export function SymbolReel({
       data-testid="symbol-reel"
     >
       {/*
-        The physical object. Present from the first frame and never unmounted: the reels
-        live *inside* its printed area, so the plate and its country design are on screen
-        throughout.
-      */}
-      <div className="w-full max-w-full">
-        {kind === 'SIM_CARD' ? (
-          <SimReelSurface columns={columns} stops={stops} done={done} number={plateText} />
-        ) : (
-          <PlateReelSurface
-            columns={columns}
-            stops={stops}
-            done={done}
-            visual={visual}
-            preview={preview}
-          />
-        )}
-      </div>
+        The physical object, with the reels inside it.
 
-      {done ? (
-        <motion.div
-          className="flex w-full flex-col items-center"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: EASE.out }}
-          data-testid="reel-result"
-        >
-          {final}
-        </motion.div>
-      ) : null}
+        One element carries the object's own dimensions and the reels are positioned inside
+        its printed area. Keeping them in a single box is what guarantees a symbol can never
+        sit outside the plate - there is no second box to drift from the first.
+
+        While spinning, the plate's frame, border, band, mounts and finish belong to the
+        *preview* frame's country recipe, so the object on screen keeps being a real plate
+        from a real country and changes as the reel runs. The moment the reels lock it
+        becomes the real result's, so the plate never changes under a settled number.
+      */}
+      {kind === 'SIM_CARD' ? (
+        <SimReelSurface
+          columns={columns}
+          stops={stops}
+          done={done}
+          number={plateText}
+          final={final}
+        />
+      ) : (
+        <div className="relative mx-auto w-full max-w-full" style={{ width: objectWidth(visual) }}>
+          <PlateSurface visual={surface} done={done} final={final} />
+          {!done ? (
+            <div
+              className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
+              data-testid="reel-columns"
+            >
+              <ReelColumns columns={columns} stops={stops} />
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
+}
+
+/** The object's own width, capped to the viewport. Never wider than the screen. */
+function objectWidth(visual: PlateVisual): string {
+  return `${Math.round(visual.width_mm)}px`;
 }
 
 /**
- * The plate surface.
+ * The plate's chrome while the reels are hot, and the real object once they
+ * have locked.
  *
- * The real country's recipe drives the frame, band, mounts and finish. Only the printed
- * area is replaced by the reels, and only while they are spinning.
+ * While spinning, the frame, border and finish belong to the *preview* frame's
+ * country recipe - so the object on screen keeps being a real plate from a
+ * real country, changing as the reel runs. The moment the reels lock, the real
+ * result takes the stage: the very component the rest of the app renders a
+ * collectible with, label and all, so the settled object is announced as the
+ * find it is rather than as a decorative picture of one.
  */
-function PlateReelSurface({
-  columns,
-  stops,
-  done,
+function PlateSurface({
   visual,
-  preview,
+  done,
+  final,
 }: {
-  columns: Column[];
-  stops: number[];
-  done: boolean;
   visual: PlateVisual;
-  preview: ReelFrame | null;
+  done: boolean;
+  final: React.ReactNode;
 }) {
-  // While spinning, the country design is the preview frame's own; the moment the reels
-  // lock it becomes the real result's, so the plate never changes under a settled number.
-  const surface = done ? visual : (preview?.visual ?? visual);
+  if (done) return <>{final}</>;
+
+  const vars = {
+    '--plate-radius': visual.radius,
+    '--plate-border': visual.border_width,
+    '--plate-border-color': visual.border,
+    '--plate-bg': visual.background,
+    '--plate-bg-alt': visual.background_alt,
+    '--plate-rail': '3px',
+    '--plate-raise': String(visual.relief ?? 0.3),
+    '--plate-grain': String(visual.grain ?? 0.15),
+    aspectRatio: `${visual.aspect}`,
+    width: '100%',
+    maxWidth: '100%',
+    containerType: 'inline-size',
+  } as React.CSSProperties;
 
   return (
-    <div className="relative w-full">
-      {done ? (
-        <div className="w-full">
-          <CollectibleVisualFrame
-            visual={visual}
-            plateText=""
-            displaySegments={[]}
-            displaySegmentGaps={[]}
-            displaySegmentKinds={[]}
-            kind="VEHICLE_PLATE"
-          />
-        </div>
-      ) : (
-        <PlateSurface visual={surface} />
-      )}
-      {!done ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center"
-          data-testid="reel-columns"
-        >
-          <div className="flex items-center justify-center gap-[0.06em] px-[4%]">
-            {columns.map((column, index) => (
-              <ReelColumn key={index} column={column} stopAt={stops[index] ?? 0} />
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** The plate's own chrome, with its printed area left empty for the reels. */
-function PlateSurface({ visual }: { visual: PlateVisual }) {
-  return (
-    <div
-      className="plate-frame plate-texture"
-      style={
-        {
-          '--plate-radius': visual.radius,
-          '--plate-border': visual.border_width,
-          '--plate-border-color': visual.border,
-          '--plate-bg': visual.background,
-          '--plate-bg-alt': visual.background_alt,
-          '--plate-rail': '3px',
-          aspectRatio: `${visual.aspect}`,
-          width: `${Math.round(visual.width_mm)}px`,
-          maxWidth: '100%',
-          containerType: 'inline-size',
-          '--plate-raise': String(visual.relief ?? 0.3),
-          '--plate-grain': String(visual.grain ?? 0.15),
-        } as React.CSSProperties
-      }
-      aria-hidden="true"
-    >
+    <div className="plate-frame plate-texture" style={vars} aria-hidden="true">
       <div
         className="plate-face"
-        style={
-          {
-            width: '100%',
-            height: '100%',
-            minWidth: 0,
-            overflow: 'hidden',
-            padding: '0 4%',
-          } as React.CSSProperties
-        }
+        style={{ width: '100%', height: '100%', minWidth: 0, overflow: 'hidden' }}
       >
         <span className="plate-gloss" />
       </div>
@@ -299,27 +263,90 @@ function SimReelSurface({
   stops,
   done,
   number,
+  final,
 }: {
   columns: Column[];
   stops: number[];
   done: boolean;
   number: string;
+  final: React.ReactNode;
 }) {
   return (
-    <div className="relative mx-auto w-full max-w-[330px]">
-      {!done ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-[12%] pt-[8%]"
-          data-testid="reel-columns"
-        >
-          <div className="flex items-center justify-center gap-[0.02em]">
-            {columns.map((column, index) => (
-              <ReelColumn key={index} column={column} stopAt={stops[index] ?? 0} />
-            ))}
+    <div className="relative mx-auto w-full max-w-[min(100%,320px)]">
+      {done ? (
+        final
+      ) : (
+        <>
+          <SimSurfaceChrome />
+          {/*
+            Inside the card's printed number area: the SIM keeps its chip, its moulded edge
+            and its brand, and only the number spins.
+          */}
+          <div
+            className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center px-[26%] pt-[14%] pb-[22%]"
+            data-testid="reel-columns"
+          >
+            <ReelColumns columns={columns} stops={stops} compact />
           </div>
-        </div>
-      ) : null}
+        </>
+      )}
       <span className="sr-only-number">{number}</span>
+    </div>
+  );
+}
+
+/** The SIM's physical body, without its printed number. */
+function SimSurfaceChrome() {
+  return (
+    <div className="sim-body" aria-hidden="true">
+      <span className="sim-notch" />
+      <span className="sim-brand-bar" />
+      <span className="sim-contact" />
+      <span className="sim-pad">
+        <span />
+        <span />
+        <span />
+        <span />
+      </span>
+      <span className="sim-sheen" />
+    </div>
+  );
+}
+
+/**
+ * The row of reel columns.
+ *
+ * A printed group gap is real spacing between columns, not a spinning character - a
+ * separator that itself flailed would look broken, and a real plate separates its groups
+ * with a space.
+ */
+function ReelColumns({
+  columns,
+  stops,
+  compact = false,
+}: {
+  columns: Column[];
+  stops: number[];
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className="flex max-w-full items-center justify-center"
+      style={{
+        fontFamily: 'var(--plate-font, inherit)',
+        fontWeight: 700,
+        fontSize: compact ? 'clamp(13px,5.2cqw,20px)' : 'clamp(11px,7.4cqw,40px)',
+        letterSpacing: 'var(--plate-letter-spacing, 0.05em)',
+      }}
+    >
+      {columns.map((column, index) => (
+        <span key={index} className="flex items-center">
+          {column.gap ? (
+            <span className="reel-gap" aria-hidden="true" />
+          ) : null}
+          <ReelColumn column={column} stopAt={stops[index] ?? 0} />
+        </span>
+      ))}
     </div>
   );
 }
@@ -331,11 +358,21 @@ function SimReelSurface({
  * stop time. The strip's length is exactly the number of symbols it will pass, so it
  * travels by whole rows and lands on the target with nothing half-visible.
  *
- * Everything here is compositor work: one `transform`, one `opacity`, no layout, no filter.
- * A Telegram WebView on a mid-range phone runs this without dropping a frame, which a
- * `textContent` rewrite per tick could never do.
+ * Everything here is compositor work: one `transform`, one `opacity`, no layout, no filter,
+ * no `textContent` write. A Telegram WebView on a mid-range phone runs this without dropping
+ * a frame.
  */
 function ReelColumn({ column, stopAt }: { column: Column; stopAt: number }) {
+  // A character that does not spin - a mark the plate prints as it stands - is shown as
+  // it is, and takes no part in the lock sequence.
+  if (column.fixed || column.cycle.length === 0) {
+    return (
+      <span className="reel-column reel-column-fixed" data-testid="reel-column" aria-hidden="true">
+        <span className="reel-symbol">{column.target}</span>
+      </span>
+    );
+  }
+
   // The strip is the target's own cycle plus the target at the end, so landing is exact.
   const rows = column.cycle.length + 1;
 
@@ -352,10 +389,9 @@ function ReelColumn({ column, stopAt }: { column: Column; stopAt: number }) {
         initial={{ y: 0 }}
         animate={{ y: `-${rows - 1}em` }}
         transition={{
-          // The delay is this position's own start; the duration is its own run. Early
-          // positions start at once and finish early, later ones start later and run
-          // longer - which is exactly what sequential lock looks like.
-          delay: 0,
+          // The duration is this position's own run. Early positions finish early, later
+          // ones run longer - which is exactly what sequential lock looks like, and why
+          // nothing ever stops at the same moment.
           duration: Math.max(0.18, (stopAt / 1000) * 0.98),
           ease: EASE.reel,
         }}
@@ -381,47 +417,60 @@ export function buildColumns(
   text: string,
   kinds: string[],
   segments: string[],
+  gaps: boolean[] = [],
 ): Column[] {
-  // Expand the grouped segments back into per-character positions, keeping the kind and
-  // whether a gap precedes each one.
+  /*
+   * Expand the grouped segments back into per-character positions.
+   *
+   * The server sends gaps *per group* - "this group is separated from the last" - so the
+   * flag has to be lifted to the first character of each group after the first. That flag
+   * is what keeps a reel faithful to the printed layout: `AB 12345` reels as two groups,
+   * with a real gap between them, instead of seven columns butted together.
+   */
   const chars: Array<{ char: string; kind: string; gap: boolean }> = [];
-  let cursor = 0;
   if (segments.length > 0) {
     segments.forEach((segment, index) => {
-      if (index > 0) cursor = 1;
       const kind = kinds[index] ?? 'digit';
+      const gap = index > 0 && (gaps[index] ?? true);
       for (const char of segment) {
-        chars.push({ char, kind, gap: cursor === 1 });
-        cursor = 0;
+        chars.push({ char, kind, gap: chars.length > 0 && gap });
       }
     });
   } else {
+    let pending = false;
     for (const char of text) {
       if (char === ' ') {
-        cursor = 1;
+        pending = true;
         continue;
       }
       chars.push({
         char,
         kind: /\d/.test(char) ? 'digit' : 'letter',
-        gap: cursor === 1,
+        gap: pending && chars.length > 0,
       });
-      cursor = 0;
+      pending = false;
     }
   }
 
-  return chars.map(({ char, kind }) => {
-    const digit = kind === 'letter' || kind === 'mark' ? false : /\d/.test(char);
+  return chars.map(({ char, kind, gap }) => {
+    // A position holding a non-alphanumeric mark (a separator the server already
+    // excluded, a `+` on a phone number) keeps its own character and does not spin.
+    const digit = kind === 'digit' || kind === 'mixed' || kind === 'region' ? /\d/.test(char) : false;
+    const spinner = /^[A-Z0-9]$/.test(char);
+    if (!spinner) {
+      return { target: char, cycle: [], digit, gap, fixed: true };
+    }
     const alphabet = digit ? DIGITS : LETTERS;
-    // The cycle is the target's own alphabet, walked to land on the target, so the reel
-    // never has to jump backwards at the end.
+    // The cycle walks the target's own alphabet forward to land on it, so the reel never
+    // has to jump backwards at the end - a backwards jump is the tell that an odometer is
+    // faked rather than driven.
     const start = alphabet.indexOf(char);
     const offset = start >= 0 ? start : 0;
     const cycle: string[] = [];
     for (let step = 1; step <= CYCLE; step += 1) {
-      cycle.push(alphabet[(offset + step) % alphabet.length]);
+      cycle.push(alphabet[(offset + step) % alphabet.length] ?? char);
     }
-    return { target: char, cycle, digit, stopAt: 0 };
+    return { target: char, cycle, digit, gap, fixed: false };
   });
 }
 

@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
-import { formatCoins, rarityColor } from '@/lib/format';
+import { rarityColor } from '@/lib/format';
+import { PriceDisplay } from '@/components/PriceDisplay';
 import { RARITY_COLORS } from '@/lib/format';
 import { SPRING, useReducedMotion } from '@/lib/motion';
 import { useI18n } from '@/i18n';
@@ -72,13 +73,18 @@ export function CollectiblePreview({
       {/* 3. The values, subordinate and side by side. */}
       {showValue ? (
         <div className="mt-1.5 flex items-baseline justify-center gap-2">
-          <span className="number-display text-[15px] font-bold text-brass">
-            +{formatCoins(card.dealer_value)}
-          </span>
-          <span className="t-micro text-white/30">
-            {card.currency_symbol}
-            {formatCoins(card.collector_value)}
-          </span>
+          <PriceDisplay value={card.dealer_value} prefix="+" size="sm" />
+          {/*
+            The collector figure is a separate, fictional country-local number. It is shown
+            beside the authoritative price and never added to it, because presenting them
+            as one figure would imply a rate of exchange the game does not have.
+          */}
+          <PriceDisplay
+            value={card.collector_value}
+            size="sm"
+            readOnly
+            tone="rgba(255,255,255,0.3)"
+          />
         </div>
       ) : null}
 
@@ -172,14 +178,14 @@ export function CollectibleRow({
           </span>
         ) : null}
       </button>
-      <span className="shrink-0 text-right">
-        <span className="number-display block text-[13px] font-bold text-brass">
-          +{formatCoins(card.dealer_value)}
-        </span>
-        <span className="block text-[10px] text-white/40">
-          {card.currency_symbol}
-          {formatCoins(card.collector_value)}
-        </span>
+      <span className="flex shrink-0 flex-col items-end">
+        <PriceDisplay value={card.dealer_value} prefix="+" size="sm" />
+        <PriceDisplay
+          value={card.collector_value}
+          size="sm"
+          readOnly
+          tone="rgba(255,255,255,0.4)"
+        />
       </span>
     </div>
   );

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import Reveal from '@/components/Reveal';
 import SimCardVisual from '@/components/SimCardVisual';
@@ -31,7 +32,14 @@ vi.mock('@/lib/telegram', () => ({
   shareToChat: vi.fn(),
 }));
 
-const render = (ui: React.ReactElement) => rtlRender(<I18nProvider>{ui}</I18nProvider>);
+const render = (ui: React.ReactElement) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(
+    <QueryClientProvider client={client}>
+      <I18nProvider>{ui}</I18nProvider>
+    </QueryClientProvider>,
+  );
+};
 
 /**
  * Run a reveal forward past its final stage.

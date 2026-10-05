@@ -5,11 +5,11 @@ import { createPortal } from 'react-dom';
 
 import { useI18n } from '../i18n';
 import { trackRevealShown, trackRevealSkipped, trackRollAgain } from '../lib/analytics';
-import { formatCoins } from '../lib/format';
 import { DURATION, EASE, SPRING, revealDuration, useReducedMotion } from '../lib/motion';
 import { hapticCue } from '../lib/telegram';
 import type { PlateCard, ReelFrame } from '../types';
 import RarityBadge from './RarityBadge';
+import PriceDisplay from './PriceDisplay';
 import SimCardVisual from './SimCardVisual';
 import SymbolReel from './SymbolReel';
 import VehiclePlateVisual from './VehiclePlateVisual';
@@ -376,11 +376,16 @@ export default function Reveal({
 
                       {/* 3. One main value. Everything secondary belongs in Details, so
                           the reveal never dumps competing prices on the player. */}
-                      <div className="space-y-0.5">
-                        <div className="number-display text-[2rem] font-bold text-brass">
-                          +{formatCoins(card.dealer_value)}
-                        </div>
-                        <div className="t-micro text-white/35">{t('reveal.result.numora')}</div>
+                      {/*
+                        One main value, in the player's chosen display currency. The
+                        canonical figure is NUMORA; the picker changes only how it is
+                        printed, never what is stored or what the roll is worth.
+                      */}
+                      <div className="flex flex-col items-center gap-0.5">
+                        <PriceDisplay value={card.dealer_value} prefix="+" size="lg" />
+                        <span className="t-micro text-white/35">
+                          {t('reveal.result.numora')}
+                        </span>
                       </div>
 
                       {/* 4. One or two traits: why this one is worth anything. */}
@@ -454,7 +459,13 @@ export default function Reveal({
                           onClick={onSellDuplicates}
                         >
                           {t('reveal.sellDuplicates')}
-                          <span className="text-brass">+{formatCoins(card.sale_value)}</span>
+                          <PriceDisplay
+                            value={card.sale_value}
+                            prefix="+"
+                            size="sm"
+                            tone="#c9a86b"
+                            readOnly
+                          />
                         </button>
                       )}
                       {onOpenCollection && (

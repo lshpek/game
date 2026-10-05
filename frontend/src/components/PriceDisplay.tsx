@@ -111,10 +111,17 @@ export function PriceDisplay({
       ) : (
         <CurrencyButton code={code} catalog={catalog} onChange={setCode} />
       )}
-      {/* The exact figure, for a screen reader and for anyone who wants the digits. */}
-      <span className="sr-only-number" data-testid="price-full">
-        {label ?? full}
-      </span>
+      {/*
+        The exact figure, for a screen reader. Only when the visible figure is
+        not already the exact one: a compacted price prints `1.25M` on screen
+        and the full digits here, while an un-compacted price would only repeat
+        itself.
+      */}
+      {label || full !== figure ? (
+        <span className="sr-only-number" data-testid="price-full">
+          {label ?? full}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -147,7 +154,7 @@ function CurrencyButton({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLSpanElement | null>(null);
-  const { t } = useT();
+  const t = useT();
 
   // Dismiss on an outside tap or Escape. A popover that will not close is worse than none.
   useEffect(() => {
@@ -174,7 +181,14 @@ function CurrencyButton({
   };
 
   return (
-    <span ref={rootRef} className="relative shrink-0">
+    // Clicks belong to the picker and to nothing else: a chip inside a larger
+    // button - a collection row, a preview card - must never hand its tap to
+    // the parent, or opening the picker would also expand the row.
+    <span
+      ref={rootRef}
+      className="relative shrink-0"
+      onClick={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}

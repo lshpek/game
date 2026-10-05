@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render as rtlRender, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { CollectionList } from '@/components/CollectionList';
 import { RarityBadge, TraitChip } from '@/components/RarityBadge';
@@ -9,8 +10,19 @@ import { ValueCounter } from '@/components/ValueCounter';
 import { I18nProvider } from '@/i18n';
 import { plate, rollBalance, uniquePlate } from '@/test/fixtures';
 
-/** Every component reads strings from context, so tests need the provider. */
-const render = (ui: ReactElement) => rtlRender(<I18nProvider>{ui}</I18nProvider>);
+/**
+ * Every component reads strings from context, so tests need the provider, and
+ * every price reads the currency catalogue through a query, so they need a
+ * query client as well.
+ */
+const render = (ui: ReactElement) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(
+    <QueryClientProvider client={client}>
+      <I18nProvider>{ui}</I18nProvider>
+    </QueryClientProvider>,
+  );
+};
 
 describe('RarityBadge', () => {
   it('renders the human label', () => {
@@ -137,16 +149,14 @@ describe('CollectionList', () => {
   });
 
   it('offers a dealer sale only when duplicates exist', () => {
-    const { unmount } = rtlRender(
-      <I18nProvider>
-        <CollectionList
-          items={[uniquePlate()]}
-          expanded={777}
-          onToggle={vi.fn()}
-          selling={false}
-          onSell={vi.fn()}
-        />
-      </I18nProvider>,
+    const { unmount } = render(
+      <CollectionList
+        items={[uniquePlate()]}
+        expanded={777}
+        onToggle={vi.fn()}
+        selling={false}
+        onSell={vi.fn()}
+      />,
     );
     expect(screen.queryByRole('button', { name: /sell duplicate copies/i })).toBeNull();
     unmount();

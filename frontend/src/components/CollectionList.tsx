@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 
 import { formatCoins, rarityColor } from '@/lib/format';
+import { PriceDisplay } from '@/components/PriceDisplay';
 import { useI18n } from '@/i18n';
 import CollectibleVisual from './CollectibleVisual';
 import { RarityBadge, TraitChip } from './RarityBadge';
@@ -57,64 +58,71 @@ export function CollectionList({
             )}
             style={{ borderColor: isOpen ? `${color}44` : 'rgba(255,255,255,0.06)' }}
           >
-            <button
-              type="button"
-              className="flex w-full items-center gap-3 p-2.5 text-left"
-              onClick={() => onToggle(item.id)}
-              aria-expanded={isOpen}
-              aria-label={t('collection.ariaPlate', { plate: item.plate_text })}
-              data-testid="collection-row"
-              data-kind={item.kind ?? 'VEHICLE_PLATE'}
-            >
-              {/* The object, big enough to recognise without reading a single word. */}
-              <span className="w-[108px] shrink-0">
-                <CollectibleVisual card={item} scale={0.42} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-1.5">
-                  <RarityBadge rarity={item.rarity} size="sm" />
-                  {item.is_new ? (
-                    <span className="rounded-md border border-emerald-300/30 bg-emerald-300/10 px-1.5 py-0.5 text-[9px] font-bold tracking-[0.06em] text-emerald-200">
-                      {t('collection.new')}
-                    </span>
-                  ) : null}
+            <div className="flex items-center gap-3 p-2.5">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                onClick={() => onToggle(item.id)}
+                aria-expanded={isOpen}
+                aria-label={t('collection.ariaPlate', { plate: item.plate_text })}
+                data-testid="collection-row"
+                data-kind={item.kind ?? 'VEHICLE_PLATE'}
+              >
+                {/* The object, big enough to recognise without reading a single word. */}
+                <span className="w-[108px] shrink-0">
+                  <CollectibleVisual card={item} scale={0.42} />
                 </span>
-                <span className="mt-1 block truncate t-caption text-white/60">
-                  <span aria-hidden>{item.country.flag}</span>{' '}
-                  {lang === 'ru' ? item.country.name_ru : item.country.name_en}
-                  {item.region
-                    ? ` · ${lang === 'ru' ? item.region.name_ru : item.region.name_en}`
-                    : ''}
-                </span>
-                {item.kind === 'SIM_CARD' && item.details ? (
-                  <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-white/35">
-                    <span
-                      aria-hidden
-                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: item.details.operator_accent }}
-                    />
-                    {item.details.operator}
-                    {item.details.edition ? ` · ${item.details.edition}` : ''}
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <RarityBadge rarity={item.rarity} size="sm" />
+                    {item.is_new ? (
+                      <span className="rounded-md border border-emerald-300/30 bg-emerald-300/10 px-1.5 py-0.5 text-[9px] font-bold tracking-[0.06em] text-emerald-200">
+                        {t('collection.new')}
+                      </span>
+                    ) : null}
                   </span>
-                ) : (
-                  <span className="mt-0.5 block truncate text-[11px] text-white/30">{kindLabel}</span>
-                )}
-              </span>
-              <span className="shrink-0 text-right">
-                <span className="number-display block text-[13px] font-bold text-brass">
-                  +{formatCoins(item.dealer_value)}
+                  <span className="mt-1 block truncate t-caption text-white/60">
+                    <span aria-hidden>{item.country.flag}</span>{' '}
+                    {lang === 'ru' ? item.country.name_ru : item.country.name_en}
+                    {item.region
+                      ? ` · ${lang === 'ru' ? item.region.name_ru : item.region.name_en}`
+                      : ''}
+                  </span>
+                  {item.kind === 'SIM_CARD' && item.details ? (
+                    <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-white/35">
+                      <span
+                        aria-hidden
+                        className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ background: item.details.operator_accent }}
+                      />
+                      {item.details.operator}
+                      {item.details.edition ? ` · ${item.details.edition}` : ''}
+                    </span>
+                  ) : (
+                    <span className="mt-0.5 block truncate text-[11px] text-white/30">{kindLabel}</span>
+                  )}
                 </span>
-                <span className="block text-[10px] text-white/35">
-                  {item.currency_symbol}
-                  {formatCoins(item.collector_value)}
-                </span>
+              </button>
+              {/*
+                The values sit outside the toggle button: a price is not part of
+                the row's tap target, and the currency chip inside it must never
+                hand its tap to the row.
+              */}
+              <span className="flex shrink-0 flex-col items-end">
+                <PriceDisplay value={item.dealer_value} prefix="+" size="sm" />
+                <PriceDisplay
+                  value={item.collector_value}
+                  size="sm"
+                  readOnly
+                  tone="rgba(255,255,255,0.35)"
+                />
                 {item.duplicate_count > 0 ? (
-                  <span className="mt-0.5 block text-[10px] text-brass/80">
+                  <span className="mt-0.5 text-[10px] text-brass/80">
                     ×{item.duplicate_count} {t('collection.duplicates')}
                   </span>
                 ) : null}
               </span>
-            </button>
+            </div>
 
             {isOpen ? (
               <div className="space-y-3 border-t border-white/[0.07] px-3 pb-3 pt-3">
@@ -208,9 +216,7 @@ export function CollectionGrid({
           >
             <CollectibleVisual card={item} scale={0.34} />
             <RarityBadge rarity={item.rarity} size="sm" />
-            <span className="number-display text-[12px] font-bold text-brass">
-              +{formatCoins(item.dealer_value)}
-            </span>
+            <PriceDisplay value={item.dealer_value} prefix="+" size="sm" compact readOnly />
             <span className="t-micro truncate text-white/35">
               <span aria-hidden>{item.country.flag}</span>{' '}
               {item.country.code}

@@ -996,6 +996,27 @@
     line-height: 1;
   }
 
+  /*
+   * A printed group gap.
+   *
+   * Real spacing, not a spinning character: a separator that itself flailed would look
+   * broken, and a real plate separates its groups with a space.
+   */
+  .reel-gap {
+    display: block;
+    flex-shrink: 0;
+    width: 0.42em;
+    height: 1em;
+  }
+
+  /* A character that does not spin is printed as it stands. */
+  .reel-column-fixed {
+    width: auto;
+    min-width: 0.62em;
+    align-items: center;
+    color: var(--plate-text, #111);
+  }
+
   /* ==========================================================================
    * Overlays: bottom sheets and modals
    * ========================================================================== */

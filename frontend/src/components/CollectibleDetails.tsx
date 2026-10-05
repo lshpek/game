@@ -4,7 +4,8 @@ import clsx from 'clsx';
 import CollectibleVisual, { resolveKind } from '@/components/CollectibleVisual';
 import { RarityBadge, TraitChip } from '@/components/RarityBadge';
 import { useI18n, type DictKey } from '@/i18n';
-import { RARITY_COLORS, formatCoins } from '@/lib/format';
+import { RARITY_COLORS } from '@/lib/format';
+import { PriceDisplay } from '@/components/PriceDisplay';
 import { DURATION, EASE, SPRING, useReducedMotion } from '@/lib/motion';
 import type { PlateCard } from '@/types';
 
@@ -71,11 +72,23 @@ export function CollectibleDetails({
       */}
       <dl className="grid grid-cols-2 gap-1.5">
         <Fact label={t('details.kind')} value={t(kind === 'SIM_CARD' ? 'category.sim' : 'category.plate')} />
-        <Fact label={t('details.numora')} value={formatCoins(collectible.dealer_value)} accent="#c9a86b" />
+        {/* The authoritative price, in the player's chosen display currency. */}
+        <Fact
+          label={t('details.numora')}
+          value={<PriceDisplay value={collectible.dealer_value} size="sm" />}
+          accent="#c9a86b"
+        />
         <Fact label={t('details.rarity')} value={collectible.rarity} accent={accent} />
         <Fact
           label={t('details.collectorValue')}
-          value={`${collectible.currency_symbol}${collectible.collector_value.toLocaleString()}`}
+          value={
+            <PriceDisplay
+              value={collectible.collector_value}
+              size="sm"
+              readOnly
+              tone="rgba(255,255,255,0.9)"
+            />
+          }
         />
         {region ? <Fact label={t('details.region')} value={region} /> : null}
         {collectible.is_secret ? <Fact label={t('details.edition')} value={t('reveal.result.secret')} /> : null}
@@ -147,7 +160,7 @@ function Fact({
   accent,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   accent?: string;
 }) {
   return (

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -33,7 +34,12 @@ import type { PlateCard } from '@/types';
 const STYLESHEET = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8');
 
 function wrap(ui: React.ReactNode) {
-  return render(<I18nProvider>{ui}</I18nProvider>);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <I18nProvider>{ui}</I18nProvider>
+    </QueryClientProvider>,
+  );
 }
 
 /** A long, adversarial value: the sort of text that breaks a layout in production. */
