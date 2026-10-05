@@ -23,20 +23,63 @@ railway login
 
 ## Deploying an update (the order matters)
 
+The two services are **not** deployed the same way. This asymmetry is the single most
+important thing to know here, and getting it backwards either ships nothing or breaks a
+working deployment:
+
+| Service | Triggered by a GitHub push? | How to deploy |
+|---|---|---|
+| `backend` | **Yes** - build from the repository root | Push to `main`. Nothing to do. |
+| `frontend` | **No** - no git trigger is attached | `cd frontend && railway up --service frontend` |
+| `bot` | No | `cd bot && railway up --service bot` |
+
 `VITE_API_BASE_URL` is **inlined at build time**, so the frontend must be rebuilt
 after the backend domain is known.
 
 ```bash
-cd backend  && railway up --service backend   # applies migrations (AUTO_MIGRATE=true)
-cd bot     && railway up --service bot        # picks up backend changes immediately
-cd frontend && railway variables set VITE_API_BASE_URL=https://backend-production-74fd.up.railway.app
-cd frontend && railway up --service frontend  # rebuilds with the current API base
+git push origin main                              # backend picks this up on its own
+cd frontend && railway up --service frontend       # the frontend does not
 ```
 
-Run `railway up` **from inside the service directory**, not from the repository root
-with a path argument: the CLI resolves the project link from the current directory,
-and `railway up backend` from the root fails with `prefix not found` on some
-platforms.
+### Do not `railway up` the backend
+
+`railway up` and `railway redeploy` upload a source snapshot, which makes Railway fall
+back to Railpack. Railpack cannot build this monorepo - it sees `backend/`, `bot/` and
+`frontend/` at the top level and refuses with *could not determine how to build the app*.
+The deployment is marked FAILED even though the running container is untouched and
+healthy, which makes a working backend look broken.
+
+The backend builds from the repository root via `Dockerfile.backend` + the root
+`railway.json`, and that path only runs on a git trigger. Confirm a push landed by
+checking that a deployment appeared seconds after the commit:
+
+```bash
+git log -1 --format=%cI        # commit time
+railway deployment ls --service backend
+```
+
+If no deployment appears, the git trigger is detached and has to be re-attached in the
+Railway dashboard - there is no CLI workaround, because the upload path cannot build
+this repository.
+
+### The frontend must be uploaded, from inside its own directory
+
+`frontend/railway.json` points at `frontend/Dockerfile` and expects `VITE_API_BASE_URL`
+as a build arg, so the upload has to be rooted at `frontend/`:
+
+```bash
+cd frontend
+railway variables set VITE_API_BASE_URL=https://backend-production-74fd.up.railway.app
+railway up --service frontend
+```
+
+Verify it actually changed by looking for the new hashed bundle in the served HTML -
+the same filename being served after a successful deploy means the build was cached or
+the wrong source was uploaded:
+
+```bash
+curl -s https://frontend-production-d8fc.up.railway.app/numora | grep -o '/assets/[^"]*'
+```
 
 ### Auto-deploy on push
 
@@ -48,6 +91,9 @@ repository root fix that: a push now builds the backend image from the root cont
 
 If you ever point another service at the repository root, give it its own
 `railway.json` — the root one builds the backend.
+
+Migrations run on the backend container start (`AUTO_MIGRATE=true`). A change that
+touches no model needs no migration and none is applied.
 
 Afterwards:
 
