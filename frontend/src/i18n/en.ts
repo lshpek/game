@@ -205,6 +205,9 @@ export const en = {
   'details.plateNote': 'Registration plate. Physical collectible.',
   'reveal.aria': 'Roll reveal',
   'reveal.skip': 'Skip',
+  // The reel. Announced once, because twenty-six frames scrolling past are not
+  // twenty-six announcements.
+  'reel.spinning': 'Scrolling for a collectible',
   'reveal.hunting': 'HUNTING',
   // --- The single cinematic result experience -------------------------------
   'reveal.dialogLabel': 'Your new collectible',

@@ -250,6 +250,10 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
       <Reveal
         card={result?.plate ?? null}
         loading={busy}
+        // Synthetic previews the reel scrolls through. Generated and returned by the
+        // backend in the same response as the real result, and never persisted - the
+        // reel settles on `plate`, which was committed before these existed.
+        reel={result?.reel ?? []}
         isFirstDiscovery={Boolean(result?.is_first_discovery)}
         onClose={() => setResult(null)}
         onRollAgain={handleRoll}

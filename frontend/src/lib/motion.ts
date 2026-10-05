@@ -21,10 +21,18 @@ export const EASE = {
   out: [0.16, 0.84, 0.28, 1] as [number, number, number, number],
   /** Entering the screen. Deliberately softer than `out`. */
   inOut: [0.42, 0, 0.24, 1] as [number, number, number, number],
+  /** Entering with acceleration - used by the reveal's anticipation. */
+  in: [0.55, 0, 0.85, 0.4] as [number, number, number, number],
   /** The final lock of a reveal: strong pull, tiny overshoot, firm landing. */
   lock: [0.2, 1.16, 0.3, 1] as [number, number, number, number],
   /** Continuous rotation / scrolling: symmetric, no bias. */
   continuous: [0.45, 0, 0.55, 1] as [number, number, number, number],
+  /**
+   * The roll reel. Almost no acceleration, then a very long deceleration - most of it
+   * spent in the final third, which is what makes the result feel *landed on* rather
+   * than dropped. A symmetric ease here would stop the strip and then appear to restart.
+   */
+  reel: [0.08, 0.72, 0.14, 1] as [number, number, number, number],
 } as const;
 
 /** A critically-damped-ish spring: physical, never bouncy. */

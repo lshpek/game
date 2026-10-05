@@ -505,6 +505,65 @@
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
   }
 
+  /*
+   * The Georgian flag: white, with a large red cross and four small ones in the
+   * quadrants. Drawn entirely with layered gradients, so it stays crisp at any plate
+   * size and costs no image request.
+   *
+   * The two big bars are horizontal and vertical, each 1/5 of the field; the four small
+   * crosses sit in the quadrants at 1/5 scale. Layered `linear-gradient`s do that in a
+   * handful of stops.
+   */
+  .plate-flag-ge {
+    position: relative;
+    display: block;
+    width: 2.6em;
+    height: 1.6em;
+    border-radius: 1px;
+    background: #ffffff;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.35),
+      inset 0 0 0 0.5px rgba(0, 0, 0, 0.15);
+  }
+
+  /* The large cross: two bars 20% of the field, crossing at the centre. */
+  .plate-flag-ge::before {
+    content: '';
+    position: absolute;
+    /* Sized and positioned by the parent; see `.plate-flag-ge` usage below. */
+    inset: 0;
+    background:
+      linear-gradient(to right, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%),
+      linear-gradient(to bottom, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%);
+  }
+
+  /*
+   * The four small crosses in the quadrants. `background-position` percentages place
+   * each on a 3x3 grid; the bars are 20% of a cell, matching the large cross's weight.
+   */
+  .plate-flag-ge::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(to right, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        0 0 / 33.34% 33.34% no-repeat,
+      linear-gradient(to bottom, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        0 0 / 33.34% 33.34% no-repeat,
+      linear-gradient(to right, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        100% 0 / 33.34% 33.34% no-repeat,
+      linear-gradient(to bottom, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        100% 0 / 33.34% no-repeat,
+      linear-gradient(to right, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        0 100% / 33.34% 33.34% no-repeat,
+      linear-gradient(to bottom, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        0 100% / 33.34% 33.34% no-repeat,
+      linear-gradient(to right, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        100% 100% / 33.34% 33.34% no-repeat,
+      linear-gradient(to bottom, transparent 40%, #ff0000 40%, #ff0000 60%, transparent 60%)
+        100% 100% / 33.34% 33.34% no-repeat;
+  }
+
   /* The printed header: a country wordmark, or (for a US plate) the state's own name. */
   .plate-header {
     position: absolute;
@@ -693,6 +752,70 @@
     background: #05070c;
     -webkit-mask-image: linear-gradient(225deg, transparent 49%, #000 50%);
     mask-image: linear-gradient(225deg, transparent 49%, #000 50%);
+  }
+
+  /* ==========================================================================
+   * The roll reel
+   * ==========================================================================
+   *
+   * A window exactly one object tall, and a strip that translates through it.
+   *
+   * The window is the whole containment guarantee: it is `overflow: hidden` and its
+   * height comes from the row height, so no frame, shadow, reflection or overshooting
+   * text can reach the page behind it - and nothing inside it can widen the document.
+   * Every row has a fixed height and a fixed width, so the strip's geometry cannot
+   * depend on how long a plate's serial happens to be.
+   *
+   * The strip is `will-change: transform`, so the scroll runs entirely on the compositor
+   * with no layout and no paint for the main thread to do.
+   */
+  .reel-window {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 440px;
+    overflow: hidden;
+    /* The mask is what makes a strip of objects read as a reel rather than a list:
+       frames fade at both edges instead of being guillotined by the window. */
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      #000 18%,
+      #000 82%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+  }
+
+  .reel-strip {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 440px;
+    will-change: transform;
+  }
+
+  .reel-row {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0 12px;
+    overflow: hidden;
+  }
+
+  /* The object inside a frame, sized so a plate and a SIM both sit comfortably. */
+  .reel-object {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 340px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   /* ==========================================================================

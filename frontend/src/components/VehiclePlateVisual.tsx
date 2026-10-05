@@ -52,6 +52,14 @@ interface Props {
   className?: string;
   /** Accessible description; defaults to the plate text itself. */
   ariaLabel?: string;
+  /**
+   * Marks the object as decorative - a reel frame passing by, for instance.
+   *
+   * A decorative object is hidden from assistive tech and from the tab order, which
+   * matters most inside the reel: twenty-six frames in a scrolling strip would otherwise
+   * be announced as twenty-six separate collectibles.
+   */
+  decorative?: boolean;
   /** Runs the one-shot specular sweep. Only the reveal should pass this. */
   sweep?: boolean;
 }
@@ -119,6 +127,7 @@ export default function VehiclePlateVisual({
   scale = 1,
   className = '',
   ariaLabel,
+  decorative = false,
   sweep = false,
 }: Props) {
   const segments = useSegments(
@@ -200,6 +209,17 @@ export default function VehiclePlateVisual({
       // registration never runs into the frame.
       paddingLeft: bandOnLeft ? '1.2%' : compartment ? '3%' : '4%',
       paddingRight: bandOnRight ? '1.2%' : compartment ? '2%' : '4%',
+      /*
+       * Containment, and this is load-bearing rather than decorative.
+       *
+       * A plate is a *physical object*: nothing printed on it can run past its edge, and
+       * a serial wider than the field has to shrink rather than spill. `min-width: 0` on
+       * the print block is what allows the flex child to shrink below its content width,
+       * which is what prevents the classic long-plate horizontal overflow. The `cqw`
+       * sizing of the type then fills whatever room is left.
+       */
+      minWidth: 0,
+      overflow: 'hidden',
     };
   }, [visual.band_position, hasRegionCompartment]);
 
@@ -214,12 +234,17 @@ export default function VehiclePlateVisual({
    *
    * Derived from how much has to fit and expressed in `cqw`, so a short US serial and a
    * long EU serial both end up with the same *relative* weight on their own plate
-   * instead of the same pixel size. The numeric base is kept for the secondary blocks
-   * (region, header), which are sized as a fraction of it.
+   * instead of the same pixel size.
+   *
+   * The `0.62` is the average glyph advance of a condensed grotesque as a fraction of
+   * the type size, plus the tracking the recipe asks for. It is the single number that
+   * decides whether a serial fits its field - too small and it shrinks unnecessarily,
+   * too large and the plate would overflow, so it is deliberately conservative and the
+   * face clips rather than spills.
    */
   const { fontSize, baseFontPx } = useMemo(() => {
     const longest = Math.max(1, plateText.replace(/\s/g, '').length);
-    const min = Math.round(7 * scale);
+    const min = Math.round(6 * scale);
     const max = Math.round(52 * scale);
     return {
       baseFontPx: max,
@@ -234,8 +259,12 @@ export default function VehiclePlateVisual({
     <div
       className={`plate-frame plate-texture plate-wear ${className}`}
       style={{ ...frameVars, containerType: 'inline-size' } as React.CSSProperties}
-      role="img"
-      aria-label={ariaLabel ?? plateText}
+      // A decorative object is not announced and carries no label; a real one is an image
+      // whose alt text is the value it shows, so the two agree.
+      role={decorative ? 'presentation' : 'img'}
+      aria-hidden={decorative || undefined}
+      aria-label={decorative ? undefined : (ariaLabel ?? plateText)}
+      tabIndex={decorative ? -1 : undefined}
       data-plate-theme={visual.theme}
       data-mount={visual.mount}
     >
@@ -319,7 +348,7 @@ export default function VehiclePlateVisual({
             {/* The Russian format prints the flag, the RUS legend, and the region code
                 beneath them - three printed elements, not one string. */}
             {visual.region_flag ? (
-              <span className="plate-flag-ru" style={{ marginBottom: '0.25em' }} />
+              <PlateFlag flag="ru" className="!mb-[0.25em]" />
             ) : null}
             {visual.region_flag || visual.region_text ? (
               <span className="plate-region-legend">
@@ -351,14 +380,37 @@ export default function VehiclePlateVisual({
   );
 }
 
-/** The country identifier band: an EU blue stripe with stars and the country's code. */
+/**
+ * A printed national flag inside a plate's identifier band, drawn as vectors.
+ *
+ * Only the two formats NUMORA reproduces literally are supported. Both are instantly
+ * recognisable and both are what makes their country's plate read correctly - the Russian
+ * tricolour with its `RUS` legend, and the Georgian cross with `GE` in a blue block.
+ * Everything else stays a printed code, because a pasted-on flag would read as a sticker
+ * rather than as part of the plate.
+ */
+function PlateFlag({
+  flag,
+  className = '',
+  style,
+}: {
+  flag: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  if (flag === 'ru') return <span className={`plate-flag-ru ${className}`} style={style} aria-hidden="true" />;
+  if (flag === 'ge') return <span className={`plate-flag-ge ${className}`} style={style} aria-hidden="true" />;
+  return null;
+}
+
+/** The country identifier band: a printed code block with stars and a flag. */
 function PlateBand({ visual, width }: { visual: PlateVisual; width: string }) {
   return (
     <div className="plate-band" style={{ width }} aria-hidden="true">
       {visual.band_stars && <span className="plate-stars" />}
-      {visual.band_flag === 'ru' && <span className="plate-flag-ru" style={{ width: '2em' }} />}
+      {visual.band_flag ? <PlateFlag flag={visual.band_flag} style={{ width: '2em' }} /> : null}
       {visual.band_text && (
-        <span style={{ fontSize: '0.66em', letterSpacing: '0.03em' }}>{visual.band_text}</span>
+        <span style={{ fontSize: '0.6em', letterSpacing: '0.03em' }}>{visual.band_text}</span>
       )}
     </div>
   );

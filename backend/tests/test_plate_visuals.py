@@ -13,9 +13,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.game.countries import COUNTRIES, COUNTRY_BY_CODE, playable_countries
+from app.game.countries import COUNTRIES, COUNTRY_BY_CODE, LATIN, playable_countries
 from app.game.plate_generator import segment_kinds, styles_for_text
-from app.game.plate_templates import normalize_plate
+from app.game.plate_templates import normalize_plate, parse_template
 from app.game.plate_visuals import (
     DEFAULT_VISUAL,
     FONT_STACKS,
@@ -182,6 +182,67 @@ class TestRecipeCoverage:
             assert 0.0 <= recipe.relief <= 1.0, theme
             assert 0.0 <= recipe.grain <= 1.0, theme
             assert 0.0 <= recipe.sheen <= 1.0, theme
+
+    def test_georgia_has_its_own_recipe_with_a_blue_identifier_block(self):
+        """
+        The modern Georgian format.
+
+        A white plate with a blue block down the left edge carrying the flag and ``GE``,
+        then a Latin registration. It is a distinct physical design from the EU band - no
+        star ring, a wider block, and no separate region compartment.
+        """
+        recipe = visual_for("ge")
+        assert recipe.plate_family == "ge"
+        assert recipe.background.lower() in ("#ffffff", "#fdfdfd")
+        assert recipe.border.lower() == "#0f172a"
+        assert recipe.band_position == "left"
+        assert recipe.band_color == "#1c3f94"
+        assert recipe.band_text == "GE"
+        assert recipe.band_flag == "ge"
+        # Not an EU band: Georgia prints its own flag block, never the EU star ring.
+        assert recipe.band_stars is False
+        # The third group of a Georgian number is part of the serial, not a region.
+        assert recipe.region_position == "none"
+        assert recipe.region_width == 0.0
+
+    def test_georgia_prints_latin_letters(self):
+        """
+        Latin, never the Georgian alphabet.
+
+        Georgian registration plates are printed in Latin letters. A plate rendered in
+        Georgian script would look like a novelty keycap rather than a number anyone has
+        seen on a car, so the alphabet is a presentation decision the catalogue owns.
+        """
+        georgia = next(c for c in COUNTRIES if c.code == "GEO")
+        assert georgia.alphabet == LATIN
+        assert georgia.letter_style == "LATIN"
+        assert georgia.visual == "ge"
+
+    def test_the_georgian_format_is_two_letters_three_digits_two_letters(self):
+        """
+        ``AB-123-CD`` - the current Georgian shape.
+
+        The dashes are part of the template, so they are part of the stored plate text and
+        part of what a player searches for.
+        """
+        georgia = next(c for c in COUNTRIES if c.code == "GEO")
+        standard = next(t for t in georgia.templates if t.code == "ge_standard")
+        assert standard.pattern == "LL-DDD-LL"
+        parsed = parse_template(standard.pattern)
+        # Four letters, three digits, and the two dashes are literals - which is why they
+        # end up in the stored plate text and in what a player can search for.
+        assert parsed.signature() == "LL?DDD?LL"
+        assert parsed.letter_slots == 4
+        assert parsed.digit_slots == 3
+
+    def test_only_the_georgian_band_carries_a_drawn_flag(self):
+        """A pasted-on flag reads as a sticker; only the formats that really have one draw it."""
+        drawn = {theme for theme, recipe in PLATE_VISUALS.items() if recipe.band_flag}
+        assert drawn == {"ge"}
+        # The Russian tricolour is printed in the *region compartment*, not in a band -
+        # which is where the real format puts it.
+        assert visual_for("ru").band_flag is None
+        assert visual_for("ru").region_flag is True
 
     def test_the_serialised_recipe_is_complete_for_the_renderer(self):
         """

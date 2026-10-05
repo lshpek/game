@@ -930,8 +930,12 @@ CURATED: tuple[CountryDef, ...] = (
         currency_code="GEL",
         currency_symbol="₾",
         weight=5.0,
-        alphabet=GEORGIAN,
-        letter_style="GEORGIAN",
+        # Latin, not Georgian script. Georgian registration plates are printed in Latin
+        # letters - `AB-123-CD` - and a plate rendered in the Georgian alphabet would be
+        # the single most obviously wrong collectible in the atlas: it looks like a
+        # novelty keycap rather than a number anyone has ever seen on a car.
+        alphabet=LATIN,
+        letter_style="LATIN",
         value_scale=0.8,
         rarity_modifier=1.05,
         visual="ge",
@@ -939,8 +943,10 @@ CURATED: tuple[CountryDef, ...] = (
         playable=True,
         regions=GE_REGIONS,
         templates=(
-            TemplateDef("ge_standard", "LL-DDD-LL", 5.0),
-            TemplateDef("ge_new", "LL DDD LL", 3.0),
+            # The current Georgian format: two letters, three digits, two letters.
+            TemplateDef("ge_standard", "LL-DDD-LL", 6.0),
+            # A slightly older shape that is still widely seen on the road.
+            TemplateDef("ge_legacy", "LL DDDD LL", 2.0),
             TemplateDef("ge_moto", "LLL DDDD", 0.7, plate_type="MOTORCYCLE"),
         ),
     ),

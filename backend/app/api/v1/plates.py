@@ -15,6 +15,7 @@ from app.core.timeutils import utcnow
 from app.db.session import get_db
 from app.game.collectibles import normalize_kind, parse_hunt_filter, plate_types_for
 from app.game.plate_rarity import RARITY_RANK
+from app.game.roll_reel import build_reel
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
 from app.models.plates import Country, Plate, UserPlate
 from app.models.social import ShareEvent
@@ -28,6 +29,7 @@ from app.schemas.plates import (
     PlateRollHistoryItem,
     PlateRollResponse,
     PlateShareView,
+    ReelFrame,
     SaleResponse,
     SellAllResponse,
     ShareResponse,
@@ -36,6 +38,7 @@ from app.schemas.plates import (
 from app.services import countries as country_service
 from app.services.albums import AlbumService
 from app.services.analytics import AnalyticsService
+from app.services.catalog import snapshot
 from app.services.cosmetics import CosmeticService
 from app.services.daily import DailyService
 from app.services.economy import EconomyService
@@ -68,7 +71,7 @@ def _sale_ledger_key(user_id: int, plate_id: int, key: str | None) -> str:
     return f"sell:{user_id}:{plate_id}:{key or 'once'}"
 
 
-def _roll_response(outcome, db: Session) -> PlateRollResponse:
+def _roll_response(outcome, db: Session, *, reel: list[dict[str, object]] | None = None) -> PlateRollResponse:
     card = plate_card(outcome.plate, user_plate=outcome.user_plate, owned=True, db=db)
     return PlateRollResponse(
         roll_id=outcome.roll.id,
@@ -94,6 +97,7 @@ def _roll_response(outcome, db: Session) -> PlateRollResponse:
         share_start_param=outcome.share_start_param,
         rolls=outcome.rolls,
         next_target=outcome.next_target,
+        reel=[ReelFrame(**frame) for frame in (reel or [])],
         # --- compatibility aliases for the previous number-roll client
         value=outcome.sale_value,
         coins_awarded=outcome.numora_awarded,
@@ -151,7 +155,15 @@ def perform_roll(
     ReferralService(db, settings).activate(user)
     db.commit()
 
-    return _roll_response(outcome, db)
+    # The reel is built *after* the result is committed, from the same catalogue with a
+    # separate RNG. Nothing here can influence what the player just won, and nothing here
+    # is persisted - see `app.game.roll_reel`.
+    reel = build_reel(
+        snapshot(db, settings.rarity_weights).context,
+        country_code=hunt.get("country_code"),
+        kind=hunt.get("category"),
+    )
+    return _roll_response(outcome, db, reel=reel)
 
 
 @router.get("/roll/history", response_model=list[PlateRollHistoryItem], summary="Recent rolls")

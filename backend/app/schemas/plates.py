@@ -59,7 +59,8 @@ class PlateVisualSchema(BaseModel):
     band_text_source: str = "static"
     band_text_color: str = "#ffffff"
     band_stars: bool = False
-    #: ``None`` = no flag; a key such as ``"ru"`` = the tricolour, drawn as vectors.
+    #: ``None`` = no flag; a key such as ``"ru"`` or ``"ge"`` = that country's flag,
+    #: drawn as vectors inside the identifier band.
     band_flag: str | None = None
     band_emblem: str = ""
 
@@ -311,6 +312,29 @@ class PlateCard(BaseModel):
     acquired_at: str | None = None
 
 
+class ReelFrame(BaseModel):
+    """One synthetic collectible shown while the roll reel is spinning.
+
+    A frame is a *picture*, never a result. It is generated from the real catalogue with a
+    separate RNG stream, is not persisted, and is not scored, valued or granted - the
+    real collectible is sent separately as :attr:`PlateRollResponse.plate`. That is what
+    makes the reel honest: a client that believed a frame would own nothing.
+    """
+
+    plate_text: str
+    display_segments: list[str] = Field(default_factory=list)
+    display_segment_gaps: list[bool] = Field(default_factory=list)
+    display_segment_kinds: list[str] = Field(default_factory=list)
+    #: The same recipe contract the real card carries, so a frame renders through the
+    #: identical component as the result.
+    visual: PlateVisualSchema = Field(default_factory=PlateVisualSchema)
+    #: ``VEHICLE_PLATE`` or ``SIM_CARD`` - the two collectible kinds, nothing else.
+    kind: str = "VEHICLE_PLATE"
+    country_code: str = ""
+    country_name_en: str = ""
+    country_flag: str = ""
+
+
 class PlateRollResponse(BaseModel):
     success: bool = True
     roll_id: int
@@ -332,6 +356,10 @@ class PlateRollResponse(BaseModel):
     rolls: RollBalance = Field(default_factory=RollBalance)
     #: The single next objective, machine-readable.
     next_target: NextTarget | None = None
+    #: Synthetic frames for the reel animation, generated server-side and never
+    #: persisted. The winning collectible is ``plate``; these are only what it scrolls
+    #: through on the way there.
+    reel: list[ReelFrame] = Field(default_factory=list)
     missions_completed: list[dict[str, Any]] = Field(default_factory=list)
     albums_completed: list[dict[str, Any]] = Field(default_factory=list)
     unlocked_achievements: list[dict[str, Any]] = Field(default_factory=list)

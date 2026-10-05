@@ -8,8 +8,9 @@ import { trackRevealShown, trackRevealSkipped, trackRollAgain } from '../lib/ana
 import { formatCoins } from '../lib/format';
 import { DURATION, EASE, SPRING, revealDuration, useReducedMotion } from '../lib/motion';
 import { hapticCue } from '../lib/telegram';
-import type { PlateCard } from '../types';
+import type { PlateCard, ReelFrame } from '../types';
 import RarityBadge from './RarityBadge';
+import RollReel from './RollReel';
 import SimCardVisual from './SimCardVisual';
 import VehiclePlateVisual from './VehiclePlateVisual';
 
@@ -63,6 +64,13 @@ interface Props {
   /** The already-decided collectible. `null` while a roll is in flight. */
   card: PlateCard | null;
   loading: boolean;
+  /**
+   * Synthetic frames for the reel, generated server-side and never persisted.
+   *
+   * The reel scrolls through these and settles on `card`. Nothing here decides anything:
+   * the backend has already committed the result before these exist.
+   */
+  reel?: ReelFrame[];
   onClose: () => void;
   /** Start the next roll without closing the result: roll, reveal, roll again. */
   onRollAgain?: () => void;
@@ -81,6 +89,7 @@ interface Props {
 export default function Reveal({
   card,
   loading,
+  reel = [],
   onClose,
   onRollAgain,
   canRollAgain = false,
@@ -119,19 +128,31 @@ export default function Reveal({
       return;
     }
     setStage('press');
-    const marks: Array<[Stage, number]> = [
-      ['dim', 90],
-      ['enter', 300],
-      ['travel', 520],
-      ['decelerate', Math.round(duration * 0.55)],
-      ['lock', Math.round(duration * 0.78)],
-      ['settled', duration],
-    ];
-    const timers = marks.map(([next, at]) =>
-      window.setTimeout(() => setStage(next), at),
-    );
+    /*
+     * With a reel in front of it, the object only has to settle - the reel has already
+     * done the anticipation, and running the full staged sequence behind it as well would
+     * put two animations on the same object and make it stutter.
+     */
+    const marks: Array<[Stage, number]> =
+      reel.length > 0
+        ? [
+            ['dim', 120],
+            ['enter', 420],
+            ['decelerate', Math.round(duration * 0.55)],
+            ['lock', Math.round(duration * 0.78)],
+            ['settled', duration],
+          ]
+        : [
+            ['dim', 90],
+            ['enter', 300],
+            ['travel', 520],
+            ['decelerate', Math.round(duration * 0.55)],
+            ['lock', Math.round(duration * 0.78)],
+            ['settled', duration],
+          ];
+    const timers = marks.map(([next, at]) => window.setTimeout(() => setStage(next), at));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [card, duration, reduced]);
+  }, [card, duration, reduced, reel.length]);
 
   // Haptics: roll on entry, one escalating cue at the lock. Never more than two per
   // reveal, so a legendary find feels different without feeling like a machine gun.
@@ -154,6 +175,11 @@ export default function Reveal({
 
   const settled = stage === 'settled' || reduced;
   const visible = Boolean(card) || loading;
+  /*
+   * The readout waits for the reel. Showing a rarity while numbers are still scrolling
+   * past would tell the player the answer before the reel landed on it.
+   */
+  const showReadout = settled && (reel.length === 0 || stage === 'settled');
 
   // Escape closes. A dialog the player cannot leave is a dead end in a Mini App.
   useEffect(() => {
@@ -166,15 +192,12 @@ export default function Reveal({
   }, [visible, onClose]);
 
   /*
-   * The object is one monotonic rotation whose angle is a function of the stage, so it
-   * accelerates and then decelerates without ever reversing or jittering. A single
-   * negative-to-zero turn reads as "the plate was set down and straightened", which is
-   * what picking a physical object up and putting it back looks like.
+   * The result's own entrance. With a reel in front of it, the object no longer needs a
+   * long staged sequence - the reel *is* the anticipation - so this only runs the last
+   * part: the reel has landed, and now the answer settles into place.
    */
-  const spin = stage === 'travel' ? -14 : stage === 'decelerate' ? -3.5 : 0;
-  const lift = stage === 'enter' ? 26 : stage === 'travel' ? 8 : 0;
   const focus = stage === 'dim' ? 4 : 0;
-  const settledScale = stage === 'settled' ? 1 : 0.965;
+  const lift = reel.length > 0 ? 0 : stage === 'enter' ? 26 : 8;
 
   if (typeof document === 'undefined') return null;
 
@@ -231,77 +254,84 @@ export default function Reveal({
                 animate={{ opacity: 1 }}
                 transition={{ duration: DURATION.fade, ease: EASE.out }}
               >
-                {/* The object. A single persistent node: never remounted, never
-                    teleported, so the motion is continuous frame to frame. */}
-                <motion.div
-                  className="w-full"
-                  initial={{ opacity: 0, rotateX: 54, y: lift, scale: 0.9 }}
-                  animate={{
-                    opacity: 1,
-                    rotateX: 0,
-                    // The depth cue: a real object entering frame is both further away
-                    // and higher up, so both converge on zero as it settles.
-                    y: lift,
-                    rotate: settled ? 0 : spin,
-                    scale: settledScale,
-                    // Focus is drawn as a scale falloff, not a blur filter: a blur on this
-                    // element would repaint the whole plate every frame.
-                    filter: focus ? `brightness(${1 - focus / 100})` : 'none',
-                  }}
-                  transition={
-                    settled
-                      ? { ...SPRING.settle, duration: DURATION.lock }
-                      : {
-                          rotate: { duration: 0.46, ease: EASE.continuous },
-                          y: { duration: 0.4, ease: EASE.out },
-                          scale: { duration: 0.42, ease: EASE.out },
-                          rotateX: { duration: 0.42, ease: EASE.out },
-                          opacity: { duration: DURATION.fade, ease: EASE.out },
-                          filter: { duration: 0.3, ease: EASE.out },
+                {/*
+                  The object - or, before it, the reel.
+
+                  The flow is exactly: many random collectibles scroll past, the scroll
+                  decelerates, and it settles on ONE real backend result. After the reel
+                  has landed, the result does a short physical settle of its own, so the
+                  moment it becomes the answer is unmistakable.
+                */}
+                <RollReel
+                  frames={reel}
+                  settled={settled}
+                  onSettled={() => setStage('settled')}
+                  finalLabel={card.plate_text}
+                  final={
+                    <motion.div
+                      className="w-full"
+                      initial={{ opacity: 0, rotateX: 40, y: lift, scale: 0.92 }}
+                      animate={{
+                        opacity: 1,
+                        rotateX: 0,
+                        y: 0,
+                        scale: 1,
+                        // Focus is a brightness falloff, not a blur: blurring this element
+                        // would repaint the whole plate every frame of the entrance.
+                        filter: focus ? `brightness(${1 - focus / 100})` : 'none',
+                      }}
+                      transition={
+                        settled
+                          ? { ...SPRING.settle, duration: DURATION.lock }
+                          : {
+                              rotateX: { duration: 0.42, ease: EASE.out },
+                              y: { duration: 0.4, ease: EASE.out },
+                              scale: { duration: 0.42, ease: EASE.out },
+                              opacity: { duration: DURATION.fade, ease: EASE.out },
+                              filter: { duration: 0.3, ease: EASE.out },
+                            }
+                      }
+                      style={{ perspective: 1100, transformStyle: 'preserve-3d' }}
+                    >
+                      <motion.button
+                        type="button"
+                        className="block w-full"
+                        onClick={onPlateClick}
+                        aria-label={card.plate_text}
+                        animate={
+                          settled && isCinematic && !reduced
+                            ? { scaleY: [1, 0.968, 1], scaleX: [1, 1.01, 1] }
+                            : { scaleY: 1, scaleX: 1 }
                         }
+                        transition={{ duration: 0.44, ease: EASE.lock, times: [0, 0.4, 1] }}
+                      >
+                        {card.kind === 'SIM_CARD' ? (
+                          <SimCardVisual
+                            details={card.details}
+                            config={card.sim_config ?? null}
+                            rarity={rarity}
+                            className="mx-auto"
+                          />
+                        ) : (
+                          <VehiclePlateVisual
+                            visual={card.visual}
+                            plateText={card.plate_text}
+                            displaySegments={card.display_segments}
+                            displaySegmentGaps={card.display_segment_gaps}
+                            displaySegmentKinds={card.display_segment_kinds}
+                            regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
+                            regionCode={card.region?.code ?? null}
+                            className="mx-auto"
+                            sweep={!settled && !reduced}
+                          />
+                        )}
+                      </motion.button>
+                    </motion.div>
                   }
-                  style={{
-                    perspective: 1100,
-                    transformStyle: 'preserve-3d',
-                  }}
-                >
-                  <motion.button
-                    type="button"
-                    className="block w-full"
-                    onClick={onPlateClick}
-                    aria-label={card.plate_text}
-                    animate={
-                      settled && isCinematic && !reduced
-                        ? { scaleY: [1, 0.968, 1], scaleX: [1, 1.01, 1] }
-                        : { scaleY: 1, scaleX: 1 }
-                    }
-                    transition={{ duration: 0.44, ease: EASE.lock, times: [0, 0.4, 1] }}
-                  >
-                    {card.kind === 'SIM_CARD' ? (
-                      <SimCardVisual
-                        details={card.details}
-                        config={card.sim_config ?? null}
-                        rarity={rarity}
-                        className="mx-auto"
-                      />
-                    ) : (
-                      <VehiclePlateVisual
-                        visual={card.visual}
-                        plateText={card.plate_text}
-                        displaySegments={card.display_segments}
-                        displaySegmentGaps={card.display_segment_gaps}
-                        displaySegmentKinds={card.display_segment_kinds}
-                        regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
-                        regionCode={card.region?.code ?? null}
-                        className="mx-auto"
-                        sweep={!settled && !reduced}
-                      />
-                    )}
-                  </motion.button>
-                </motion.div>
+                />
 
                 <AnimatePresence>
-                  {settled && (
+                  {showReadout && (
                     <motion.div
                       key="readout"
                       className="flex w-full flex-col items-center gap-3.5 text-center"
@@ -365,7 +395,7 @@ export default function Reveal({
                   )}
                 </AnimatePresence>
 
-                {settled && (
+                {showReadout && (
                   <motion.div
                     key="actions"
                     className="w-full space-y-2"
