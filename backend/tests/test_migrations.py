@@ -172,3 +172,27 @@ class TestPhoneFoldIntoSim:
 
         assert db.query(Plate).count() == before_plates + 1
         assert db.query(PlateTemplate).count() == before_templates
+
+    def test_the_tag_rewrite_is_dialect_aware(self, db):
+        """``tags`` is a JSON column and the two databases disagree about SQL.
+
+        PostgreSQL has no ``LIKE`` for ``json`` and needs an explicit cast in both
+        directions; getting this wrong is a statement that passes on SQLite and
+        crash-loops the production backend on every restart.
+        """
+        module = load_revision(HEAD_REVISION)
+        postgres = [
+            statement
+            for name in dir(module)
+            if name.startswith("_retag")
+            for statement in str(getattr(module, name)).split('"')
+        ]
+        assert postgres, "the migration no longer has a dialect-specific tag rewrite"
+
+        source = Path(MIGRATIONS / f"{HEAD_REVISION}.py").read_text(encoding="utf-8")
+        postgres_branch = source.split('if dialect == "postgresql":')[1]
+        assert "::text" in postgres_branch
+        assert "::json" in postgres_branch
+        # The other branch must not use Postgres-only syntax.
+        other = source.split('return\n', 1)[1]
+        assert "::" not in other

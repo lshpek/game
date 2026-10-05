@@ -133,9 +133,34 @@ def _fold_phone_into_sim() -> None:
         sa.text("UPDATE plate_templates SET plate_type = 'SIM' WHERE plate_type = 'PHONE'")
     )
     op.execute(sa.text("UPDATE plates SET plate_type = 'SIM' WHERE plate_type = 'PHONE'"))
-    # The legacy tag lists this row could carry. Rewriting only these exact shapes
-    # keeps the statement portable: JSON surgery differs between SQLite and
-    # PostgreSQL, and a row that already has richer tags must keep them.
+    _retag_phone_plates(op.get_bind().dialect.name)
+
+
+def _retag_phone_plates(dialect: str) -> None:
+    """Drop the stale ``phone`` tag from the folded rows.
+
+    ``plates.tags`` is a JSON column, and the two supported databases disagree about
+    how to read it from SQL: PostgreSQL has no ``LIKE`` operator for ``json`` and
+    needs an explicit ``::text`` cast in both directions, while SQLite stores the
+    text verbatim. Writing one statement for both is how a migration that passes
+    locally ends up crash-looping the production backend on every restart.
+    """
+    if dialect == "postgresql":
+        op.execute(
+            sa.text(
+                "UPDATE plates SET tags = '[\"sim\", \"synthetic\"]'::json "
+                "WHERE plate_type = 'SIM' AND tags::text IN "
+                "('[]', '[\"phone\"]', '[\"phone\", \"synthetic\"]')"
+            )
+        )
+        op.execute(
+            sa.text(
+                "UPDATE plates SET tags = REPLACE(tags::text, '\"phone\", ', '')::json "
+                "WHERE plate_type = 'SIM' AND tags::text LIKE '%\"phone\"%'"
+            )
+        )
+        return
+
     op.execute(
         sa.text(
             "UPDATE plates SET tags = '[\"sim\", \"synthetic\"]' "
