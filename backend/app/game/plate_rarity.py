@@ -2,13 +2,22 @@
 
 Rarity is never a random label: it is derived from the plate's own patterns.
 
-* **natural rarity** - the highest rarity floor implied by its traits;
-* **luck rarity** - a server-side roll that can only *lift* a plate, and whose
-  weights are softened by bad-luck protection;
-* **final rarity** - the more prestigious of the two, then clamped by the
-  template floor and the season/event modifiers.
+* **natural rarity** - the rarity implied by the plate's intrinsic pattern quality
+  (score + traits). This is the only signal :func:`resolve_final_rarity` consults.
 
-Every declared probability lives in :mod:`app.game.rarity` - one table, in exact
+* **luck rarity** - a server-side roll sampled from the configured weights,
+  softened by bad-luck protection. Luck does **not** lift the final rarity
+  directly; it only steers :func:`render_template` toward patterns capable of
+  reaching the sampled tier (e.g. repeating digits for Rare). The resulting
+  rarity is still scored from the pattern that was actually produced.
+
+* **final rarity** - the natural rarity, taken as-is so a plate is rare because
+  its serial earns it, never because a die landed on a label. Template floors
+  are applied earlier, during analysis: ``analyze_plate`` records a
+  ``rare_template`` trait for floor-bound layouts, folding the floor into the
+  score/traits so no second clamp is needed.
+
+Every probability lives in :mod:`app.game.rarity` - one table, in exact
 integer hundredths of a percent - and is re-exported here so the plate engine
 has a single import. ``RARITY_WEIGHTS_OVERRIDE`` may replace it for a session;
 scoring, floors and pity logic stay in this module.
@@ -282,7 +291,18 @@ def resolve_final_rarity(
     template_floor: str = "COMMON",
     force_secret: bool = False,
 ) -> Rarity:
-    """Resolve rarity from intrinsic quality; targets and overrides cannot promote it."""
+    """Resolve the final rarity purely from intrinsic pattern quality.
+
+    Rarity is *earned*: it is the rarity implied by ``score`` and ``traits``
+    alone. ``natural`` equals that rarity already (it is derived from the same
+    score/traits), so it is accepted but not re-read. ``luck``, ``template_floor``
+    and ``force_secret`` are accepted for API continuity - the bad-luck roll
+    only biases *pattern generation* upstream, and template floors are folded
+    into the score via the ``rare_template`` trait during analysis - so passing
+    them here cannot promote an ordinary plate. The test suite pins this
+    contract; see ``test_template_floor_cannot_promote_an_ordinary_plate`` and
+    ``test_random_luck_cannot_promote_an_ordinary_plate``.
+    """
     return _quality_rarity(score, traits)
 
 
