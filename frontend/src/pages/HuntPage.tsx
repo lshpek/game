@@ -314,11 +314,17 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
       )}
 
       {/* 3. THE BUTTON. Bank and count on one line, then the control. */}
-      <section className="flex flex-col items-center gap-2.5">
-        <div className="flex w-full items-center justify-between rounded-2xl border border-white/[0.07] bg-white/[0.03] px-3.5 py-2.5">
+      {/*
+        The one primary action, sized from the space available rather than from a fixed
+        width: full-bleed on a phone, capped on a tablet, and never so large on a desktop
+        that it becomes a slab. The plate above it is scaled to whatever the viewport
+        leaves, which is why the same screen reads correctly at 360x800 and at 1920x1080.
+      */}
+      <section className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-2.5">
+        <div className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-3.5 py-2.5">
           <div className="flex min-w-0 flex-col">
             <span className="eyebrow">{t('hunt.wallet')}</span>
-            <span className="number-display text-[17px] font-bold text-white">
+            <span className="number-display truncate text-[clamp(15px,4.4vw,17px)] font-bold text-white">
               {formatCoins(coins)}
             </span>
           </div>
@@ -330,7 +336,7 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
           onRoll={handleRoll}
           rolling={busy}
           locked={rollingRef.current}
-          className="max-w-[420px]"
+          className="w-full"
         />
 
         <NextTargetLine target={nextTarget} />
@@ -363,7 +369,7 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...SPRING.settle, duration: 0.4 }}
           >
-            <CollectiblePreview card={recentCard} scale={0.66} onOpen={openCollection} />
+            <CollectiblePreview card={recentCard} scale={0.62} onOpen={openCollection} />
           </motion.div>
         ) : (
           <p className="stage px-4 py-8 text-center t-caption text-white/35">{t('hunt.empty')}</p>

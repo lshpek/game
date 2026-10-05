@@ -61,12 +61,72 @@
     --text-body: 0.9375rem;
     --text-caption: 0.8125rem;
     --text-micro: 0.6875rem;
+
+    /*
+     * ---------------------------------------------------------------------------
+     * The responsive scale
+     * ---------------------------------------------------------------------------
+     *
+     * Everything that has to change with the viewport is a variable, so a screen never
+     * hardcodes a size and the whole product moves as one piece.
+     *
+     * `--content-max` is the reading measure. It grows from a phone to a tablet to a
+     * desktop and then *stops*: past about 880px a longer line of text is not "more
+     * usable", it is harder to read, and stretching a plate to fill a 4K monitor makes
+     * it look like a billboard rather than a physical object.
+     *
+     * `--reel-row` is the one place vertical space is genuinely scarce: in landscape on
+     * a phone the whole app can be 360px tall, and a fixed 132px row would push the roll
+     * button and the result off the screen. `vh` makes it scale with what is left.
+     */
+    --content-max: 560px;
+    --reel-row: clamp(96px, 21vh, 150px);
+    --radius-app: 0px;
+    --nav-inset: 0px;
   }
 
-  @media (min-width: 640px) {
+  /*
+   * Tablet. There is genuinely more room here, so the reading measure and the gutter both
+   * grow. Nothing else changes - the same single-column layout simply gets more space,
+   * which is what "mobile is the design, larger screens use it better" means in practice.
+   */
+  @media (min-width: 768px) {
     :root {
-      --gutter: 20px;
-      --section-gap: 22px;
+      --gutter: 24px;
+      --section-gap: 24px;
+      --content-max: 720px;
+      --text-display: clamp(2.25rem, 6vw, 3rem);
+    }
+  }
+
+  /*
+   * Desktop. The measure stops growing here, and the shell becomes a framed surface with
+   * a margin around it. A 560px column stranded in the middle of a 1920px screen reads as
+   * a broken layout; a centred, framed column reads as an app.
+   */
+  @media (min-width: 1024px) {
+    :root {
+      --content-max: 860px;
+      --gutter: 28px;
+      --section-gap: 26px;
+      --header-height: 60px;
+      --bottom-nav-height: 66px;
+      --radius-app: 20px;
+    }
+  }
+
+  /*
+   * Landscape on a phone. Height is the scarce resource - the whole app can be 360px
+   * tall - so the permanent furniture gives up space rather than the content. The
+   * navigation stays exactly as tall as it is in portrait so the two orientations feel
+   * like one product, but the reel row and the section rhythm give way.
+   */
+  @media (orientation: landscape) and (max-height: 560px) {
+    :root {
+      --header-height: 46px;
+      --section-gap: 12px;
+      --reel-row: clamp(84px, 26vh, 118px);
+      --text-display: clamp(1.75rem, 7vw, 2.25rem);
     }
   }
 
@@ -79,6 +139,30 @@
     height: 100%;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+  }
+
+  /*
+   * The app frame.
+   *
+   * On a phone this is the whole viewport. From 1024px it becomes a centred, framed
+   * surface with a margin around it, because a narrow column stranded in the middle of a
+   * desktop screen reads as a broken layout rather than as an app. The header and the
+   * navigation are pinned to *this* element's edges, so the frame is what the player
+   * sees as "the app" and the area outside it is background.
+   */
+  #root {
+    height: var(--app-height, 100dvh);
+    min-height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
+    overflow: hidden;
+  }
+
+  @media (min-width: 1024px) {
+    #root {
+      display: grid;
+      place-items: center;
+      padding: clamp(12px, 2vh, 28px);
+    }
   }
 
   body {
@@ -99,6 +183,14 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /*
+   * The app frame.
+   *
+   * On a phone this is the whole viewport. From 1024px the shell inside becomes a
+   * centred, framed surface with a margin around it, because a narrow column stranded in
+   * the middle of a desktop screen reads as a broken layout rather than as an app. The
+   * header and the navigation are pinned to *that* surface's edges.
+   */
   #root {
     /*
      * The real viewport height, published as `--app-height` by TelegramViewport, with the
@@ -111,11 +203,49 @@
     min-height: var(--app-height, 100dvh);
     max-height: var(--app-height, 100dvh);
     overflow: hidden;
+    /* Landscape: a notch moves to a *side*, so the app has to be inset horizontally. */
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  @media (min-width: 1024px) {
+    #root {
+      /* A margin around the framed shell, so the background reads as background. */
+      padding: clamp(10px, 2vh, 26px);
+    }
   }
 
   /* Selection and long-press callouts look broken on a physical-object UI. */
   ::selection {
     background: rgba(138, 167, 255, 0.28);
+  }
+
+  /*
+   * ==========================================================================
+   * The shell
+   * ==========================================================================
+   *
+   * On a phone the shell *is* the viewport. From a tablet it is a centred column of a
+   * growing reading measure. From a desktop it becomes a framed surface with a margin
+   * around it, because a 560px column stranded in the middle of a 1920px screen reads as
+   * a broken layout rather than as a product - and a hairline edge is what tells the eye
+   * "this is the app, the rest is background" without adding any decoration.
+   */
+  .app-shell {
+    isolation: isolate;
+  }
+
+  @media (min-width: 1024px) {
+    .app-shell {
+      height: 100%;
+      max-height: var(--app-height);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: var(--radius-app);
+      background: rgba(10, 13, 22, 0.6);
+      box-shadow:
+        0 40px 90px -40px rgba(0, 0, 0, 0.9),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
   }
 
   :focus-visible {
@@ -784,7 +914,7 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    max-width: 440px;
+    max-width: var(--content-max);
     overflow: hidden;
     /* The mask is what makes a strip of objects read as a reel rather than a list:
        frames fade at both edges instead of being guillotined by the window. */
@@ -802,7 +932,6 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: 440px;
     will-change: transform;
   }
 

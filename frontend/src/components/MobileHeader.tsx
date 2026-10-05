@@ -24,7 +24,9 @@ export function MobileHeader() {
       style={{ paddingTop: 'var(--tg-safe-top)' }}
       data-testid="app-header"
     >
-      <div className="mx-auto flex h-[52px] w-full max-w-[560px] items-center gap-2.5 px-[var(--gutter)]">
+      <div
+        className="mx-auto flex h-[var(--header-height)] w-full max-w-[var(--content-max)] items-center gap-2 px-[var(--gutter)]"
+      >
         <a
           href="#/"
           className="flex min-w-0 items-center gap-2.5 rounded-xl"
@@ -55,7 +57,6 @@ export function MobileHeader() {
     </header>
   );
 }
-
 /**
  * The roll bank, read from the cache the hunt screen already fills.
  *

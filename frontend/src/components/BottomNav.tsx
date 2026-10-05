@@ -87,7 +87,16 @@ function Icon({ name }: { name: ItemName }) {
 
 type ItemName = 'roll' | 'world' | 'collection' | 'ranking' | 'profile';
 
-const ITEMS: Array<{ to: string; key: 'nav.roll' | 'nav.world' | 'nav.collection' | 'nav.ranking' | 'nav.profile'; icon: ItemName; primary: boolean }> = [
+/*
+ * The primary flag is kept for labelling and ordering only. It deliberately does *not*
+ * affect width, height or icon size: ROLL is where players start, not a bigger tab.
+ */
+const ITEMS: Array<{
+  to: string;
+  key: 'nav.roll' | 'nav.world' | 'nav.collection' | 'nav.ranking' | 'nav.profile';
+  icon: ItemName;
+  primary: boolean;
+}> = [
   { to: '/', key: 'nav.roll', icon: 'roll', primary: true },
   { to: '/world', key: 'nav.world', icon: 'world', primary: false },
   { to: '/collection', key: 'nav.collection', icon: 'collection', primary: false },
@@ -95,6 +104,21 @@ const ITEMS: Array<{ to: string; key: 'nav.roll' | 'nav.world' | 'nav.collection
   { to: '/profile', key: 'nav.profile', icon: 'profile', primary: false },
 ];
 
+/**
+ * Exactly five equal destinations.
+ *
+ * A CSS grid of five `1fr` columns, not a flex row with a wider primary. Every
+ * destination therefore has *identical* width, height, touch area and vertical alignment
+ * by construction - there is no per-item styling left to get out of sync, and ROLL cannot
+ * take more room than the others even though it is the screen players came for.
+ *
+ * The active item is distinguished by treatment alone: a filled pill behind it, brighter
+ * strokes on the icon, bolder text. Nothing about it changes the grid geometry, so
+ * switching tabs cannot shift the bar.
+ *
+ * The bar is pinned to the shell rather than the window, so on desktop it sits on the
+ * framed surface's bottom edge instead of floating across a 1920px screen.
+ */
 export function BottomNav() {
   const location = useLocation();
   const { t } = useI18n();
@@ -103,25 +127,30 @@ export function BottomNav() {
   return (
     <nav
       className={clsx(
-        'bottom-nav fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[560px]',
+        'bottom-nav fixed inset-x-0 bottom-0 z-40 mx-auto w-full',
         'border-t border-white/[0.08] bg-ink-950/92 backdrop-blur-xl',
       )}
-      style={{ paddingBottom: 'var(--tg-safe-bottom)' }}
+      style={{
+        maxWidth: 'var(--content-max)',
+        paddingBottom: 'var(--tg-safe-bottom)',
+      }}
       aria-label={t('app.navigation')}
       data-testid="bottom-nav"
     >
+      {/* Five equal columns. `1fr` each, no exceptions. */}
       <ul
-        className="flex items-stretch justify-between px-1.5"
+        className="grid grid-cols-5"
         style={{ height: 'var(--bottom-nav-height)' }}
+        data-testid="bottom-nav-items"
       >
         {ITEMS.map((item) => {
           const active =
             item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
           return (
-            <li key={item.to} className={clsx('min-w-0', item.primary && 'flex-[1.15]')}>
+            <li key={item.to} className="relative min-w-0">
               <NavLink
                 to={item.to}
-                className="relative flex h-full min-h-[48px] flex-col items-center justify-center gap-1 rounded-2xl transition active:scale-95"
+                className="relative flex h-full min-h-[48px] flex-col items-center justify-center gap-1 px-1 transition active:scale-95"
                 style={{ color: active ? '#ffffff' : 'rgba(255,255,255,0.45)' }}
                 aria-current={active ? 'page' : undefined}
                 data-testid={`nav-${item.to === '/' ? 'roll' : item.to.slice(1)}`}
@@ -129,6 +158,7 @@ export function BottomNav() {
                 {active && !reduced ? (
                   <motion.span
                     layoutId="nav-indicator"
+                    // The pill is inset *within* the column, so it cannot widen the item.
                     className="absolute inset-x-1 inset-y-1.5 -z-10 rounded-xl bg-white/[0.08]"
                     transition={SPRING.settle}
                   />
@@ -136,7 +166,9 @@ export function BottomNav() {
                   <span className="absolute inset-x-1 inset-y-1.5 -z-10 rounded-xl bg-white/[0.08]" />
                 ) : null}
 
-                <span className={clsx('grid place-items-center', item.primary && 'scale-110')}>
+                {/* One icon size for every destination. The primary is not enlarged: a
+                    bigger icon is a wider-feeling tab, and equal means equal. */}
+                <span className="grid h-[22px] w-[22px] shrink-0 place-items-center">
                   <Icon name={item.icon} />
                 </span>
                 <span

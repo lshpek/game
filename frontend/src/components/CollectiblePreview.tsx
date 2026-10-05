@@ -99,7 +99,7 @@ export function CollectiblePreview({
   if (!onOpen) {
     return (
       <div
-        className={clsx('stage flex flex-col items-center px-3 py-4', className)}
+        className={clsx('stage flex min-w-0 flex-col items-center px-3 py-4', className)}
         data-testid="collectible-preview"
         data-kind={kind}
       >
@@ -112,7 +112,10 @@ export function CollectiblePreview({
     <motion.button
       type="button"
       onClick={onOpen}
-      className={clsx('stage flex w-full flex-col items-center px-3 py-4 transition', className)}
+      className={clsx(
+        'stage flex min-w-0 w-full flex-col items-center px-3 py-4 transition',
+        className,
+      )}
       style={{ borderColor: `${color}22` }}
       whileTap={reduced ? undefined : { scale: 0.985 }}
       data-testid="collectible-preview"

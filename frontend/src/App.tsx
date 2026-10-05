@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import clsx from 'clsx';
 
 import { BottomNav } from '@/components/BottomNav';
 import { LoadingSpinner } from '@/components/States';
@@ -71,11 +72,18 @@ function AppShell() {
 
   return (
     <div
-      className="mx-auto flex w-full max-w-[560px] flex-col"
+      className={clsx(
+        'app-shell relative mx-auto flex w-full flex-col overflow-hidden',
+        // The reading measure stops growing past `--content-max`: a longer line is not
+        // more usable, it is harder to read, and a plate stretched across a 4K monitor
+        // looks like a billboard rather than a physical object.
+        'max-w-[var(--content-max)]',
+      )}
       // `min-h-0` again, one level up: the shell is itself the flex child of `#root`, and
       // without it the shell refuses to be shorter than its content and the sticky header
       // inside it stops sticking to the viewport.
       style={{ minHeight: 'var(--app-height)', maxHeight: 'var(--app-height)' }}
+      data-testid="app-shell"
     >
       <MobileHeader />
       {/*

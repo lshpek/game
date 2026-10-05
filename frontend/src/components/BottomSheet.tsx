@@ -190,7 +190,7 @@ export function BottomSheet({
             role="dialog"
             aria-modal="true"
             aria-label={label}
-            className={clsx('sheet', className)}
+            className={clsx('sheet mx-auto w-full max-w-[min(96%,var(--content-max))]', className)}
             style={{
               maxHeight,
               // Height is measured against the real viewport minus both safe areas, so

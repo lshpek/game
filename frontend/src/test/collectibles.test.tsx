@@ -224,7 +224,7 @@ describe('Physical containment', () => {
     expect(card.textContent).toMatch(/synthetic/i);
   });
 
-  it('shows the reel window as a clipped, one-object-tall box', () => {
+  it('shows the reel window as a clipped box whose height scales with the viewport', () => {
     wrap(
       <RollReel
         frames={[frame(), frame({ plate_text: 'EF-456-GH' })]}
@@ -237,7 +237,11 @@ describe('Physical containment', () => {
     // Containment is asserted by class, because that is what the stylesheet guarantees;
     // `overflow: hidden` cannot be observed reliably in jsdom.
     expect(window.className).toContain('reel-window');
-    expect(window.style.height).toBe('132px');
+    // The height is a viewport-relative clamp rather than a fixed pixel count: a fixed
+    // 132px row pushed the button and the result off a landscape screen, where the whole
+    // app can be 360px tall.
+    expect(window.style.height).toBe('var(--reel-row)');
+    expect(STYLESHEET).toMatch(/--reel-row:\s*clamp\(/);
   });
 });
 

@@ -202,7 +202,7 @@ export function DetailSheet({
             onClick={onClose}
           />
           <motion.div
-            className="sheet max-w-[440px]"
+            className="sheet mx-auto w-full max-w-[min(92%,var(--content-max))]"
             style={{
               // Capped against the measured Telegram viewport and cleared below the
               // gesture area, so the sheet can never exceed the space the Mini App has.

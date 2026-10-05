@@ -233,7 +233,7 @@ export default function Reveal({
           />
 
           <div
-            className="relative z-10 flex max-h-full w-full max-w-[440px] flex-col items-center gap-5 overflow-y-auto overscroll-contain px-5"
+            className="relative z-10 mx-auto flex max-h-full w-full max-w-[min(94%,var(--content-max))] flex-col items-center gap-[clamp(12px,3vh,20px)] overflow-y-auto overscroll-contain px-4"
             style={{
               paddingTop: 'calc(var(--tg-safe-top) + 16px)',
               paddingBottom: 'calc(var(--tg-safe-bottom) + 16px)',

@@ -203,7 +203,7 @@ export function CollectionGrid({
           <button
             type="button"
             onClick={() => onOpen(item.id)}
-            className="flex w-full flex-col items-center gap-2"
+            className="flex w-full min-w-0 flex-col items-center gap-2"
             aria-label={item.plate_text}
           >
             <CollectibleVisual card={item} scale={0.34} />

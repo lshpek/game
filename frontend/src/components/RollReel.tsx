@@ -38,11 +38,13 @@ import CollectibleVisualFrame from './CollectibleVisualFrame';
  * plate, so even a very long serial shrinks to fit rather than overflowing.
  */
 
-/** How long the scroll runs, in seconds. */
+/**
+ * How long the scroll runs, in seconds.
+ *
+ * Long enough to read as a real search, short enough that the player is not waiting on an
+ * animation they have already seen. Always skippable.
+ */
 const SCROLL_SECONDS = 2.4;
-
-/** The object window: exactly one collectible tall. */
-const ROW_HEIGHT = 132;
 
 interface Props {
   /** Synthetic frames from the server. Must be non-empty for the reel to run. */
@@ -115,12 +117,16 @@ export function RollReel({ frames, final, finalLabel, settled, onSettled }: Prop
   return (
     <div className="flex w-full flex-col items-center gap-3">
       {/*
-        The window. Exactly one object tall, clipped. This element is the boundary that
-        guarantees no frame, shadow or reflection can ever reach the page.
+        The window. Exactly one object tall, clipped.
+
+        The height comes from `--reel-row`, which is a `clamp()` in `vh`. A fixed pixel
+        row looked right in portrait on one phone and pushed the roll button and the
+        result straight off a landscape screen, where the whole app can be 360px tall.
+        Scaling with the viewport is what makes the reel fit everywhere.
       */}
       <div
         className="reel-window"
-        style={{ height: ROW_HEIGHT }}
+        style={{ height: 'var(--reel-row)' }}
         role="status"
         aria-live="polite"
         aria-label={done ? finalLabel : t('reel.spinning')}
@@ -129,9 +135,9 @@ export function RollReel({ frames, final, finalLabel, settled, onSettled }: Prop
         {!done ? (
           <motion.div
             className="reel-strip"
-            style={{ height: `${items.length * ROW_HEIGHT}px` }}
+            style={{ height: `calc(var(--reel-row) * ${items.length})` }}
             initial={{ y: 0 }}
-            animate={{ y: -travel * ROW_HEIGHT }}
+            animate={{ y: `calc(var(--reel-row) * -${travel})` }}
             transition={{ duration: SCROLL_SECONDS, ease: EASE.reel }}
             data-testid="reel-strip"
           >
@@ -166,7 +172,7 @@ function ReelRow({ frame }: { frame: ReelFrame }) {
   return (
     <div
       className="reel-row"
-      style={{ height: ROW_HEIGHT }}
+      style={{ height: 'var(--reel-row)' }}
       data-testid="reel-frame"
       data-kind={frame.kind}
       data-country={frame.country_code}
@@ -191,5 +197,5 @@ function ReelRow({ frame }: { frame: ReelFrame }) {
   );
 }
 
-export { ROW_HEIGHT, SCROLL_SECONDS };
+export { SCROLL_SECONDS };
 export default RollReel;

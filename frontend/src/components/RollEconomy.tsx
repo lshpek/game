@@ -89,7 +89,12 @@ export function RollBalanceLine({
       data-testid="roll-balance"
     >
       {/* The count, in words, so it reads as "18 rolls" rather than a bare numeral. */}
-      <span className="number-display text-[15px] font-bold text-white">
+      {/*
+        Truncated rather than allowed to push the layout. This line sits beside the wallet
+        in a two-item row, and an unbounded count in a narrow language is exactly the kind
+        of thing that turns a row into a wrap.
+      */}
+      <span className="number-display max-w-full truncate text-[15px] font-bold text-white">
         {t('hunt.rollsCount', { n: rolls.rolls_remaining })}
       </span>
       {/* A bonus bank is a distinct thing from the normal one, so it is labelled rather
