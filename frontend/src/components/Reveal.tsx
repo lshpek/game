@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 import { createPortal } from 'react-dom';
 
-import { useT } from '../i18n';
+import { useI18n } from '../i18n';
 import { trackRevealShown, trackRevealSkipped, trackRollAgain } from '../lib/analytics';
 import { formatCoins } from '../lib/format';
 import { DURATION, EASE, SPRING, revealDuration, useReducedMotion } from '../lib/motion';
@@ -101,7 +101,7 @@ export default function Reveal({
   onPlateClick,
   isFirstDiscovery = false,
 }: Props) {
-  const t = useT();
+  const { t, lang } = useI18n();
   const reduced = useReducedMotion();
   const [stage, setStage] = useState<Stage>('press');
   const lockedRef = useRef(false);
@@ -346,12 +346,25 @@ export default function Reveal({
                       {/* 2. Country, then the specific thing it is */}
                       <div className="space-y-0.5">
                         <div className="t-body font-semibold text-white/80">
-                          {card.country.flag} {card.country.name_en.toUpperCase()}
+                          <span aria-hidden>{card.country.flag}</span>{' '}
+                          {/* The player's language, never the catalogue's. */}
+                          {lang === 'ru' ? card.country.name_ru : card.country.name_en}
                         </div>
                         <div className="t-micro text-white/40">
                           {card.kind === 'SIM_CARD'
-                            ? card.details?.operator
-                            : (card.region?.name_en ?? card.plate_type)}
+                            ? (card.details
+                                ? lang === 'ru' && card.details.operator_local
+                                  ? card.details.operator_local
+                                  : card.details.operator
+                                : t('category.sim'))
+                            : // A plate prints its own country's name on itself, so for a
+                              // vehicle the *printed* region name is what belongs here -
+                              // but only when the plate has one at all.
+                              (card.region
+                                ? lang === 'ru'
+                                  ? card.region.name_ru
+                                  : card.region.name_en
+                                : card.plate_type)}
                         </div>
                       </div>
 

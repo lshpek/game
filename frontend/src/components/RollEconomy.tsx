@@ -106,7 +106,12 @@ export function RollBalanceLine({
   );
 }
 
-/** The countdown as a compact pill, for use inside the roll button. */
+/**
+ * The countdown, for use inside a control.
+ *
+ * Rendered only when the server actually said when the next roll arrives. Inventing a
+ * refill time would put a number on screen the economy does not honour.
+ */
 export function CountdownPill({ rolls, className = '' }: { rolls: RollBalance | null; className?: string }) {
   const countdown = useRefillCountdown(rolls);
   if (!countdown) return null;

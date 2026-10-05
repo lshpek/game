@@ -11,6 +11,7 @@ export const ru: Dict = {
   'nav.profile': 'Профиль',
   'common.loading': 'Загрузка…',
   'common.tryAgain': 'Повторить',
+  'common.dismiss': 'Закрыть',
   'common.loadingGame': 'Открываем игру…',
   'common.you': 'ВЫ',
   'common.coins': 'Монеты',
@@ -23,6 +24,7 @@ export const ru: Dict = {
   'app.retry': 'ПОВТОР',
   'app.profileUnavailable': 'Профиль недоступен.',
   'app.language': 'Язык',
+  'app.notifications': 'Уведомления',
   'app.navigation': 'Основная навигация',
   'app.tagline': 'Физический атлас',
   'home.streak': 'Серия',
@@ -125,6 +127,9 @@ export const ru: Dict = {
   'social.challengeAria': 'Ссылка на вызов',
   'social.beatMine': 'Побей моё число!',
   'social.share': 'ПОДЕЛИТЬСЯ',
+  'social.challengeCreated': 'Ссылка на вызов создана.',
+  'social.challengeFailed': 'Не удалось создать вызов.',
+  'social.purchaseFailed': 'Покупка не завершена.',
   'social.store': 'Магазин',
   'social.proActive': 'PRO активен до {date}',
   'social.storeHint': 'Больше роллов, Pro-бокс и бонусные монеты.',
@@ -232,7 +237,10 @@ export const ru: Dict = {
   'hunt.bonusRolls': 'бонусных роллов',
   'hunt.rollsCount': 'роллов: {n}',
   'hunt.noRolls': 'Прокрутки закончились. Следующая восстановится скоро.',
-  'hunt.noRollsShort': 'НЕТ ПРОКРУТОК',
+  'hunt.noRollsShort': 'ПРОКРУТОК НЕТ',
+  // Пока банк грузится. Кнопка остаётся рабочей: неизвестный баланс — это не пустой
+  // баланс, а сервер сам откажет прокрутку, которую не может выдать.
+  'hunt.rollBankLoading': 'проверяем банк',
   'hunt.rollWithCount': 'Крутить. Доступно: {n}.',
   'hunt.rollUnavailable': 'Сейчас нет доступных прокруток.',
   // --- Единственная следующая цель -----------------------------------------
@@ -279,7 +287,9 @@ export const ru: Dict = {
   'hunt.title': 'ТЕКУЩАЯ ОХОТА',
   'hunt.world': 'Мир',
   'hunt.rollNow': 'КРУТИТЬ',
-  'hunt.rolling': 'ОХОТА',
+  // The verb, not the activity: the button is doing something, and the player has to
+  // see that the press registered.
+  'hunt.rolling': 'КРУТИМ…',
   'hunt.outOfRolls': 'Роллы кончились',
   'hunt.backTomorrow': 'Возвращайтесь завтра или продолжайте охотиться',
   'hunt.waitReset': 'ЖДАТЬ СБРОСА',

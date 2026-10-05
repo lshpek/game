@@ -88,7 +88,7 @@ export function ActiveCountryButton({
   disabled?: boolean;
   className?: string;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   return (
     <button
       type="button"
@@ -107,7 +107,9 @@ export function ActiveCountryButton({
         {country?.flag ?? '\u{1F30D}'}
       </span>
       <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate t-h2 text-white">{country ? country.name_en : t('country.world')}</span>
+        <span className="truncate t-h2 text-white">
+          {country ? (lang === 'ru' ? country.name_ru : country.name_en) : t('country.world')}
+        </span>
         <span className="truncate t-micro text-white/40">
           {country
             ? `${country.code}${country.calling_code ? ` · ${country.calling_code}` : ''}`
@@ -195,6 +197,22 @@ export function CountrySelector({
     if (hasMore && !loading) onLoadMore?.();
   }, [hasMore, loading, matches.length, onLoadMore, visible]);
 
+  /*
+   * Fires on the sheet's real scroll container, close to the bottom.
+   *
+   * A 200px threshold means the next page is already in flight while the last few rows
+   * are still visible, which is what stops the list from stuttering when it reaches the
+   * end. `visible >= matches.length` is the guard that keeps it from re-requesting a
+   * page the server already gave us.
+   */
+  const handleScroll = useCallback(
+    (metrics: { scrollTop: number; clientHeight: number; scrollHeight: number }) => {
+      if (metrics.scrollTop + metrics.clientHeight < metrics.scrollHeight - 200) return;
+      loadMore();
+    },
+    [loadMore],
+  );
+
   return (
     <>
       <ActiveCountryButton
@@ -210,6 +228,7 @@ export function CountrySelector({
         label={t('country.picker')}
         title={t('country.picker')}
         subtitle={t('country.playableCount', { count: playableCount })}
+        onScroll={handleScroll}
       >
         <div className="sticky top-0 z-10 space-y-2.5 bg-ink-900/95 px-[var(--gutter)] pb-3 pt-1 backdrop-blur">
           <input
@@ -226,7 +245,17 @@ export function CountrySelector({
             data-testid="country-search"
           />
 
-          <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+          {/*
+            The region row scrolls sideways and *only* sideways.
+
+            `touch-pan-x` gives the gesture budget to this element horizontally and
+            refuses it vertically, so the sheet's own list keeps the vertical swipe and
+            the page never picks up a stray horizontal pan.
+          */}
+          <div
+            className="no-scrollbar -mx-1 flex touch-pan-x gap-1.5 overflow-x-auto overflow-y-hidden px-1"
+            data-testid="country-region-row"
+          >
             {regions.map((code) => (
               <button
                 key={code}
@@ -284,13 +313,13 @@ export function CountrySelector({
           </div>
         </div>
 
-        <ul
-          className="space-y-1 px-2 pb-4"
-          onScroll={(event) => {
-            const node = event.currentTarget;
-            if (node.scrollTop + node.clientHeight >= node.scrollHeight - 160) loadMore();
-          }}
-        >
+        {/*
+          The list is *not* the scroll container - the sheet's own area is, and it is what
+          reports scrolling to `handleScroll`. A `touch-pan-y` row keeps the vertical
+          gesture here so momentum and pull-to-refresh-style overscroll stay inside the
+          sheet.
+        */}
+        <ul className="touch-pan-y space-y-1 px-2 pb-4">
           {shown.map((item) => {
             const selected = item.code === value;
             const locked = !item.is_playable;

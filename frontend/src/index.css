@@ -83,25 +83,34 @@
 
   body {
     margin: 0;
-    min-height: 100%;
+    height: 100%;
     @apply bg-ink-950 bg-mesh-dark text-white font-sans;
     /*
-     * Telegram's webview must never rubber-band or scroll sideways. `clip` rather
-     * than `hidden` because `hidden` on the body creates a scroll container and
-     * breaks `position: sticky` inside it - which is what the header relies on.
+     * The document itself never scrolls. `#root` is the app and `main` is its one
+     * vertical scroll container; a document that can scroll on top of that produces the
+     * classic Android artefact where the header unsticks and the navigation offsets by a
+     * few pixels during momentum.
+     *
+     * `clip` rather than `hidden` on the x axis: `hidden` on an ancestor creates a
+     * scroll container and breaks `position: sticky` inside it.
      */
-    overscroll-behavior-y: none;
-    overflow-x: clip;
+    overscroll-behavior: none;
+    overflow: hidden;
     -webkit-tap-highlight-color: transparent;
   }
 
   #root {
-    min-height: 100%;
     /*
-     * One scroll container for the entire app, sized from the measured viewport.
-     * Content below the fold is unreachable rather than hidden behind the nav.
+     * The real viewport height, published as `--app-height` by TelegramViewport, with the
+     * viewport-unit chain as the first-paint fallback. `min-height` *and* `max-height`
+     * together: the app is exactly one screen tall, so the only thing that scrolls is
+     * `main`. A document that can grow is a document where the sticky header drifts and
+     * the fixed navigation slides around.
      */
+    height: var(--app-height, 100dvh);
     min-height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
+    overflow: hidden;
   }
 
   /* Selection and long-press callouts look broken on a physical-object UI. */

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 
@@ -84,7 +84,10 @@ describe('HuntPage core loop', () => {
   it('leads with the roll, and shows the server balance', async () => {
     renderWithQuery(<HuntPage />);
     await waitFor(() => expect(rollButton()).toBeEnabled());
-    expect(screen.getByText('18 rolls')).toBeInTheDocument();
+    // The count is on the control itself, and the same authoritative balance is on the
+    // bank line above it - one number, shown once per place it belongs.
+    expect(within(rollButton()).getByText(/18/)).toBeInTheDocument();
+    expect(screen.getAllByText(/18 rolls/).length).toBeGreaterThan(0);
   });
 
   it('rolls once per press, and never twice for a double tap', async () => {

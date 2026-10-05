@@ -40,6 +40,8 @@ interface Props {
   className?: string;
   /** Hide the drag handle (for a sheet that must be closed explicitly). */
   hideHandle?: boolean;
+  /** Called as the sheet's content scrolls. Attached to the real scroll container. */
+  onScroll?: (metrics: { scrollTop: number; clientHeight: number; scrollHeight: number }) => void;
 }
 
 export function BottomSheet({
@@ -53,16 +55,41 @@ export function BottomSheet({
   maxHeight = 'min(86%, var(--app-height))',
   className,
   hideHandle = false,
+  /** Called as the sheet's content scrolls. Attached to the real scroll container. */
+  onScroll,
 }: Props) {
   const { t } = useI18n();
   const reduced = useReducedMotion();
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
   const [drag, setDrag] = useState(0);
 
   const close = useCallback(() => {
     onClose();
   }, [onClose]);
+
+  /*
+   * The scroll listener is attached to the element that actually scrolls.
+   *
+   * Previously the handler sat on the list *inside* the sheet, which never scrolls -
+   * the sheet's own container does - so infinite loading silently never fired and the
+   * country list simply stopped after its first page. Forwarding the element's own
+   * measurements, rather than a React event, is what lets a caller reason about position
+   * without reaching into the sheet.
+   */
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!open || !onScroll || !node) return undefined;
+    const handler = () =>
+      onScroll({
+        scrollTop: node.scrollTop,
+        clientHeight: node.clientHeight,
+        scrollHeight: node.scrollHeight,
+      });
+    node.addEventListener('scroll', handler, { passive: true });
+    return () => node.removeEventListener('scroll', handler);
+  }, [onScroll, open]);
 
   // Escape closes, focus is trapped inside while open, and it returns on close.
   useEffect(() => {
@@ -180,19 +207,30 @@ export function BottomSheet({
                   ? { duration: DURATION.fade }
                   : { type: 'spring', stiffness: 300, damping: 34, mass: 0.85 }
             }
-            drag={reduced || hideHandle ? false : 'y'}
-            dragConstraints={{ top: 0, bottom: 0 }}
-            dragElastic={{ top: 0, bottom: 0.4 }}
-            onDrag={(_event, info) => setDrag(Math.max(0, info.offset.y))}
-            onDragEnd={onDragEnd}
             data-testid="bottom-sheet-panel"
           >
             {!hideHandle ? (
+              /*
+                The drag handle is the only thing that dismisses by gesture.
+                `drag` is attached here rather than to the panel, because a panel-level
+                drag listener claims *every* vertical swipe inside the sheet - including
+                the ones meant for the list. That is why the country list used to feel
+                glued: you could not scroll it, only tug the sheet.
+              */
               <div
-                className="flex shrink-0 cursor-grab justify-center pb-1 pt-2.5 active:cursor-grabbing"
+                className="flex shrink-0 cursor-grab touch-none justify-center pb-1 pt-2.5 active:cursor-grabbing"
                 aria-hidden
+                data-testid="sheet-handle"
               >
-                <span className="h-1 w-9 rounded-full bg-white/20" />
+                <motion.span
+                  className="h-1 w-9 rounded-full bg-white/25"
+                  drag={reduced ? false : 'y'}
+                  dragConstraints={{ top: 0, bottom: 0 }}
+                  dragElastic={{ top: 0, bottom: 0.4 }}
+                  dragMomentum={false}
+                  onDrag={(_event, info) => setDrag(Math.max(0, info.offset.y))}
+                  onDragEnd={onDragEnd}
+                />
               </div>
             ) : null}
 
@@ -219,7 +257,24 @@ export function BottomSheet({
               </header>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+            {/*
+              The sheet's scroll area.
+
+              `touch-action: pan-y` is the declaration that keeps the gesture budget
+              correct: the browser is told this element scrolls vertically and nothing
+              else, so a horizontal drag here goes to a horizontal child (the region chip
+              row) and never to the page.
+
+              `overscroll-contain` stops momentum from chaining out to the document
+              behind, which on Android otherwise produced a visible rubber-band.
+            */}
+            <div
+              ref={scrollRef}
+              className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain"
+              data-testid="sheet-scroll"
+            >
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       ) : null}

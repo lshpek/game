@@ -7,6 +7,7 @@ export const en = {
   'nav.profile': 'Profile',
   'common.loading': 'Loading…',
   'common.tryAgain': 'Try again',
+  'common.dismiss': 'Dismiss',
   'common.loadingGame': 'Opening the game…',
   'common.you': 'YOU',
   'common.coins': 'Coins',
@@ -19,6 +20,9 @@ export const en = {
   'app.retry': 'RETRY',
   'app.profileUnavailable': 'Profile unavailable.',
   'app.language': 'Language',
+  // The in-app toast region. Named, so a screen reader announces "notifications"
+  // instead of reading each message with no context.
+  'app.notifications': 'Notifications',
   'app.navigation': 'Main navigation',
   'app.tagline': 'Physical atlas',
   'home.streak': 'Streak',
@@ -121,6 +125,9 @@ export const en = {
   'social.challengeAria': 'Challenge link',
   'social.beatMine': 'Beat my number!',
   'social.share': 'SHARE',
+  'social.challengeCreated': 'Challenge link created.',
+  'social.challengeFailed': 'Could not create the challenge.',
+  'social.purchaseFailed': 'The purchase did not complete.',
   'social.store': 'Store',
   'social.proActive': 'PRO active until {date}',
   'social.storeHint': 'More daily rolls, the Pro Box and bonus Coins.',
@@ -232,7 +239,10 @@ export const en = {
   // The bonus bank is a distinct thing from the normal bank, so it is named.
   'hunt.bonusRolls': 'bonus rolls',
   'hunt.noRolls': 'No rolls left. The next one regenerates soon.',
-  'hunt.noRollsShort': 'NO ROLLS',
+  'hunt.noRollsShort': 'NO ROLLS LEFT',
+  // Shown while the bank is still loading. The button stays usable: an unknown balance
+  // is not an empty one, and the server refuses a roll it cannot honour.
+  'hunt.rollBankLoading': 'checking your bank',
   'hunt.rollWithCount': 'Roll. {n} available.',
   'hunt.rollUnavailable': 'No rolls available right now.',
   // --- The single next objective ------------------------------------------

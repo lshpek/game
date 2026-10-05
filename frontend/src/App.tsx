@@ -6,6 +6,7 @@ import { BottomNav } from '@/components/BottomNav';
 import { LoadingSpinner } from '@/components/States';
 import { MobileHeader } from '@/components/MobileHeader';
 import { TelegramViewport } from '@/components/TelegramViewport';
+import { ToastHost } from '@/components/Toast';
 import { BoxesPage } from '@/pages/BoxesPage';
 import { CollectionPage } from '@/pages/CollectionPage';
 import { HuntPage } from '@/pages/HuntPage';
@@ -71,17 +72,34 @@ function AppShell() {
   return (
     <div
       className="mx-auto flex w-full max-w-[560px] flex-col"
-      style={{ minHeight: 'var(--app-height)' }}
+      // `min-h-0` again, one level up: the shell is itself the flex child of `#root`, and
+      // without it the shell refuses to be shorter than its content and the sticky header
+      // inside it stops sticking to the viewport.
+      style={{ minHeight: 'var(--app-height)', maxHeight: 'var(--app-height)' }}
     >
       <MobileHeader />
+      {/*
+        The toast host sits next to the header, not at the end of the shell: it has to be
+        inside the app's layout so it is measured against the same safe area the header
+        is, instead of guessing at its own.
+      */}
+      <ToastHost />
 
       {/*
-        The single scroll container. The padding below is the navigation height plus the
-        system gesture inset plus one comfortable gap - all measured, none of it a magic
-        number, so the last card can never end up behind the navigation.
+        The single scroll container, and the reason it works.
+
+        `min-h-0` is load-bearing: this is a flex child, and a flex item's default
+        `min-height: auto` refuses to shrink below its content, so `overflow-y: auto`
+        would never engage and the whole shell would grow to the full page height instead
+        of scrolling. That single missing declaration is what produced "the page scrolls
+        but the header and the navigation do not stay put".
+
+        The padding below is the navigation height plus the system gesture inset plus one
+        gap - all measured from the same variables the navigation is built from, so the
+        two cannot disagree about how much room it takes.
       */}
       <main
-        className="flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain px-[var(--gutter)]"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain px-[var(--gutter)]"
         style={{
           paddingTop: 'var(--section-gap)',
           paddingBottom:

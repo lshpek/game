@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, makeIdempotencyKey } from '@/lib/api';
+import { makeIdempotencyKey } from '@/lib/api';
 import { shareToChat } from '@/lib/telegram';
 import { formatCoins } from '@/lib/format';
 import { shop, social } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 import { GameCard, Section } from './GameCard';
+import { notify, notifyError } from './Toast';
 import { useI18n } from '@/i18n';
 
 export function SocialPanel() {
@@ -22,10 +23,13 @@ export function SocialPanel() {
 
   const createChallenge = useMutation({
     mutationFn: () => social.createChallenge(),
-    onSuccess: (challenge) => setLink(challenge.link),
-    onError: (error) => {
-      if (error instanceof ApiError) window.alert(error.message);
+    onSuccess: (challenge) => {
+      setLink(challenge.link);
+      notify(t('social.challengeCreated'), 'ok');
     },
+    // An in-app toast rather than `window.alert`, which freezes the webview, covers
+    // Telegram's chrome and stacks if two fire at once.
+    onError: (error) => notifyError(error, t('social.challengeFailed')),
   });
 
   const incoming = challenges.data?.find(
@@ -91,7 +95,7 @@ export function SocialPanel() {
                   await social.acceptChallenge(incoming.code);
                   await queryClient.invalidateQueries({ queryKey: ['challenges'] });
                 } catch (error) {
-                  if (error instanceof ApiError) window.alert(error.message);
+                  notifyError(error, t('social.challengeFailed'));
                 } finally {
                   setBusy(false);
                 }
@@ -158,9 +162,7 @@ function PremiumShop({ onPurchased }: { onPurchased: () => Promise<void> }) {
       if (invoice.mock_confirm_url) await shop.confirmMock(invoice.payment_id);
       await onPurchased();
     },
-    onError: (error) => {
-      if (error instanceof ApiError) window.alert(error.message);
-    },
+    onError: (error) => notifyError(error, t('social.purchaseFailed')),
   });
 
   return (
