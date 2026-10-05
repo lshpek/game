@@ -19,6 +19,7 @@ from app.game.plate_generator import (
 )
 from app.game.plate_patterns import analyze_plate, split_plate
 from app.game.plate_rarity import (
+    RARITY_ORDER,
     RARITY_RANK,
     Rarity,
     compute_rarity_score,
@@ -327,6 +328,20 @@ class TestRarityEngine:
             traits=["pair"],
             force_secret=True,
         ) is Rarity.MYTHIC
+
+    def test_quality_conditioned_generation_reaches_each_configured_tier(self, db):
+        import random
+
+        from app.core.config import settings
+        from app.game.plate_generator import PlateGenerator
+        from app.services.catalog import build_snapshot
+
+        context = build_snapshot(db, settings.rarity_weights).context
+        for index, target in enumerate(RARITY_ORDER):
+            generated = PlateGenerator(context, random.Random(500 + index)).generate(
+                luck=target
+            )
+            assert generated.rarity is target
 
     def test_pity_only_ever_helps(self):
         base = load_rarity_weights()

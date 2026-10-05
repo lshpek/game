@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -137,6 +137,41 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _frontend_origin_is_allowed(self) -> "Settings":
+        """The Mini App is the only client, so its origin must always be allowed.
+
+        A deployment that sets ``FRONTEND_URL`` (or ``VITE_API_BASE_URL`` on
+        the frontend) but forgets ``CORS_ORIGINS`` would otherwise lock every
+        player out: the browser fails the CORS preflight, ``fetch()`` throws a
+        ``TypeError``, and the client reports a generic "Network unavailable"
+        even though the API is healthy. Deriving the allow-list from
+        ``frontend_url`` makes a single correct variable sufficient.
+        """
+        if self.frontend_url and self.frontend_url not in self.cors_origins:
+            self.cors_origins = [*self.cors_origins, self.frontend_url]
+        return self
+
+    @property
+    def cors_allows_frontend(self) -> bool:
+        """Whether the configured frontend origin is permitted by CORS."""
+        return bool(self.frontend_url) and self.frontend_url in self.cors_origins
+
+    @property
+    def cors_is_local_only(self) -> bool:
+        """Whether CORS is still the localhost-only default.
+
+        True when every allowed origin is a loopback address, which is the
+        tell-tale sign that ``CORS_ORIGINS``/``FRONTEND_URL`` were never set
+        for a real deployment.
+        """
+        if not self.cors_origins:
+            return True
+        loopback = ("localhost", "127.0.0.1", "::1")
+        return all(
+            any(host in origin for host in loopback) for origin in self.cors_origins
+        )
 
     @property
     def is_production(self) -> bool:

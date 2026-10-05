@@ -31,6 +31,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Run migrations / seeding before serving traffic."""
     from app.bootstrap import bootstrap
 
+    _warn_on_misconfiguration()
+
     try:
         bootstrap()
     except Exception as exc:
@@ -43,6 +45,38 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     yield
     logger.info("Application stopped")
+
+
+def _warn_on_misconfiguration() -> None:
+    """Surface deployment mistakes that otherwise look like a client outage.
+
+    A missing ``CORS_ORIGINS``/``FRONTEND_URL`` makes the browser fail the
+    CORS preflight, so ``fetch()`` throws and the Mini App reports
+    "Network unavailable" even though the API is up. A missing ``BOT_TOKEN``
+    makes every Telegram login fail signature verification. Both are
+    configuration problems, not code problems, so they are reported once at
+    boot instead of on every request.
+    """
+    if settings.is_production:
+        if settings.cors_is_local_only:
+            logger.warning(
+                "CORS allows only loopback origins (%s). Set CORS_ORIGINS or "
+                "FRONTEND_URL to the public Mini App origin, otherwise every "
+                "browser client will fail with a network error.",
+                settings.cors_origins,
+            )
+        if not settings.cors_allows_frontend:
+            logger.warning(
+                "FRONTEND_URL (%s) is not in CORS_ORIGINS (%s). The Mini App "
+                "origin will be blocked by CORS.",
+                settings.frontend_url,
+                settings.cors_origins,
+            )
+        if not settings.bot_token or settings.bot_token == "CHANGE_ME":
+            logger.warning(
+                "BOT_TOKEN is not configured. POST /api/auth/telegram will "
+                "reject every Telegram login with INVALID_INIT_DATA."
+            )
 
 
 def create_app() -> FastAPI:

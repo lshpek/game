@@ -15,6 +15,8 @@ from uuid import uuid4
 TEST_SECRET_KEY = "test-secret-key-0123456789abcdefghij"
 TEST_ADMIN_TELEGRAM_ID = 900001
 TEST_SERVICE_TOKEN = "test-service-token-abcdef0123456789"
+TEST_BOT_TOKEN = "123456:test-bot-token-for-telegram-initdata"
+TEST_FRONTEND_URL = "http://localhost:5173"
 _TMP_DIR = tempfile.mkdtemp(prefix="numora-tests-")
 
 os.environ.update(
@@ -33,6 +35,9 @@ os.environ.update(
         "RATE_LIMIT_ADMIN_READ": "10000",
         "PAYMENT_PROVIDER": "mock",
         "TELEGRAM_BOT_USERNAME": "test_bot",
+        "BOT_TOKEN": TEST_BOT_TOKEN,
+        "FRONTEND_URL": TEST_FRONTEND_URL,
+        "CORS_ORIGINS": TEST_FRONTEND_URL,
         "BACKEND_URL": "http://localhost:8000",
     }
 )

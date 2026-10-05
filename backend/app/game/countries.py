@@ -144,140 +144,20 @@ class EventDef:
     sort_order: int = 0
 
 
-@dataclass(frozen=True, slots=True)
-class PlateFamily:
-    """A stylised plate layout family shared by several countries.
-
-    Families exist so the catalogue can ship every ISO country without inventing a
-    real numbering plan for each one. They are clearly marked as game layouts.
-    """
-
-    key: str
-    visual: str
-    #: ``(code suffix, pattern, weight, plate_type)``
-    layouts: tuple[tuple[str, str, float, str], ...]
-
-
-#: Documented synthetic layout families. ``STANDARD`` layouts are the everyday plate;
-#: the second layout is the rarer, non-standard variant.
-PLATE_FAMILIES: dict[str, PlateFamily] = {
-    "cis": PlateFamily(
-        "cis",
-        "ru",
-        (
-            ("std", "LDDD LL DD", 5.0, "STANDARD"),
-            ("long", "DDDLLL DD", 1.4, "COMMERCIAL"),
-            ("moto", "L DDDD DD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "euro_long": PlateFamily(
-        "euro_long",
-        "european",
-        (
-            ("std", "LL DDD LL", 5.0, "STANDARD"),
-            ("long", "LLL DDDDD", 1.5, "COMMERCIAL"),
-            ("moto", "LLLLLL", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "euro_compact": PlateFamily(
-        "euro_compact",
-        "fr",
-        (
-            ("std", "LLL DDDD", 5.0, "STANDARD"),
-            ("alt", "LL DDD LL", 2.0, "STANDARD"),
-            ("moto", "LLL DDD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "britain": PlateFamily(
-        "britain",
-        "gb",
-        (
-            ("std", "LL DD LLL", 5.0, "STANDARD"),
-            ("prefix", "LLL DD LLL", 1.8, "STANDARD"),
-            ("moto", "LLL DD DDD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "nordic": PlateFamily(
-        "nordic",
-        "nordic",
-        (
-            ("std", "LL DDD DD", 5.0, "STANDARD"),
-            ("alt", "LLL DD DD", 1.6, "STANDARD"),
-            ("moto", "LL DDDD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "americas": PlateFamily(
-        "americas",
-        "us",
-        (
-            ("std", "LLL DDDD", 5.0, "STANDARD"),
-            ("alt", "LLL-DDD", 1.8, "STANDARD"),
-            ("moto", "DDDDD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "americas_south": PlateFamily(
-        "americas_south",
-        "latam",
-        (
-            ("std", "LLL DD DD", 5.0, "STANDARD"),
-            ("alt", "LLL DDDD", 1.8, "STANDARD"),
-            ("moto", "LLLLLL", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "asia_compact": PlateFamily(
-        "asia_compact",
-        "jp",
-        (
-            ("std", "DD LL DD", 5.0, "STANDARD"),
-            ("long", "L DDD DD DD", 1.8, "COMMERCIAL"),
-            ("moto", "DDD LL DD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "asia_wide": PlateFamily(
-        "asia_wide",
-        "seasia",
-        (
-            ("std", "DDD LLL DD", 5.0, "STANDARD"),
-            ("alt", "LL DD DDDD", 1.8, "STANDARD"),
-            ("moto", "L DDDDD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "mideast": PlateFamily(
-        "mideast",
-        "ae",
-        (
-            ("std", "L DDD L", 5.0, "STANDARD"),
-            ("alt", "DDD L L", 2.0, "STANDARD"),
-            ("lux", "L DDDDD", 0.8, "SPECIAL"),
-        ),
-    ),
-    "oceania": PlateFamily(
-        "oceania",
-        "oceania",
-        (
-            ("std", "LLL DD L", 5.0, "STANDARD"),
-            ("alt", "LLL-DDD", 1.8, "STANDARD"),
-            ("moto", "LLLL D", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "africa": PlateFamily(
-        "africa",
-        "africa",
-        (
-            ("std", "DD LLL DD", 5.0, "STANDARD"),
-            ("alt", "LL DDD DD", 1.8, "STANDARD"),
-            ("moto", "L DDDDD", 0.7, "MOTORCYCLE"),
-        ),
-    ),
-    "generic": PlateFamily(
-        "generic",
-        "european",
-        (
-            ("std", "LL DDD LL", 5.0, "STANDARD"),
-            ("alt", "LLL DDDD", 2.0, "STANDARD"),
-            ("moto", "LLLLLL", 0.7, "MOTORCYCLE"),
-        ),
-    ),
+FAMILY_VISUALS: dict[str, str] = {
+    "cis": "ru",
+    "euro_long": "european",
+    "euro_compact": "fr",
+    "britain": "gb",
+    "nordic": "nordic",
+    "americas": "us",
+    "americas_south": "latam",
+    "asia_compact": "jp",
+    "asia_wide": "seasia",
+    "mideast": "ae",
+    "oceania": "oceania",
+    "africa": "africa",
+    "generic": "european",
 }
 
 #: Default family per continent.
@@ -360,7 +240,6 @@ PLAYABLE_TUNING: dict[str, tuple[str, float, float, float]] = {
     "BEL": ("euro_compact", 2.6, 1.08, 1.0),
     "CHE": ("euro_compact", 2.8, 1.25, 1.06),
     "AUT": ("euro_compact", 2.6, 1.08, 1.0),
-    "POL": ("euro_compact", 3.0, 0.92, 1.02),
     "CZE": ("euro_compact", 2.2, 0.95, 1.0),
     "SVK": ("euro_compact", 2.0, 0.95, 1.0),
     "HUN": ("euro_compact", 2.0, 0.9, 1.0),
@@ -389,6 +268,64 @@ PLAYABLE_TUNING: dict[str, tuple[str, float, float, float]] = {
     "NZL": ("oceania", 1.8, 1.05, 1.02),
     "AUS": ("oceania", 2.6, 1.1, 1.04),
     "ZAF": ("africa", 2.2, 0.9, 1.04),
+}
+
+GREEK_PLATE_LETTERS = "ΑΒΕΖΗΙΚΜΝΟΡΤΥΧ"
+KOREAN_PLATE_LETTERS = "가나다라마바사아자차카타파하"
+THAI_PLATE_LETTERS = "กขคฆงจฉชซญดตถทธนบปผพฟภมยรลวศสหอ"
+SAUDI_PLATE_LETTERS = "ابجدهوزحطيكلمنسعفقه"
+BELARUS_PLATE_LETTERS = RUSSIAN_PLATE_LETTERS
+
+PLAYABLE_ALPHABETS: dict[str, tuple[str, str]] = {
+    "GRC": (GREEK_PLATE_LETTERS, "GREEK"),
+    "BLR": (BELARUS_PLATE_LETTERS, "CYRILLIC"),
+    "KOR": (KOREAN_PLATE_LETTERS, "HANGUL"),
+    "SAU": (SAUDI_PLATE_LETTERS, "ARABIC"),
+    "THA": (THAI_PLATE_LETTERS, "THAI"),
+}
+
+# One ordinary passenger registration layout per derived playable country. The serial
+# space remains procedural; these rows only describe the country's printed shape.
+PLAYABLE_PLATE_LAYOUTS: dict[str, tuple[TemplateDef, ...]] = {
+    "MEX": (TemplateDef("mx_standard", "LLL DDD D"),),
+    "BRA": (TemplateDef("br_mercosur", "LLL D LDD"),),
+    "ARG": (TemplateDef("ar_mercosur", "LL DDD LL"),),
+    "CHL": (TemplateDef("cl_standard", "LLLL DD"),),
+    "COL": (TemplateDef("co_standard", "LLL DDD"),),
+    "ESP": (TemplateDef("es_standard", "DDDD A[BCDFGHJKLMNPRSTVWXYZ] A[BCDFGHJKLMNPRSTVWXYZ] A[BCDFGHJKLMNPRSTVWXYZ]"),),
+    "PRT": (TemplateDef("pt_standard", "LL DD LL"),),
+    "NLD": (TemplateDef("nl_standard", "LL DDD L"),),
+    "BEL": (TemplateDef("be_standard", "L-LLL-DDD"),),
+    "CHE": (TemplateDef("ch_standard", "LL DDDDD"),),
+    "AUT": (TemplateDef("at_standard", "LL DDDDD"),),
+    "CZE": (TemplateDef("cz_standard", "L DDD L DDD"),),
+    "SVK": (TemplateDef("sk_standard", "LL DDDDD"),),
+    "HUN": (TemplateDef("hu_standard", "LL LL DDD"),),
+    "ROU": (TemplateDef("ro_standard", "LL DDD LLL"),),
+    "BGR": (TemplateDef("bg_standard", "A[ABCEHKMOPTX] DDD A[ABCEHKMOPTX] A[ABCEHKMOPTX]"),),
+    "GRC": (TemplateDef("gr_standard", "LLL DDDD"),),
+    "SWE": (TemplateDef("se_standard", "LLL DDD"),),
+    "NOR": (TemplateDef("no_standard", "LL DDDDD"),),
+    "DNK": (TemplateDef("dk_standard", "LL DDDDD"),),
+    "FIN": (TemplateDef("fi_standard", "LLL DDD"),),
+    "ISL": (TemplateDef("is_standard", "LL DDD LL"),),
+    "IRL": (TemplateDef("ie_standard", "DD L DDDDDD"),),
+    "EST": (TemplateDef("ee_standard", "DDD LLL"),),
+    "LVA": (TemplateDef("lv_standard", "LL DDDD"),),
+    "LTU": (TemplateDef("lt_standard", "LLL DDD"),),
+    "UKR": (TemplateDef("ua_standard", "LL DDDD LL"),),
+    "BLR": (TemplateDef("by_standard", "DDDD LL D"),),
+    "TUR": (TemplateDef("tr_standard", "DD LLL DDDD"),),
+    "ISR": (TemplateDef("il_standard", "DDD DDDD"),),
+    "KOR": (TemplateDef("kr_standard", "DDD A[가나다라마바사아자차카타파하] DDDD"),),
+    "CHN": (TemplateDef("cn_standard", "R A[ABCDEFGHIJKLMNOPQRSTUVWXYZ] DDDDD"),),
+    "IND": (TemplateDef("in_standard", "LL DD LL DDDD"),),
+    "SAU": (TemplateDef("sa_standard", "DDDD LLL"),),
+    "THA": (TemplateDef("th_standard", "A[กขคฆงจฉชซญดตถทธนบปผพฟภมยรลวศสหอ] DDDD"),),
+    "SGP": (TemplateDef("sg_standard", "LLL DDDD L"),),
+    "NZL": (TemplateDef("nz_standard", "LLL DDD"),),
+    "AUS": (TemplateDef("au_standard", "LLL DDD"),),
+    "ZAF": (TemplateDef("za_standard", "LL DDD R"),),
 }
 
 #: Countries whose English name differs from the ISO short name.
@@ -913,20 +850,6 @@ CURATED: tuple[CountryDef, ...] = (
 )
 
 
-def _family_templates(country: IsoCountry, family: PlateFamily) -> tuple[TemplateDef, ...]:
-    """Turn a shared layout family into per-country template rows."""
-    prefix = country.alpha3.lower()
-    return tuple(
-        TemplateDef(
-            code=f"{prefix}_{family.key}_{suffix}",
-            pattern=pattern,
-            weight=weight,
-            plate_type=plate_type,
-        )
-        for suffix, pattern, weight, plate_type in family.layouts
-    )
-
-
 def _generic_country(iso: IsoCountry, sort_order: int) -> CountryDef:
     """A locked country: listed in the atlas, not playable, no generated layouts."""
     name_en, name_ru = NAME_OVERRIDES.get(iso.alpha3, (iso.name_en, iso.name_ru))
@@ -943,7 +866,7 @@ def _generic_country(iso: IsoCountry, sort_order: int) -> CountryDef:
         alphabet=LATIN,
         value_scale=1.0,
         rarity_modifier=1.0,
-        visual=visual_theme_for(iso.alpha3, PLATE_FAMILIES[family].visual),
+        visual=visual_theme_for(iso.alpha3, FAMILY_VISUALS[family]),
         sort_order=sort_order,
         iso_alpha2=iso.alpha2,
         calling_code=iso.calling_code,
@@ -953,9 +876,9 @@ def _generic_country(iso: IsoCountry, sort_order: int) -> CountryDef:
 
 
 def _playable_country(iso: IsoCountry, sort_order: int) -> CountryDef:
-    """A playable country built on a shared, documented layout family."""
+    """A playable country with its own declared registration layout."""
     family_key, weight, value_scale, rarity_modifier = PLAYABLE_TUNING[iso.alpha3]
-    family = PLATE_FAMILIES[family_key]
+    alphabet, letter_style = PLAYABLE_ALPHABETS.get(iso.alpha3, (LATIN, "LATIN"))
     name_en, name_ru = NAME_OVERRIDES.get(iso.alpha3, (iso.name_en, iso.name_ru))
     return CountryDef(
         code=iso.alpha3,
@@ -966,16 +889,17 @@ def _playable_country(iso: IsoCountry, sort_order: int) -> CountryDef:
         currency_code=iso.currency_code,
         currency_symbol=iso.currency_symbol,
         weight=weight,
-        alphabet=LATIN,
+        alphabet=alphabet,
+        letter_style=letter_style,
         value_scale=value_scale,
         rarity_modifier=rarity_modifier,
-        visual=visual_theme_for(iso.alpha3, family.visual),
+        visual=visual_theme_for(iso.alpha3, FAMILY_VISUALS[family_key]),
         sort_order=sort_order,
         iso_alpha2=iso.alpha2,
         calling_code=iso.calling_code,
         playable=True,
         regions=EXTRA_REGIONS.get(iso.alpha3, ()),
-        templates=_family_templates(iso, family),
+        templates=PLAYABLE_PLATE_LAYOUTS[iso.alpha3],
         config={"family": family_key, "locked": False, "un_member": iso.un_member},
     )
 
@@ -1003,7 +927,7 @@ def _build_catalogue() -> tuple[CountryDef, ...]:
     order += [
         code
         for code in PRIORITY_ORDER
-        if code in PLAYABLE_TUNING and code not in order
+        if (code in PLAYABLE_TUNING or code in curated_by_code) and code not in order
     ]
 
     built: dict[str, CountryDef] = {}
@@ -1157,8 +1081,10 @@ __all__ = [
     "LATIN",
     "LOCKED_CODES",
     "ORIGINAL_ORDER",
-    "PLATE_FAMILIES",
+    "FAMILY_VISUALS",
     "PLAYABLE_CODES",
+    "PLAYABLE_ALPHABETS",
+    "PLAYABLE_PLATE_LAYOUTS",
     "PLAYABLE_TUNING",
     "PRIORITY_ORDER",
     "REGION_TAGS",
@@ -1167,7 +1093,6 @@ __all__ = [
     "AlbumDef",
     "CountryDef",
     "EventDef",
-    "PlateFamily",
     "RegionDef",
     "TemplateDef",
     "country_album_defs",

@@ -192,6 +192,34 @@ def _letter(alphabet: str, rng) -> str:
     return alphabet[rng.randint(0, len(alphabet) - 1)]
 
 
+def _target_digit_pattern(
+    target: Rarity | None,
+    digit_slots: int,
+    letter_slots: int,
+    rng,
+) -> str:
+    if target is None or target is Rarity.COMMON:
+        return ""
+    if target is Rarity.UNCOMMON:
+        start = rng.randint(0, 7)
+        direction = -1 if rng.randint(0, 1) else 1
+        return "".join(str((start + direction * index) % 10) for index in range(3))
+    if target is Rarity.RARE:
+        return str(rng.randint(0, 9)) * 3
+    if target is Rarity.EPIC:
+        return str(rng.randint(0, 9)) * min(5, digit_slots)
+    if target is Rarity.LEGENDARY:
+        repeat = 4 if digit_slots < 6 and letter_slots >= 3 else min(6, digit_slots)
+        return str(rng.randint(0, 9)) * repeat
+    if target is Rarity.MYTHIC:
+        repeat = 5 if digit_slots < 7 and letter_slots >= 3 else min(7, digit_slots)
+        return str(rng.randint(0, 9)) * repeat
+    repeat = min(8, digit_slots)
+    if digit_slots < 8 and letter_slots >= 3:
+        repeat = min(5, digit_slots)
+    return str(rng.randint(0, 9)) * repeat
+
+
 def render_template(
     parsed: ParsedTemplate,
     *,
@@ -199,6 +227,7 @@ def render_template(
     region_code: str | None,
     rng,
     country_code: str = "",
+    quality_target: Rarity | None = None,
 ) -> tuple[str, list[dict[str, str]]]:
     """Materialise a template into plate text plus grouped style hints.
 
@@ -213,6 +242,18 @@ def render_template(
     """
     parts: list[str] = []
     chars: list[tuple[str, str]] = []  # (kind, character) in print order
+    target_digits = _target_digit_pattern(
+        quality_target,
+        parsed.digit_slots,
+        parsed.letter_slots,
+        rng,
+    )
+    digit_index = 0
+    target_letter = (
+        _letter(alphabet, rng)
+        if quality_target in (Rarity.LEGENDARY, Rarity.MYTHIC, Rarity.SECRET)
+        else None
+    )
 
     for part in parsed.parts:
         if part.is_literal():
@@ -223,9 +264,23 @@ def render_template(
         token: Token = part  # type: ignore[assignment]
         kind = token.kind
         if kind == "D":
-            text = str(rng.randint(0, 9))
+            if digit_index < len(target_digits):
+                selected = target_digits[digit_index]
+                text = selected if not token.choices or selected in token.choices else token.choices[
+                    rng.randint(0, len(token.choices) - 1)
+                ]
+            else:
+                choices = token.choices or tuple("0123456789")
+                text = choices[rng.randint(0, len(choices) - 1)]
+            digit_index += 1
         elif kind in ("L", "A"):
-            text = "".join(_letter(alphabet, rng) for _ in (token.choices or ("",)))
+            choices = token.choices or tuple(alphabet)
+            if target_letter is not None:
+                text = target_letter if target_letter in choices else choices[
+                    rng.randint(0, len(choices) - 1)
+                ]
+            else:
+                text = choices[rng.randint(0, len(choices) - 1)]
         elif kind == "F":
             text = token.choices[0] if token.choices else "0"
         elif kind == "X":
@@ -520,6 +575,7 @@ class PlateGenerator:
         luck: Rarity,
         *,
         discovery_count: int = 0,
+        quality_target: Rarity | None = None,
     ) -> GeneratedPlate:
         parsed = parse_template(template.pattern)
         plate_text, styles = render_template(
@@ -528,6 +584,7 @@ class PlateGenerator:
             region_code=region.code if region else None,
             rng=self.rng,
             country_code=country.code,
+            quality_target=quality_target,
         )
         return build_generated_plate(
             plate_text=plate_text,
@@ -568,6 +625,10 @@ class PlateGenerator:
             # fall back to the world so a player always gets a collectible.
             pool = self.ctx
 
+        targeted_pool = self._quality_pool(pool, luck)
+        if targeted_pool is not None:
+            pool = targeted_pool
+
         seen: set[tuple[str, str]] = set(rejected or set())
         last: GeneratedPlate | None = None
 
@@ -580,7 +641,7 @@ class PlateGenerator:
             country = pick_country(pool, self.rng)
             region = pick_region(pool, country, self.rng)
             template = pick_template(pool, country, region, self.rng)
-            plate = self._attempt(country, region, template, luck)
+            plate = self._attempt(country, region, template, luck, quality_target=luck)
             last = plate
 
             candidate_rank = rarity_rank(plate.rarity)
@@ -601,6 +662,60 @@ class PlateGenerator:
         if best is not None:
             return best
         return last  # type: ignore[return-value]
+
+    def _quality_pool(
+        self,
+        context: GenerationContext,
+        target: Rarity,
+    ) -> GenerationContext | None:
+        """Prefer formats capable of producing a real candidate at the sampled tier."""
+        if target is Rarity.COMMON:
+            return context
+
+        min_digits = {
+            Rarity.UNCOMMON: 3,
+            Rarity.RARE: 3,
+            Rarity.EPIC: 5,
+            Rarity.LEGENDARY: 6,
+            Rarity.MYTHIC: 7,
+            Rarity.SECRET: 8,
+        }[target]
+        supported_templates: dict[str, tuple[TemplateOption, ...]] = {}
+        supported_countries: list[CountryDef] = []
+
+        for country in context.countries:
+            options = context.templates_by_country.get(country.code, ())
+            usable: list[TemplateOption] = []
+            for option in options:
+                parsed = parse_template(option.pattern)
+                digit_slots = sum(
+                    1
+                    for part in parsed.parts
+                    if not part.is_literal() and part.kind in ("D", "X")
+                )
+                letter_slots = parsed.letter_slots
+                supported = digit_slots >= min_digits
+                if not supported:
+                    cross_pattern_digits = {
+                        Rarity.EPIC: 3,
+                        Rarity.LEGENDARY: 4,
+                        Rarity.MYTHIC: 5,
+                        Rarity.SECRET: 3,
+                    }.get(target, min_digits)
+                    supported = digit_slots >= cross_pattern_digits and letter_slots >= 3
+                if supported and (not option.requires_region or context.regions_by_country.get(country.code)):
+                    usable.append(option)
+            if usable:
+                supported_countries.append(country)
+                supported_templates[country.code] = tuple(usable)
+
+        if not supported_countries:
+            return None
+        return replace(
+            context,
+            countries=tuple(supported_countries),
+            templates_by_country=supported_templates,
+        )
 
     def _narrow(
         self,
@@ -700,6 +815,7 @@ class PlateGenerator:
                 region,
                 template,
                 wanted_rarity,
+                quality_target=wanted_rarity,
             )
             last = plate
             if plate.rarity is wanted_rarity and (

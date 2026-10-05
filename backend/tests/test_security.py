@@ -167,3 +167,181 @@ class TestAuthEndpoints:
         response = client.get("/api/auth/me", headers=session["headers"])
         assert response.status_code == 200
         assert response.json()["access_token"]
+
+
+class TestTelegramLogin:
+    """The real Telegram login path: verified initData -> session JWT.
+
+    These tests exist because the production outage was a *login* outage:
+    every normal Telegram user hit "Network unavailable" while an admin
+    with a cached localStorage token kept working through ``/auth/me``.
+    A forged-initData test alone cannot catch that - the happy path must
+    be exercised too.
+    """
+
+    def test_valid_init_data_logs_a_normal_user_in(self, client):
+        """A genuine, correctly-signed initData must authenticate."""
+        init_data = build_init_data(777_001)
+        response = client.post("/api/auth/telegram", json={"init_data": init_data})
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["success"] is True
+        assert payload["access_token"]
+        assert payload["token_type"] == "bearer"
+        assert payload["is_new_user"] is True
+        assert payload["user"]["telegram_id"] == 777_001
+        # A brand-new player is a normal user, never an admin.
+        assert payload["user"]["role"] == "USER"
+        assert payload["user"]["is_admin"] is False
+
+    def test_telegram_login_is_idempotent_for_returning_users(self, client):
+        init_data = build_init_data(777_002)
+        first = client.post("/api/auth/telegram", json={"init_data": init_data})
+        second = client.post("/api/auth/telegram", json={"init_data": init_data})
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert second.json()["is_new_user"] is False
+        assert second.json()["user"]["id"] == first.json()["user"]["id"]
+
+    def test_telegram_login_token_accesses_protected_routes(self, client):
+        init_data = build_init_data(777_003)
+        response = client.post("/api/auth/telegram", json={"init_data": init_data})
+        token = response.json()["access_token"]
+        me = client.get("/api/user", headers={"Authorization": f"Bearer {token}"})
+        assert me.status_code == 200
+        assert me.json()["telegram_id"] == 777_003
+
+    def test_telegram_login_does_not_grant_admin_to_normal_users(self, client):
+        """Only telegram ids in ADMIN_TELEGRAM_IDS may become admins."""
+        init_data = build_init_data(777_004)
+        response = client.post("/api/auth/telegram", json={"init_data": init_data})
+        assert response.status_code == 200
+        token = response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        # Admin-only surface must stay forbidden for a normal player.
+        assert client.get("/api/admin/stats", headers=headers).status_code == 403
+
+    def test_admin_telegram_id_is_promoted_on_login(self, client):
+        from tests.conftest import TEST_ADMIN_TELEGRAM_ID
+
+        init_data = build_init_data(TEST_ADMIN_TELEGRAM_ID)
+        response = client.post("/api/auth/telegram", json={"init_data": init_data})
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["user"]["role"] == "ADMIN"
+        assert payload["user"]["is_admin"] is True
+
+    def test_stale_init_data_is_rejected(self, client):
+        stale = sign_init_data(
+            {
+                "auth_date": str(int(time.time()) - 100_000),
+                "user": json.dumps({"id": 777_005, "first_name": "Stale"}),
+            },
+            BOT_TOKEN,
+        )
+        response = client.post("/api/auth/telegram", json={"init_data": stale})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "INVALID_INIT_DATA"
+
+    def test_init_data_signed_with_wrong_token_is_rejected(self, client):
+        init_data = build_init_data(777_006)
+        # Re-sign the same payload with a different bot token.
+        forged = sign_init_data(
+            {
+                "auth_date": str(int(time.time())),
+                "query_id": "AAH123",
+                "user": json.dumps({"id": 777_006, "first_name": "Ada"}),
+            },
+            "999:attacker-token",
+        )
+        response = client.post("/api/auth/telegram", json={"init_data": forged})
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "INVALID_INIT_DATA"
+        # The correctly-signed one still works (sanity check).
+        ok = client.post("/api/auth/telegram", json={"init_data": init_data})
+        assert ok.status_code == 200
+
+
+class TestCorsConfiguration:
+    """The Mini App origin must always be allowed by CORS.
+
+    A deployment that forgets CORS_ORIGINS leaves the default
+    localhost-only allow-list, so the browser fails the preflight and
+    the client reports "Network unavailable" even though the API is up.
+    """
+
+    def test_frontend_url_is_always_in_cors_origins(self):
+        from app.core.config import Settings
+
+        settings = Settings(
+            frontend_url="https://mini.example.com",
+            cors_origins=["http://localhost:5173"],
+        )
+        assert "https://mini.example.com" in settings.cors_origins
+        assert settings.cors_allows_frontend is True
+
+    def test_explicit_cors_origins_are_preserved(self):
+        from app.core.config import Settings
+
+        settings = Settings(
+            frontend_url="https://mini.example.com",
+            cors_origins=["https://mini.example.com", "https://other.example.com"],
+        )
+        assert settings.cors_origins == [
+            "https://mini.example.com",
+            "https://other.example.com",
+        ]
+
+    def test_loopback_only_cors_is_detected(self):
+        from app.core.config import Settings
+
+        settings = Settings(frontend_url="http://localhost:5173")
+        assert settings.cors_is_local_only is True
+
+        settings = Settings(
+            frontend_url="https://mini.example.com",
+            cors_origins=["https://mini.example.com"],
+        )
+        assert settings.cors_is_local_only is False
+
+    def test_default_settings_allow_localhost(self):
+        from app.core.config import settings
+
+        assert "http://localhost:5173" in settings.cors_origins
+        assert settings.cors_allows_frontend is True
+
+
+class TestAdminProtection:
+    """Admin-only endpoints must stay protected after the auth fix."""
+
+    def test_admin_stats_requires_admin_role(self, client, authed):
+        session = authed(777_010)
+        response = client.get("/api/admin/stats", headers=session["headers"])
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "FORBIDDEN"
+
+    def test_admin_stats_allows_admins(self, client, admin_authed):
+        response = client.get("/api/admin/stats", headers=admin_authed["headers"])
+        assert response.status_code == 200
+
+    def test_admin_bot_surface_requires_service_token(self, client, authed):
+        """The internal admin panel uses a separate service-token path."""
+        session = authed(777_011)
+        response = client.get(
+            "/api/admin/bot/users",
+            headers={**session["headers"], "X-Admin-Telegram-Id": "777011"},
+        )
+        assert response.status_code == 401
+
+    def test_admin_bot_surface_rejects_non_admin_telegram_id(self, client):
+        from tests.conftest import TEST_SERVICE_TOKEN
+
+        response = client.get(
+            "/api/admin/bot/users",
+            headers={
+                "X-Service-Token": TEST_SERVICE_TOKEN,
+                "X-Admin-Telegram-Id": "777012",
+            },
+        )
+        assert response.status_code == 403
+        assert response.json()["error"]["code"] == "ADMIN_REQUIRED"

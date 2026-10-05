@@ -16,45 +16,19 @@ scoring, floors and pity logic stay in this module.
 
 from __future__ import annotations
 
-import json
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from app.core.errors import ValidationError
-from app.game.rarity import DEFAULT_RARITY_WEIGHTS as _RARITY_WEIGHTS
+from app.game.rarity import (
+    DEFAULT_RARITY_WEIGHTS,
+    RARITY_ORDER,
+    RARITY_RANK,
+    Rarity,
+    load_rarity_weights,
+)
 
 if TYPE_CHECKING:
     from app.game.plate_patterns import PlateAnalysis
 
-
-class Rarity(StrEnum):
-    COMMON = "COMMON"
-    UNCOMMON = "UNCOMMON"
-    RARE = "RARE"
-    EPIC = "EPIC"
-    LEGENDARY = "LEGENDARY"
-    MYTHIC = "MYTHIC"
-    SECRET = "SECRET"
-
-
-RARITY_ORDER: tuple[Rarity, ...] = (
-    Rarity.COMMON,
-    Rarity.UNCOMMON,
-    Rarity.RARE,
-    Rarity.EPIC,
-    Rarity.LEGENDARY,
-    Rarity.MYTHIC,
-    Rarity.SECRET,
-)
-
-RARITY_RANK: dict[str, int] = {r.value: index for index, r in enumerate(RARITY_ORDER)}
-
-# The game's fixed presentation chances, mirroring
-# :data:`app.game.rarity.DEFAULT_RARITY_WEIGHTS` exactly. The table lives there
-# (as integer hundredths of a percent, so 0.01% Secret is representable and the
-# total is exactly 100%) and is re-exported here, because the plate engine reads
-# its weights from this module and two *different* tables would be a bug.
-DEFAULT_RARITY_WEIGHTS: dict[str, float] = dict(_RARITY_WEIGHTS)
 
 # Base dealer value (in NUMORA) per rarity. Collector Value is a separate,
 # purely cosmetic local-currency presentation derived from this.
@@ -100,7 +74,7 @@ SCORE_THRESHOLDS: tuple[tuple[int, Rarity], ...] = (
 SECRET_MIN_SCORE = 130
 SECRET_DIGIT_TRAITS = frozenset({"all_same", "four_of_kind", "quad_repeat"})
 SECRET_LETTER_TRAITS = frozenset(
-    {"triple_letter", "letter_palindrome", "mirrored_letters", "perfect_symmetry"}
+    {"triple_letter", "letter_palindrome", "mirrored_letters", "perfect_symmetry", "symmetric_plate"}
 )
 
 # Bad-luck protection thresholds (consecutive rolls without a tier).
@@ -113,40 +87,6 @@ PITY_LUCK_MULTIPLIER = 2.6
 # card, it never manufactures a tier. See :func:`compute_rarity_score`.
 MIN_PROVIDER_SCORE_MODIFIER = 0.85
 MAX_PROVIDER_SCORE_MODIFIER = 1.20
-
-
-def load_rarity_weights(override_json: str | None = None) -> dict[str, float]:
-    """Return validated rarity weights, honouring an optional JSON override."""
-    if not override_json:
-        return dict(DEFAULT_RARITY_WEIGHTS)
-
-    try:
-        parsed = json.loads(override_json)
-    except json.JSONDecodeError as exc:
-        raise ValidationError("RARITY_WEIGHTS_OVERRIDE is not valid JSON.", code="BAD_RARITY_CONFIG") from exc
-
-    if not isinstance(parsed, dict):
-        raise ValidationError("Rarity weights must be a JSON object.", code="BAD_RARITY_CONFIG")
-
-    weights: dict[str, float] = {}
-    for code, value in parsed.items():
-        key = str(code).upper()
-        if key not in RARITY_RANK:
-            raise ValidationError(f"Unknown rarity code: {key}", code="BAD_RARITY_CONFIG")
-        try:
-            weight = float(value)
-        except (TypeError, ValueError) as exc:
-            raise ValidationError(f"Weight for {key} must be numeric.", code="BAD_RARITY_CONFIG") from exc
-        if weight < 0:
-            raise ValidationError(f"Weight for {key} cannot be negative.", code="BAD_RARITY_CONFIG")
-        weights[key] = weight
-
-    for code in RARITY_ORDER:
-        weights.setdefault(code.value, 0.0)
-
-    if sum(weights.values()) <= 0:
-        raise ValidationError("Rarity weights must sum to a positive value.", code="BAD_RARITY_CONFIG")
-    return weights
 
 
 def rarity_rank(rarity: str | Rarity) -> int:
@@ -246,7 +186,11 @@ def compute_rarity_score(
         _repeated_block_quality(letters),
     )
 
-    if digit_score >= 28 and letter_score >= 28:
+    uniform_digit_block = len(digits) >= 3 and len(set(digits)) == 1
+    uniform_letter_block = len(letters) >= 3 and len(set(letters)) == 1
+    if uniform_digit_block and uniform_letter_block:
+        score = SECRET_MIN_SCORE
+    elif digit_score >= 28 and letter_score >= 28:
         score = digit_score + letter_score + (18 if digit_score >= 50 and letter_score >= 45 else 12)
     else:
         score = max(digit_score, letter_score)
@@ -260,12 +204,12 @@ def _repeat_quality(value: str) -> int:
         current = current + 1 if character == previous else 1
         previous = character
         longest = max(longest, current)
-    if longest >= 10:
+    if longest >= 8 and len(set(value)) == 1:
         return 130
     if longest >= 8:
         return 108
     if longest >= 7:
-        return 96
+        return 100
     if longest >= 6:
         return 82
     if longest >= 5:

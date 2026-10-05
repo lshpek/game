@@ -10,7 +10,15 @@ from __future__ import annotations
 import pytest
 import random
 
-from app.game.countries import COUNTRIES, LATIN, PLAYABLE_CODES, RUSSIAN_PLATE_LETTERS
+from app.game.countries import (
+    COUNTRIES,
+    LATIN,
+    PLAYABLE_ALPHABETS,
+    PLAYABLE_CODES,
+    PLAYABLE_PLATE_LAYOUTS,
+    PLAYABLE_TUNING,
+    RUSSIAN_PLATE_LETTERS,
+)
 from app.game.plate_formats import (
     COUNTRY_ACCENTS,
     COUNTRY_FORMATS,
@@ -50,6 +58,12 @@ class TestCoverage:
         playable = {country.code for country in PLAYABLE}
         orphans = sorted(set(COUNTRY_FORMATS) - playable)
         assert orphans == [], f"format rows for countries that are not playable: {orphans}"
+
+    def test_every_derived_playable_country_uses_its_explicit_layout(self):
+        assert set(PLAYABLE_PLATE_LAYOUTS) == set(PLAYABLE_TUNING)
+        for country in PLAYABLE:
+            if country.code in PLAYABLE_PLATE_LAYOUTS:
+                assert country.templates == PLAYABLE_PLATE_LAYOUTS[country.code]
 
     def test_every_playable_template_draws_only_from_its_declared_alphabet(self):
         for country in PLAYABLE:
@@ -346,6 +360,9 @@ class TestRussianPlateData:
             "あいうえかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるろわ"
         )
         assert next(t for t in japan.templates if t.code == "jp_standard").pattern == "DDD L DDDD"
+        for code in ("GRC", "BLR", "KOR", "SAU", "THA"):
+            assert countries[code].alphabet == PLAYABLE_ALPHABETS[code][0]
+            assert countries[code].letter_style == PLAYABLE_ALPHABETS[code][1]
 
     def test_every_russian_vehicle_layout_uses_a_modern_registered_shape(self):
         russia = next(country for country in COUNTRIES if country.code == "RUS")
