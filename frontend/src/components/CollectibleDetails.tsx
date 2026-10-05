@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
-import { CollectibleVisual, resolveKind } from '@/components/CollectibleVisual';
+import CollectibleVisual, { resolveKind } from '@/components/CollectibleVisual';
 import { RarityBadge, TraitChip } from '@/components/RarityBadge';
 import { useI18n, type DictKey } from '@/i18n';
 import { RARITY_COLORS, formatCoins } from '@/lib/format';
@@ -45,7 +45,11 @@ export function CollectibleDetails({
       data-kind={kind}
     >
       <div className="flex flex-col gap-3">
-        <CollectibleVisual collectible={collectible} size={size} accent={accent} still />
+        <CollectibleVisual
+        card={collectible}
+        scale={size === 'sm' ? 0.44 : size === 'md' ? 0.56 : 0.78}
+        showValue
+      />
         <div className="flex items-center justify-between gap-2">
           <RarityBadge rarity={collectible.rarity} size="sm" />
           <span className="truncate text-[11px] font-bold uppercase tracking-[0.18em] text-white/45">

@@ -68,8 +68,12 @@ class Settings(BaseSettings):
     allow_dev_login: bool = True
 
     # --- Economy tuning --------------------------------------------------
-    default_daily_rolls: int = 10
+    #: Free rolls a normal player may bank. Passive regeneration tops this bank back
+    #: up but never exceeds it.
+    default_daily_rolls: int = 20
     premium_daily_rolls: int = 25
+    #: Minutes between two passive regenerating rolls while the bank is below the cap.
+    roll_regen_minutes: int = 45
     daily_streak_bonus_coins: int = 25
     daily_base_coins: int = 0
     roll_coin_reward_chance: float = 0.35
@@ -86,6 +90,11 @@ class Settings(BaseSettings):
     rate_limit_default: int = 120
     rate_limit_window_seconds: int = 60
     rate_limit_roll: int = 30
+    # Selling duplicates is a money movement, not a roll: it gets its own bucket so a
+    # burst of dealer taps can never exhaust the roll quota (or vice versa).
+    rate_limit_sell: int = 30
+    # Switching country is a validated write that only ever re-points the hunt.
+    rate_limit_country_switch: int = 20
     # Auth is unauthenticated and therefore keyed by IP: strict enough to stop
     # credential stuffing, tolerant of shared/carrier NAT addresses.
     rate_limit_auth: int = 60

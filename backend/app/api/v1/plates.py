@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Path, Query
-from sqlalchemy import cast, func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, idempotency_key, rate_limit
@@ -37,8 +37,11 @@ from app.services import countries as country_service
 from app.services.albums import AlbumService
 from app.services.analytics import AnalyticsService
 from app.services.cosmetics import CosmeticService
+from app.services.daily import DailyService
 from app.services.economy import EconomyService
 from app.services.events import EventService
+from app.services.goals import GoalService, country_completion
+from app.services.idempotency import IdempotencyService
 from app.services.plate_rolls import PlateRollService
 from app.services.plates import PlateService
 from app.services.premium import PremiumService
@@ -49,6 +52,20 @@ router = APIRouter(tags=["plates"])
 
 # Sort keys accepted by the collection endpoint.
 SORT_KEYS = ("recent", "value", "rarest", "name", "discovery")
+
+#: Idempotency scope for the per-plate sale. A double tap replays the first result.
+SELL_SCOPE = "sell"
+#: Idempotency scope for the batch sale.
+SELL_ALL_SCOPE = "sell_all"
+
+
+def _sale_ledger_key(user_id: int, plate_id: int, key: str | None) -> str:
+    """Ledger idempotency key for one sale.
+
+    Two independent protections: the client's request key (so a retry is free) and the
+    plate itself, so even two *different* keys can never pay out the same physical copy.
+    """
+    return f"sell:{user_id}:{plate_id}:{key or 'once'}"
 
 
 def _roll_response(outcome, db: Session) -> PlateRollResponse:
@@ -75,6 +92,8 @@ def _roll_response(outcome, db: Session) -> PlateRollResponse:
         event=outcome.event,
         replayed=outcome.replayed,
         share_start_param=outcome.share_start_param,
+        rolls=outcome.rolls,
+        next_target=outcome.next_target,
         # --- compatibility aliases for the previous number-roll client
         value=outcome.sale_value,
         coins_awarded=outcome.numora_awarded,
@@ -175,6 +194,7 @@ def _collection_conditions(
     duplicates: bool,
     new_only: bool,
     secret: bool,
+    provider: str | None = None,
 ) -> list:
     """Every collection filter, expressed once so the query stays readable."""
     from app.game.plate_templates import normalize_plate
@@ -182,6 +202,12 @@ def _collection_conditions(
     conditions = [UserPlate.user_id == user.id]
     if rarity and rarity.upper() != "ALL":
         conditions.append(Plate.rarity == rarity.upper())
+    if provider and provider.lower() != "all":
+        # The operator a SIM card prints. Matched on the stored provider code inside
+        # `plates.details`, which is indexed by country rather than by brand, so this
+        # filter narrows an already-country-scoped page instead of the whole world.
+        needle = f'%"operator_code":"{provider.lower()}%"'
+        conditions.append(cast(Plate.details, String).like(needle))
     if country and country.upper() not in {"ALL", "WORLD"}:
         # Both ISO forms must land on the same rows, so a shared link works even when
         # it carries the two-letter code.
@@ -259,6 +285,11 @@ def collection(
     duplicates: bool = Query(default=False),
     new_only: bool = Query(default=False),
     secret: bool = Query(default=False),
+    provider: str | None = Query(
+        default=None,
+        max_length=48,
+        description="Filter SIM cards by the operator brand printed on them.",
+    ),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CollectionResponse:
@@ -282,6 +313,7 @@ def collection(
         duplicates=duplicates,
         new_only=new_only,
         secret=secret,
+        provider=provider,
     )
 
     base = select(UserPlate, Plate).join(Plate, Plate.id == UserPlate.plate_id).where(*conditions)
@@ -414,6 +446,8 @@ def garage(
     economy = world.economy_context(user)
     level = ProgressionService(db).current_level(user)
     event = EventService(db).serialize()
+    goals = GoalService(db)
+    hunt_country = country_service.active_country(db, user)
 
     return {
         "best": PlateCard(**plate_card(best_owned, db=db)) if best_owned is not None else None,
@@ -432,6 +466,19 @@ def garage(
         "total_dealer_value": int(economy["total_dealer_value"]),
         "level": level.to_dict(),
         "event": event,
+        # The hunt the player is currently in, so the home screen can say
+        # "I'm going to hunt Japan" without a second request.
+        "hunt_country": hunt_country.code if hunt_country else None,
+        "hunt_country_name_en": hunt_country.name_en if hunt_country else "",
+        "hunt_country_name_ru": hunt_country.name_ru if hunt_country else "",
+        "hunt_country_flag": hunt_country.flag if hunt_country else "",
+        "country_progress": (
+            country_completion(db, user, hunt_country) if hunt_country is not None else None
+        ),
+        # Exactly one objective, so the player is never left without a next step.
+        "next_target": goals.next_target(user),
+        # The authoritative roll economy, including the regeneration countdown.
+        "rolls": DailyService(db, settings).sync(user).to_dict(),
         "albums_completed": [
             item for item in AlbumService(db).progress_for_user(user) if item["completed"]
         ],
@@ -486,7 +533,7 @@ def country_detail(
 @router.post(
     "/plates/{plate_id}/sell",
     response_model=SaleResponse,
-    dependencies=[Depends(rate_limit("roll", "rate_limit_roll"))],
+    dependencies=[Depends(rate_limit("sell", "rate_limit_sell"))],
     summary="Sell duplicate copies to the DEALER",
 )
 def sell_duplicate(
@@ -494,32 +541,59 @@ def sell_duplicate(
     plate_id: int = Path(ge=1),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    key: str | None = Depends(idempotency_key),
 ) -> SaleResponse:
     """Sell copies of a plate the player already owns.
 
-    By default only *extra* copies are sellable; the final copy is protected so
-    a collection can never be destroyed by a stray tap.
+    Three guarantees, all server-side:
+
+    * **Duplicates only.** The final copy is protected unless the client explicitly opts
+      in, so a stray tap can never destroy a collection entry.
+    * **No silent clamping.** Asking for more copies than exist is *rejected*, not
+      quietly reduced - a client that miscounts must see the error rather than sell a
+      different amount than the player asked for.
+    * **Idempotent.** A double tap, a retry or a flaky connection replays the first
+      result instead of paying twice.
     """
     from app.core.locks import user_lock
 
+    service = PlateService(db)
+    replay = IdempotencyService(db)
     with user_lock(user.id):
-        service = PlateService(db)
+        stored = replay.get(user.id, SELL_SCOPE, key)
+        if stored:
+            try:
+                return SaleResponse(**stored)
+            except TypeError:  # pragma: no cover - a stale record must not block a sale
+                pass
+
         owned = service.get_user_plate(user.id, plate_id)
         if owned is None:
             raise NotFoundError("You do not own this plate.", code="PLATE_NOT_OWNED")
 
         premium = PremiumService(db, settings)
-        copies = min(
-            int(payload.copies),
-            service.sellable_copies(owned, allow_last=payload.allow_last),
-        )
-        if copies <= 0:
+        sellable = service.sellable_copies(owned, allow_last=payload.allow_last)
+        if sellable <= 0:
+            # No duplicates: the UI must not offer an active SELL button for this case,
+            # and a request that does anyway is a clear, explainable refusal.
             raise ValidationError(
-                "No duplicates to sell.", code="NO_DUPLICATES"
+                "You only own the original copy - there is nothing to sell.",
+                code="NO_DUPLICATES",
+                details={"duplicate_count": int(owned.duplicate_count)},
             )
+        if int(payload.copies) > sellable:
+            raise ValidationError(
+                f"Only {sellable} duplicate cop{'y' if sellable == 1 else 'ies'} available.",
+                code="NOT_ENOUGH_DUPLICATES",
+                details={"sellable": sellable, "requested": int(payload.copies)},
+            )
+        copies = int(payload.copies)
 
         amount = service.apply_sale(
-            owned, copies=copies, premium_multiplier=premium.duplicate_coin_multiplier(user.id)
+            owned,
+            copies=copies,
+            premium_multiplier=premium.duplicate_coin_multiplier(user.id),
+            allow_last=payload.allow_last,
         )
         tx = EconomyService(db).credit(
             user.id,
@@ -527,17 +601,11 @@ def sell_duplicate(
             TransactionType.DUPLICATE_CONVERSION,
             reference_type="plate",
             reference_id=str(plate_id),
+            idempotency_key=_sale_ledger_key(user.id, plate_id, key),
             meta={"copies": copies, "plate": owned.plate.plate_text},
         )
         user.duplicates_sold_count = int(user.duplicates_sold_count) + copies
-        AnalyticsService(db).track(
-            AnalyticsEventName.PLATE_SOLD.value,
-            user_id=user.id,
-            telegram_id=user.telegram_id,
-            props={"plate_id": plate_id, "copies": copies, "numora": amount},
-        )
-        db.commit()
-        return SaleResponse(
+        response = SaleResponse(
             plate_id=plate_id,
             plate_text=owned.plate.plate_text,
             copies_sold=copies,
@@ -545,23 +613,41 @@ def sell_duplicate(
             duplicates_left=int(owned.duplicate_count),
             balance=int(tx.balance_after),
         )
+        AnalyticsService(db).track(
+            AnalyticsEventName.SELL_COMPLETED,
+            user_id=user.id,
+            telegram_id=user.telegram_id,
+            props={"plate_id": plate_id, "copies": copies, "numora": amount},
+        )
+        replay.remember(user.id, SELL_SCOPE, key, response.model_dump())
+        db.commit()
+        return response
 
 
 @router.post(
     "/collection/sell-duplicates",
     response_model=SellAllResponse,
-    dependencies=[Depends(rate_limit("roll", "rate_limit_roll"))],
+    dependencies=[Depends(rate_limit("sell", "rate_limit_sell"))],
     summary="Sell every spare duplicate copy at once",
 )
 def sell_all_duplicates(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    key: str | None = Depends(idempotency_key),
 ) -> SellAllResponse:
     """Batch sale. Only spare copies are touched - the last one is protected."""
     from app.core.locks import user_lock
 
+    service = PlateService(db)
     with user_lock(user.id):
-        service = PlateService(db)
+        replay = IdempotencyService(db)
+        stored = replay.get(user.id, SELL_ALL_SCOPE, key)
+        if stored:
+            try:
+                return SellAllResponse(**stored)
+            except TypeError:  # pragma: no cover
+                pass
+
         premium = PremiumService(db, settings)
         economy = EconomyService(db)
         multiplier = premium.duplicate_coin_multiplier(user.id)
@@ -576,7 +662,7 @@ def sell_all_duplicates(
             .all()
         )
         if not rows:
-            raise ValidationError("No duplicates to sell.", code="NO_DUPLICATES")
+            raise ValidationError("You have no duplicates to sell.", code="NO_DUPLICATES")
 
         total = 0
         copies_total = 0
@@ -590,6 +676,8 @@ def sell_all_duplicates(
                 TransactionType.DUPLICATE_CONVERSION,
                 reference_type="plate",
                 reference_id=str(owned.plate_id),
+                # Keyed by the plate so a retried batch can never pay the same plate twice.
+                idempotency_key=f"sell_all:{user.id}:{owned.plate_id}:{key or 'batch'}",
                 meta={"copies": copies, "batch": True, "plate": owned.plate.plate_text},
             )
             total += amount
@@ -597,19 +685,27 @@ def sell_all_duplicates(
             plates_sold += 1
 
         user.duplicates_sold_count = int(user.duplicates_sold_count) + copies_total
-        AnalyticsService(db).track(
-            AnalyticsEventName.PLATE_SOLD.value,
-            user_id=user.id,
-            telegram_id=user.telegram_id,
-            props={"plates": plates_sold, "copies": copies_total, "numora": total, "batch": True},
-        )
-        db.commit()
-        return SellAllResponse(
+        response = SellAllResponse(
             plates_sold=plates_sold,
             copies_sold=copies_total,
             numora_gained=total,
             balance=economy.balance(user.id),
         )
+        AnalyticsService(db).track(
+            AnalyticsEventName.SELL_COMPLETED,
+            user_id=user.id,
+            telegram_id=user.telegram_id,
+            props={
+                "plates": plates_sold,
+                "copies": copies_total,
+                "numora": total,
+                "batch": True,
+            },
+        )
+        if key:
+            replay.remember(user.id, SELL_ALL_SCOPE, key, response.model_dump())
+        db.commit()
+        return response
 
 
 @router.post(

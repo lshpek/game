@@ -16,12 +16,13 @@ from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
 from app.core.timeutils import utcnow
 from app.db.session import session_scope
-from app.game import collectibles, sim_cards
+from app.game import collectibles, providers, sim_cards
 from app.game.achievements import ACHIEVEMENT_DEFINITIONS
 from app.game.analyzer import analyze
 from app.game.containers import CONTAINER_DEFINITIONS
 from app.game.countries import ALL_ALBUMS, COUNTRIES, EVENTS, CountryDef, TemplateDef
 from app.game.products import PRODUCT_DEFINITIONS
+from app.game.providers import clamp_modifier
 from app.game.rarity import LEGENDARY_NUMBERS, MYTHIC_NUMBERS, SECRET_NUMBERS, SPECIAL_NUMBER_RARITY
 from app.game.seasons import SEASON_DEFINITIONS
 from app.game.story import build_story
@@ -30,7 +31,7 @@ from app.models.container import Container
 from app.models.number import Number
 from app.models.numora import Cosmetic, GameEvent, Mission
 from app.models.payment import Product
-from app.models.plates import Album, Country, PlateTemplate, Region
+from app.models.plates import Album, Country, PlateTemplate, Region, SimProvider
 from app.models.progression import Achievement, Season
 from app.services import catalog as catalog_service
 
@@ -88,15 +89,34 @@ def seed_countries(db: Session) -> int:
 
         db.flush()
 
+        # Vehicle layouts first, then the SIM line from the kind module, so a new kind
+        # never has to be threaded through the country tables.
+        expected: set[str] = set()
         for index, template_def in enumerate(definition.templates):
+            expected.add(template_def.code)
             if _upsert_template(db, country, template_def, index):
                 created += 1
-
-        # SIM card layouts come from the kind module, not the country tables, so a new
-        # kind never has to be threaded through the country configuration.
         for offset, template_def in enumerate(collectibles.sim_templates(definition.code)):
+            expected.add(template_def.code)
             if _upsert_template(db, country, template_def, len(definition.templates) + offset):
                 created += 1
+
+        # Retire layouts the catalogue no longer defines. Their rows stay, so a plate a
+        # player already owns keeps its template (and therefore its identity), but the
+        # row stops feeding the generation pool. This is what retires the first SIM
+        # line's fictional operator layouts once the real provider catalogue took over.
+        stale = (
+            db.execute(select(PlateTemplate.code).where(PlateTemplate.country_id == country.id))
+            .scalars()
+            .all()
+        )
+        for code in stale:
+            if code not in expected:
+                template = db.execute(
+                    select(PlateTemplate).where(PlateTemplate.code == code)
+                ).scalar_one_or_none()
+                if template is not None and template.is_active:
+                    template.is_active = False
 
     db.flush()
     catalog_service.invalidate()
@@ -169,19 +189,51 @@ def sim_config(definition: CountryDef) -> dict:
     """SIM presentation configuration stored on the country row.
 
     Written for locked countries too, so releasing a country later only needs layouts
-    plus an ``is_playable`` flip - its number format is already correct in the
-    database.
+    plus an ``is_playable`` flip - its number format and provider line are already
+    correct in the database.
     """
     fmt = sim_cards.sim_format(definition.code)
+    providers = sim_cards.operators_for(definition.code)
     return {
         "calling_code": fmt.calling_code,
         "prefixes": [prefix for prefix, _weight in fmt.prefixes],
         "groups": list(fmt.groups),
         "patterns": list(sim_cards.sim_patterns(definition.code)),
-        "operators": [entry[0] for entry in sim_cards.operators_for(definition.code)],
+        "providers": [provider.code for provider in providers],
         "editions": [edition for edition, _weight, _floor in sim_cards.EDITIONS],
         sim_cards.SYNTHETIC_FLAG: True,
     }
+
+
+def seed_providers(db: Session) -> int:
+    """Upsert the mobile operator catalogue.
+
+    Idempotent by provider code: existing rows keep their id and are updated in place, so
+    a branding change or a new country is picked up on the next boot without touching a
+    single collectible.
+    """
+    created = 0
+    for index, definition in enumerate(providers.PROVIDERS):
+        row = db.execute(
+            select(SimProvider).where(SimProvider.code == definition.code)
+        ).scalar_one_or_none()
+        if row is None:
+            row = SimProvider(code=definition.code)
+            db.add(row)
+            created += 1
+        row.country_code = definition.country
+        row.brand = definition.brand
+        row.local_name = definition.local_name
+        row.weight = float(definition.weight)
+        row.rarity_modifier = clamp_modifier(definition.rarity_modifier)
+        row.value_modifier = clamp_modifier(definition.value_modifier)
+        row.visual = definition.visual
+        row.accent = definition.accent
+        row.is_real_brand = bool(definition.real_brand)
+        row.is_active = bool(definition.is_active)
+        row.sort_order = index
+    db.flush()
+    return created
 
 
 def seed_albums(db: Session) -> int:
@@ -426,6 +478,7 @@ def seed_all(db: Session) -> dict[str, int]:
     """Seed every catalogue table and return the number of new rows per table."""
     result = {
         "countries": seed_countries(db),
+        "providers": seed_providers(db),
         "albums": seed_albums(db),
         "events": seed_events(db),
         "containers": seed_containers(db),

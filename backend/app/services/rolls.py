@@ -123,7 +123,7 @@ class RollService:
                 return self._build_outcome(user, replay, self.db.get(Number, replay.number_id), replayed=True)  # type: ignore[arg-type]
 
             now = utcnow()
-            self.daily.ensure_reset(user)
+            self.daily.sync(user)
             wallet = self.economy.get_wallet(user.id, for_update=True)
             self.daily.consume_roll(user)
 

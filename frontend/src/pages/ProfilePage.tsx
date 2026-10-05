@@ -5,6 +5,7 @@ import { formatCoins, formatRelativeTime, rarityLabel } from '@/lib/format';
 import { game } from '@/services/api';
 import { useAuthStore } from '@/store/auth';
 import { GameCard, ProgressBar, Section } from '@/components/GameCard';
+import { RollBalanceLine } from '@/components/RollEconomy';
 import { SocialPanel } from '@/components/SocialPanel';
 import { ErrorState, LoadingSpinner } from '@/components/States';
 import { useI18n } from '@/i18n';
@@ -129,9 +130,14 @@ export function ProfilePage() {
           </button>
         </GameCard>
       ) : (
-        <GameCard className="flex items-center justify-between text-sm">
-          <span className="text-white/55">{t('profile.rollsRemaining')}</span>
-          <span className="tabular-nums font-semibold">{daily.data?.rolls_remaining ?? 0}</span>
+        <GameCard className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-white/55">{t('profile.rollsRemaining')}</span>
+            <span className="tabular-nums font-semibold">{daily.data?.rolls_remaining ?? 0}</span>
+          </div>
+          {/* The same economy the hunt screen shows: the normal bank, the bonus bank
+              and when the next passive roll arrives. */}
+          <RollBalanceLine rolls={daily.data ?? null} compact />
         </GameCard>
       )}
 

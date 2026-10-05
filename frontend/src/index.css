@@ -17,6 +17,8 @@
     @apply bg-ink-950 bg-mesh-dark bg-fixed text-white;
     /* Telegram in-app webviews must never bounce or scroll sideways. */
     overscroll-behavior-y: contain;
+    /* The collectible is the hero: the app itself never scrolls sideways. */
+    overflow-x: hidden;
   }
 
   /* Respect notches and the home indicator. */
@@ -57,39 +59,241 @@
     @apply font-display font-bold tabular-nums tracking-tighter;
   }
 
-  /* A collectible plate: metal face, gloss sweep, deep shadow. */
+  /* ==========================================================================
+   * The physical collectible: a real license plate.
+   *
+   * Everything here is vector/CSS only - no image assets - so a plate stays crisp on
+   * every screen density and costs nothing to download. The renderer sets the
+   * colours, proportions and typography from the server's country recipe; these
+   * classes only provide the *physics*: a metal frame, a bevelled face, mounting
+   * bolts, a controlled reflection and a contact shadow that makes the object sit
+   * on the surface instead of floating on it.
+   * ========================================================================== */
+
+  /* The mounting frame: the metal rim a plate is pressed into. */
   .plate-frame {
-    @apply shadow-plate;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    position: relative;
+    border-radius: var(--plate-radius, 6px);
+    padding: var(--plate-rail, 3px);
+    background: linear-gradient(
+      170deg,
+      #d9dde4 0%,
+      #8f97a4 18%,
+      #5c636e 52%,
+      #9aa2ad 78%,
+      #4a515b 100%
+    );
+    box-shadow:
+      /* contact shadow */
+      0 18px 40px rgba(0, 0, 0, 0.55),
+      0 4px 10px rgba(0, 0, 0, 0.4),
+      /* rim highlight */
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.5);
   }
 
+  /* The printed face: enamel or reflective, with a bevel so it reads as a surface. */
+  .plate-face {
+    position: relative;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    border-radius: calc(var(--plate-radius, 6px) - 2px);
+    border: var(--plate-border, 2px) solid var(--plate-border-color, #1f2937);
+    background: linear-gradient(
+      180deg,
+      var(--plate-bg, #f4f6fb) 0%,
+      var(--plate-bg-alt, #e8ecf4) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.18);
+  }
+
+  /*
+   * A subtle horizontal grain, so a large light face does not look like flat paper.
+   * Kept extremely low contrast: the object must stay readable, not noisy.
+   */
+  .plate-texture::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.16;
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.05) 0 1px,
+      transparent 1px 3px
+    );
+  }
+
+  /* Controlled reflection sweep. `sheen` drives its strength, never its existence. */
   .plate-gloss {
     position: absolute;
     inset: 0;
     pointer-events: none;
     background: linear-gradient(
-      160deg,
-      rgba(255, 255, 255, 0.45),
-      rgba(255, 255, 255, 0.08) 38%,
-      transparent 58%
+      118deg,
+      rgba(255, 255, 255, 0.62) 0%,
+      rgba(255, 255, 255, 0.14) 26%,
+      transparent 46%,
+      transparent 62%,
+      rgba(255, 255, 255, 0.1) 78%,
+      rgba(255, 255, 255, 0.3) 100%
     );
-    opacity: 0.55;
+    opacity: var(--plate-sheen, 0.5);
+    mix-blend-mode: soft-light;
+  }
+
+  /* The printing area: the serial, its groups and their typographic hierarchy. */
+  .plate-print {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 4%;
+    gap: var(--plate-gap, 0.8em);
+    font-family: var(--plate-font, 'Arial Narrow', sans-serif);
+    font-weight: var(--plate-digit-weight, 700);
+    letter-spacing: var(--plate-letter-spacing, 0.05em);
+    color: var(--plate-text, #111827);
+    white-space: nowrap;
   }
 
   /*
-   * A collectible SIM card. The contact module and the moving sheen are what make it
-   * read as a physical card rather than a rounded rectangle: the gold pad is drawn
-   * with a single element (no image asset) so it stays crisp at any size.
+   * The country identifier band. This is what makes a plate read as a *country's*
+   * plate rather than a white card: the EU blue band with the country's own code, or a
+   * national band. Deliberately small - a giant flag is not a plate identifier.
    */
+  .plate-band {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15em;
+    flex: 0 0 auto;
+    background: var(--plate-band-color, #003399);
+    color: var(--plate-band-text-color, #ffd300);
+    font-family: var(--plate-font, 'Arial Narrow', sans-serif);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+  }
+
+  /* The EU star ring, drawn as a CSS ring rather than an image asset. */
+  .plate-stars {
+    position: relative;
+    display: block;
+    width: 62%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle, transparent 58%, var(--plate-band-text-color, #ffd300) 60%, transparent 64%),
+      radial-gradient(
+        circle,
+        transparent 40%,
+        var(--plate-band-text-color, #ffd300) 42%,
+        transparent 46%
+      );
+    opacity: 0.85;
+  }
+
+  /* The region's own block, separated from the registration as a real plate does. */
+  .plate-region-block {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1em;
+    flex: 0 0 auto;
+    padding: 0 0.7em;
+    border-left: var(--plate-border, 2px) solid var(--plate-border-color, #1f2937);
+    background: var(--plate-region-bg, rgba(0, 0, 0, 0.05));
+    font-family: var(--plate-font, 'Arial Narrow', sans-serif);
+    font-weight: var(--plate-digit-weight, 700);
+    color: var(--plate-text, #111827);
+    line-height: 1;
+  }
+
+  /* The printed header: a country wordmark, or (for a US plate) the state's own name. */
+  .plate-header {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    right: 0;
+    font-family: var(--plate-font, 'Arial Narrow', sans-serif);
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--plate-header-color, #6b7280);
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  /* A mounting bolt. Four on a car plate, two on a US-style plate, none on a moped. */
+  .plate-bolt {
+    position: absolute;
+    width: 7%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(
+      circle at 34% 30%,
+      #f2f4f7 0%,
+      var(--plate-bolt-color, #8a9099) 46%,
+      #3b4149 100%
+    );
+    box-shadow:
+      inset 0 0 0 1px rgba(0, 0, 0, 0.45),
+      0 1px 1px rgba(255, 255, 255, 0.35);
+  }
+
+  /* A small printed corner mark: sponsor block, crest or class mark. */
+  .plate-emblem {
+    position: absolute;
+    z-index: 2;
+    font-family: var(--plate-font, 'Arial Narrow', sans-serif);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    opacity: 0.75;
+  }
+
+  /* ==========================================================================
+   * A collectible SIM card.
+   *
+   * The contact module and the moving sheen are what make it read as a physical card
+   * rather than a rounded rectangle. The gold pad is drawn with a single element (no
+   * image asset) so it stays crisp at any size.
+   * ========================================================================== */
   .sim-body {
+    position: relative;
+    display: flex;
+    aspect-ratio: 1.586;
+    overflow: hidden;
+    border-radius: 4%/7%;
     background: linear-gradient(155deg, #232733 0%, #12151d 55%, #08090f 100%);
+    box-shadow:
+      0 18px 40px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.6);
   }
 
   .sim-contact {
     position: absolute;
-    top: 14%;
-    left: 6%;
+    top: 13%;
+    left: 5%;
     display: block;
+    width: 17%;
+    aspect-ratio: 1.32;
     border-radius: 6px;
     background:
       linear-gradient(135deg, #f7e7a8 0%, #d8b659 26%, #a9862f 52%, #f2dc9b 78%, #b8912f 100%);
@@ -115,6 +319,9 @@
   }
 
   .sim-sheen {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
     background: linear-gradient(
       115deg,
       transparent 32%,
@@ -124,6 +331,16 @@
     );
     background-size: 260% 100%;
     animation: sim-sheen 4.5s ease-in-out infinite;
+  }
+
+  /* The operator's own identity stripe along the card's top edge. */
+  .sim-brand-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 9%;
+    pointer-events: none;
   }
 }
 
@@ -137,24 +354,31 @@
   }
 }
 
+/*
+ * The reveal's momentum: a single slow rotation with a decelerating tail. It runs once
+ * per reveal (see Reveal.tsx) and never repeats, so it cannot read as a loop.
+ */
+@keyframes plate-unlock {
+  0% {
+    transform: perspective(900px) rotateX(62deg) translateZ(-30px) scale(0.9);
+    filter: blur(6px);
+  }
+  55% {
+    transform: perspective(900px) rotateX(-9deg) translateZ(6px) scale(1.025);
+    filter: blur(0.4px);
+  }
+  100% {
+    transform: perspective(900px) rotateX(0deg) translateZ(0) scale(1);
+    filter: blur(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sim-sheen {
     animation: none;
   }
-}
-
-@keyframes plate-reveal {
-  0% {
-    transform: perspective(700px) rotateX(85deg) scale(0.85);
-    opacity: 0;
-  }
-  60% {
-    transform: perspective(700px) rotateX(-8deg) scale(1.02);
-    opacity: 1;
-  }
-  100% {
-    transform: perspective(700px) rotateX(0deg) scale(1);
-    opacity: 1;
+  .plate-unlock {
+    animation: none;
   }
 }
 
@@ -165,5 +389,18 @@
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+
+  /* Hides a value from assistive tech while keeping it visible on screen. */
+  .sr-only-number {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }

@@ -1,0 +1,251 @@
+"""Country presentation recipes and the generated number formats behind them.
+
+Two guarantees are tested here:
+
+* every supported country resolves to a real recipe with plausible proportions, a proper
+  country identifier and a documented family;
+* the number printed on the plate is generated from that country's own template, so the
+  stored, displayed, searched and shared text are always the same string.
+"""
+
+from __future__ import annotations
+
+import pytest
+from sqlalchemy import select
+
+from app.game.countries import COUNTRIES, COUNTRY_BY_CODE, playable_countries
+from app.game.plate_generator import segment_kinds, styles_for_text
+from app.game.plate_templates import normalize_plate
+from app.game.plate_visuals import (
+    DEFAULT_VISUAL,
+    FONT_STACKS,
+    PLATE_VISUALS,
+    band_text_for,
+    serialize_visual,
+    visual_for,
+)
+from app.models.plates import Country, Plate
+
+PLAYABLE = playable_countries()
+LAUNCH = ("RUS", "KAZ", "POL", "DEU", "GBR", "FRA", "ITA", "JPN", "USA", "ARE")
+#: The visual recipe key each launch country uses.
+VISUAL_THEME_BY_CODE = {
+    "RUS": "ru",
+    "KAZ": "kz",
+    "POL": "pol",
+    "DEU": "de",
+    "GBR": "gb",
+    "FRA": "fr",
+    "ITA": "it",
+    "JPN": "jp",
+    "USA": "us",
+    "ARE": "ae",
+}
+
+
+class TestRecipeCoverage:
+    def test_every_country_resolves_to_a_known_recipe(self):
+        for country in COUNTRIES:
+            assert country.visual in PLATE_VISUALS, country.code
+
+    def test_every_playable_country_has_a_recipe(self):
+        for country in PLAYABLE:
+            recipe = visual_for(country.visual)
+            assert recipe.plate_family
+            assert recipe.aspect >= 1.6, country.code
+            assert recipe.font_stack in FONT_STACKS, country.code
+
+    @pytest.mark.parametrize("code", LAUNCH)
+    def test_launch_countries_have_their_own_recipe(self, code):
+        country = COUNTRY_BY_CODE[code]
+        # Each launch country carries its own recipe rather than a generic family.
+        assert country.visual == VISUAL_THEME_BY_CODE[code]
+        assert country.visual in PLATE_VISUALS
+
+    def test_an_unknown_theme_degrades_to_the_documented_generic_family(self):
+        recipe = visual_for("not-a-country")
+        assert recipe.theme == DEFAULT_VISUAL.theme
+        assert recipe.plate_family == "eu_long"
+
+    def test_aspect_ratios_match_the_physical_families(self):
+        # A European long plate is long; a Russian/Kazakh two-compartment plate is not.
+        assert visual_for("pol").aspect > 4.5
+        assert visual_for("de").aspect > 4.5
+        assert 2.3 < visual_for("ru").aspect < 2.6
+        assert 2.3 < visual_for("kz").aspect < 2.6
+        # A US plate is close to square.
+        assert 1.9 < visual_for("us").aspect < 2.2
+        # Japan is a small two-line plate.
+        assert 2.8 < visual_for("jp").aspect < 3.2
+
+    def test_the_eu_countries_carry_a_proper_eu_band(self):
+        for code in ("POL", "DEU", "FRA", "ITA"):
+            recipe = visual_for(COUNTRY_BY_CODE[code].visual)
+            assert recipe.band_position == "left"
+            assert recipe.band_color == "#003399"
+            assert recipe.band_stars is True
+            assert recipe.band_width > 0.1
+
+    def test_poland_prints_pol_in_its_band(self):
+        assert band_text_for(visual_for("pol")) == "PL"
+        assert serialize_visual("pol", alpha2="PL", alpha3="POL")["band_text"] == "PL"
+
+    def test_a_generic_eu_family_prints_the_country_own_code(self):
+        """Sweden on the generic family prints SE, not a generic EU placeholder."""
+        assert band_text_for(visual_for("european"), alpha2="SE", alpha3="SWE") == "SE"
+
+    def test_the_non_eu_launch_countries_have_their_own_identifier(self):
+        assert band_text_for(visual_for("ru"), alpha3="RUS") == "RUS"
+        assert band_text_for(visual_for("kz"), alpha3="KAZ") == "KAZ"
+        # A British plate has no EU band at all.
+        assert visual_for("gb").band_position == "none"
+        # A US plate prints its state name as the header instead.
+        assert visual_for("us").header_source == "region"
+        assert visual_for("us").bolts == 2
+
+    def test_the_uk_recipe_is_a_yellow_rear_plate(self):
+        recipe = visual_for("gb")
+        assert recipe.variant == "rear"
+        assert recipe.background.lower().startswith("#f")  # yellow, not white
+        assert recipe.background == "#f7d117"
+
+    def test_russia_and_kazakhstan_put_the_region_in_its_own_block(self):
+        for code in ("ru", "kz"):
+            recipe = visual_for(code)
+            assert recipe.plate_family == "cis_right_region"
+            assert recipe.region_position == "right"
+            assert recipe.region_style == "block"
+
+    def test_germany_and_poland_place_the_region_as_a_badge(self):
+        for code in ("de", "pol"):
+            assert visual_for(code).region_position == "badge"
+
+    def test_every_recipe_declares_mounting_hardware(self):
+        for theme, recipe in PLATE_VISUALS.items():
+            assert recipe.bolts in (0, 2, 4), theme
+            assert recipe.mount_color.startswith("#")
+
+    def test_the_serialised_recipe_is_complete_for_the_renderer(self):
+        payload = serialize_visual("pol", alpha2="PL", alpha3="POL")
+        for key in (
+            "theme",
+            "plate_family",
+            "aspect",
+            "background",
+            "background_alt",
+            "border",
+            "text",
+            "font_stack",
+            "letter_spacing",
+            "group_gap",
+            "digit_scale",
+            "letter_scale",
+            "band_position",
+            "band_text",
+            "band_stars",
+            "header_source",
+            "region_position",
+            "bolts",
+            "gloss",
+            "sheen",
+        ):
+            assert key in payload, key
+        assert payload["font_stack"] == FONT_STACKS["euro"]
+
+
+class TestSegmentKinds:
+    def test_letters_digits_and_a_region_block_are_classified(self):
+        assert segment_kinds(["A", "001", "BC"], "77") == ["letter", "digit", "letter"]
+        assert segment_kinds(["123", "77"], "77") == ["digit", "region"]
+        assert segment_kinds(["7", "001", "77"], "77") == ["digit", "digit", "region"]
+        assert segment_kinds(["A1"], None) == ["mixed"]
+        assert segment_kinds([""], None) == [""]
+
+    def test_styles_agree_with_the_character_classification(self):
+        """The generator's own styles and the renderer's kinds must not disagree."""
+        styles = styles_for_text("A 001 BC 77")
+        kinds = segment_kinds([style["text"] for style in styles], "77")
+        for style, kind in zip(styles, kinds, strict=True):
+            assert style["kind"] in {"letter", "digit", "region", "mixed", "mark"}
+            assert kind in {"letter", "digit", "region", "mixed", "mark"}
+
+
+class TestCountryApiVisual:
+    @pytest.mark.parametrize("code", LAUNCH)
+    def test_the_country_api_sends_the_full_recipe(self, client, authed, code, db):
+        session = authed(883_100_010 + LAUNCH.index(code))
+        data = client.get(f"/api/countries/{code}", headers=session["headers"]).json()
+        visual = data["visual"]
+        assert visual["theme"] == VISUAL_THEME_BY_CODE[code]
+        assert visual["aspect"] > 1.6
+        assert visual["bolts"] in (2, 4)
+        if code in ("POL", "DEU", "FRA", "ITA"):
+            assert visual["band_text"] == {"POL": "PL", "DEU": "D", "FRA": "F", "ITA": "I"}[code]
+            assert visual["band_stars"] is True
+            assert visual["band_color"] == "#003399"
+        if code in ("RUS", "KAZ"):
+            assert visual["band_text"] == {"RUS": "RUS", "KAZ": "KAZ"}[code]
+            assert visual["region_position"] == "right"
+        if code == "USA":
+            assert visual["header_source"] == "region"
+        if code == "GBR":
+            assert visual["variant"] == "rear"
+            assert visual["band_position"] == "none"
+
+    def test_a_locked_country_still_reports_a_recipe(self, client, authed, db):
+        row = db.execute(
+            select(Country).where(Country.is_active.is_(True), Country.is_playable.is_(False))
+        ).scalars().first()
+        if row is None:
+            pytest.skip("no locked country in the catalogue")
+        session = authed(883_100_100)
+        data = client.get(f"/api/countries/{row.code}", headers=session["headers"]).json()
+        assert data["is_playable"] is False
+        assert data["visual"]["aspect"] > 1.6
+
+
+class TestTextIsOneString:
+    def test_generated_stored_displayed_and_searched_text_are_identical(
+        self, client, authed, db
+    ):
+        session = authed(883_100_200)
+        data = client.post("/api/roll?country_code=RUS", headers=session["headers"], json={}).json()
+        plate = data["plate"]
+        stored = plate["plate_text"]
+
+        # displayed: the groups the renderer prints, with their exact spacing
+        rebuilt = "".join(
+            (" " if gap else "") + group
+            for group, gap in zip(
+                plate["display_segments"], plate["display_segment_gaps"], strict=True
+            )
+        )
+        assert rebuilt == stored
+        # searched: the normalised form resolves back to the same plate
+        assert normalize_plate(stored) == plate["normalized_text"]
+        # shared: the copy text quotes the stored string verbatim
+        share = client.post(
+            f"/api/plates/{plate['id']}/share", headers=session["headers"], json={}
+        ).json()
+        assert stored in share["share_text_en"]
+        assert stored in share["share_text_ru"]
+
+        row = db.execute(select(Plate).where(Plate.id == plate["id"])).scalar_one()
+        assert row.plate_text == stored
+
+    def test_a_roll_response_carries_segment_kinds_for_the_renderer(self, client, authed):
+        session = authed(883_100_201)
+        plate = client.post("/api/roll", headers=session["headers"], json={}).json()["plate"]
+        assert len(plate["display_segment_kinds"]) == len(plate["display_segments"])
+        assert all(
+            kind in {"letter", "digit", "region", "mixed", "mark", ""}
+            for kind in plate["display_segment_kinds"]
+        )
+
+    def test_the_garage_reuses_the_same_card_shape(self, client, authed):
+        session = authed(883_100_202)
+        client.post("/api/roll", headers=session["headers"], json={})
+        recent = client.get("/api/garage", headers=session["headers"]).json()["recent"]
+        assert recent["plate_text"]
+        assert "visual" in recent
+        assert recent["display_segments"]

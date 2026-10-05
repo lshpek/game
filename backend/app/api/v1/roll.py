@@ -25,6 +25,12 @@ router = APIRouter(tags=["roll"])
 
 @router.get("/daily", response_model=DailyStatusResponse, summary="Daily roll allowance and streak")
 def daily_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> DailyStatusResponse:
+    """The authoritative roll balance.
+
+    The client renders the roll button straight from this payload - the normal bank, the
+    bonus bank and the countdown to the next passive roll - and keeps no economy of its
+    own.
+    """
     status = DailyService(db, settings).status(user)
     db.commit()
     return DailyStatusResponse(
@@ -34,6 +40,11 @@ def daily_status(user: User = Depends(get_current_user), db: Session = Depends(g
         streak=status.streak,
         can_claim=status.can_claim,
         claim_reward_coins=status.claim_reward_coins,
+        normal_rolls=status.normal_rolls,
+        bonus_rolls=status.bonus_rolls,
+        next_roll_at=status.next_roll_at,
+        seconds_to_next_roll=status.seconds_to_next_roll,
+        regen_minutes=status.regen_minutes,
     )
 
 
@@ -44,6 +55,13 @@ def daily_status(user: User = Depends(get_current_user), db: Session = Depends(g
     summary="Claim the daily reward (idempotent per UTC day)",
 )
 def claim_daily(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> DailyClaimResponse:
+    """Claim today's reward.
+
+    Idempotent in two independent ways: a unique constraint on
+    ``(user_id, claimed_on)`` rejects a second claim in the same UTC day, and the coin
+    grant carries its own ledger idempotency key. A double tap therefore cannot pay out
+    twice, and the player keeps whatever bonus rolls the reward granted.
+    """
     service = DailyService(db, settings)
     reward, coins, rolls = service.claim(user)
 
@@ -51,17 +69,16 @@ def claim_daily(user: User = Depends(get_current_user), db: Session = Depends(ge
     from app.services.analytics import AnalyticsService
 
     AnalyticsService(db).track(
-        AnalyticsEventName.DAILY_CLAIM.value,
+        AnalyticsEventName.DAILY_CLAIMED,
         user_id=user.id,
         telegram_id=user.telegram_id,
-        props={"streak": reward.streak, "coins": coins},
+        props={"streak": reward.streak, "coins": coins, "rolls": rolls},
     )
     db.commit()
 
     achievements = AchievementService(db)
     unlocked = achievements.evaluate(user)
     db.commit()
-
 
     return DailyClaimResponse(
         coins_granted=coins,

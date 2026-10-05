@@ -94,7 +94,7 @@ def set_active_country(
     payload: ActiveCountryRequest = Body(default_factory=ActiveCountryRequest),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    _: None = Depends(rate_limit("country_change", "rate_limit_rolls_per_minute")),
+    _: None = Depends(rate_limit("country_change", "rate_limit_country_switch")),
 ) -> dict[str, object]:
     """Change the active country.
 
@@ -117,16 +117,25 @@ def get_country(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, object]:
-    """One country by ISO alpha-3 or alpha-2 code."""
+    """One country by ISO alpha-3 or alpha-2 code.
+
+    Carries the presentation recipe the renderer needs, the country's completion sets and
+    a single next objective, so the country screen can say "I'm going to hunt Germany"
+    and "3 more regions" without a second request.
+    """
     from app.core.errors import NotFoundError
+    from app.services.goals import GoalService, country_completion
 
     country = country_service.resolve(db, code)
     if country is None or not country.is_active:
         raise NotFoundError("Country not found.", code="COUNTRY_NOT_FOUND")
     active = country_service.active_country(db, user)
-    return country_service.card(
+    payload = country_service.card(
         db, country, user_id=user.id, is_active=bool(active and active.id == country.id)
     )
+    payload["completion"] = country_completion(db, user, country)
+    payload["next_target"] = GoalService(db).next_target(user, country_code=country.code)
+    return payload
 
 
 __all__ = ["ActiveCountryRequest", "router"]

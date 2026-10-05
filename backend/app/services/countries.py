@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationError
 from app.game import sim_cards
-from app.models.plates import Country, Plate, UserPlate
+from app.models.plates import Country, Plate, Region, UserPlate
 from app.models.user import User
 from app.services import catalog
 
@@ -156,22 +156,61 @@ def card(
     payload = dict(catalog.country_card(country))
     payload["is_active_country"] = is_active
     payload["sim"] = sim_card_config(country)
+    # The country card doubles as the source of the collection's region filter, so the
+    # client can offer "every region in Japan" without a second request.
+    payload["regions"] = region_options(db, country)
     if user_id is not None:
         payload["collected"] = progress_map(db, user_id).get(country.code, {}).get("collected", 0)
     return payload
 
 
+def region_options(db: Session, country: Country) -> list[dict[str, object]]:
+    """The country's regions, in catalogue order, for the collection's region filter."""
+    rows = (
+        db.execute(
+            select(Region.code, Region.name_en, Region.name_ru, Region.sort_order)
+            .where(Region.country_id == country.id)
+            .order_by(Region.sort_order, Region.code)
+        )
+        .all()
+    )
+    return [
+        {"code": code, "name_en": name_en, "name_ru": name_ru, "sort_order": sort_order}
+        for code, name_en, name_ru, sort_order in rows
+    ]
+
+
 def sim_card_config(country: Country) -> dict[str, object]:
-    """SIM presentation configuration for the frontend to render the physical card."""
+    """SIM presentation configuration for the frontend to render the physical card.
+
+    Providers are the real, current operators a country's cards may print, with their
+    **game** rarity/value modifiers so the client can show why a card is worth more
+    without ever implying a real-world tariff or market claim.
+    """
     config = country.sim_config or {}
     fmt = sim_cards.sim_format(country.code)
-    operators = sim_cards.operators_for(country.code)
+    providers = sim_cards.operators_for(country.code)
+    items = [
+        {
+            "code": provider.code,
+            "brand": provider.brand,
+            "local_name": provider.local_name,
+            "rarity_modifier": provider.rarity_modifier,
+            "value_modifier": provider.value_modifier,
+            "visual": provider.visual,
+            "accent": provider.accent,
+            "is_real_brand": provider.real_brand,
+        }
+        for provider in providers
+    ]
     return {
         "calling_code": config.get("calling_code") or fmt.calling_code,
         "groups": config.get("groups") or list(fmt.groups),
+        "providers": items,
+        # Compatibility alias for clients built against the previous key.
         "operators": [
-            {"code": code, "name": latin, "name_local": local}
-            for code, latin, local in operators
+            {"code": item["code"], "name": item["brand"], "name_local": item["local_name"]}
+            for item in items
         ],
         "editions": config.get("editions") or [edition for edition, _w, _f in sim_cards.EDITIONS],
         "synthetic": True,

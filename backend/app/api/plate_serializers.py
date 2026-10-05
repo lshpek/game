@@ -11,9 +11,11 @@ from typing import TYPE_CHECKING
 
 from app.core.timeutils import as_aware
 from app.game.collectibles import CollectibleKind, kind_for_plate_type
+from app.game.plate_generator import derive_segment_gaps, segment_kinds
 from app.game.plate_rarity import RARITY_COLOR
 from app.game.plate_traits import trait_labels
 from app.game.plate_visuals import serialize_visual
+from app.game.sim_cards import legacy_operator_label
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.models.plates import Plate, UserPlate
@@ -24,14 +26,30 @@ def sim_details(plate: "Plate") -> dict[str, object] | None:
 
     Only the fields the SIM card actually prints are exposed; nothing else from
     ``plates.details`` leaks into the API.
+
+    The provider block carries the brand a country's real operators print, plus its two
+    **game** modifiers so the client can explain why a card is worth more without ever
+    implying a real-world tariff, market or financial claim. ``synthetic`` is always
+    ``True``: no card in the game carries a real subscriber number.
     """
     if kind_for_plate_type(plate.plate_type) is not CollectibleKind.SIM_CARD:
         return None
     details = plate.details or {}
+    brand = str(details.get("operator") or "")
+    if not brand:
+        # A card written before the provider catalogue existed (or one whose brand was
+        # retired) must still render: fall back to the stored code, never to nothing.
+        brand = legacy_operator_label(str(details.get("operator_code") or ""))
     return {
         "operator_code": str(details.get("operator_code") or ""),
-        "operator": str(details.get("operator") or ""),
-        "operator_local": str(details.get("operator_local") or ""),
+        "operator": brand,
+        "operator_local": str(details.get("operator_local") or brand),
+        # ``False`` marks a documented game brand, so the UI can be honest about it.
+        "operator_is_real": bool(details.get("operator_is_real", False)),
+        "operator_visual": str(details.get("operator_visual") or "neutral"),
+        "operator_accent": str(details.get("operator_accent") or "#c9a227"),
+        "rarity_modifier": float(details.get("rarity_modifier") or 1.0),
+        "value_modifier": float(details.get("value_modifier") or 1.0),
         "series": str(details.get("series") or ""),
         "edition": str(details.get("edition") or ""),
         # The number the backend generated and printed on the card. The client
@@ -85,6 +103,17 @@ def plate_card(
         "plate_text": plate.plate_text,
         "normalized_text": plate.normalized_text,
         "display_segments": list(plate.display_segments or []),
+        # Whether a space precedes each group. Reconstructing the printed text from
+        # segments + gaps is byte-identical to ``plate_text``, which is what keeps the
+        # displayed, stored, searched and shared strings the same value.
+        "display_segment_gaps": derive_segment_gaps(
+            plate.plate_text, list(plate.display_segments or [])
+        ),
+        # Per-group classification so the renderer can set digits, letters and a
+        # separate region block the way the country actually prints them.
+        "display_segment_kinds": segment_kinds(
+            list(plate.display_segments or []), plate.region_code
+        ),
         "letters": list(plate.letter_parts or []),
         "numbers": list(plate.numeric_parts or []),
         "plate_type": plate.plate_type,
@@ -130,7 +159,9 @@ def plate_card(
             "pattern": plate.template.pattern if plate.template else "",
         },
         "visual": serialize_visual(
-            (country.config or {}).get("visual", "european") if country else "european"
+            (country.config or {}).get("visual", "european") if country else "european",
+            alpha2=(country.iso_alpha2 or "") if country else "",
+            alpha3=country.code if country else "",
         ),
         # Present for SIM cards (operator, series, edition, printed number); ``None``
         # for a vehicle plate, so the client can branch on the payload it receives

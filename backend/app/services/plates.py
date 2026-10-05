@@ -335,22 +335,30 @@ class PlateService:
         *,
         copies: int,
         premium_multiplier: float = 1.0,
+        allow_last: bool = False,
     ) -> int:
         """Remove ``copies`` duplicates and return the NUMORA to credit.
 
         Mutates only the copy counters; the caller writes the ledger row so the
         money movement stays in :mod:`app.services.economy`.
+
+        The final copy is protected unless the caller passed ``allow_last``, which the
+        API only does when the client explicitly opted in. Selling the last copy leaves
+        the ownership row in place (with a zero duplicate count), so the collection
+        entry and its discovery record survive.
         """
         if copies <= 0:
             raise ValidationError("Nothing to sell.", code="NO_DUPLICATES")
         available = int(user_plate.duplicate_count)
-        if copies > available:
+        may_sell_last = allow_last and int(user_plate.copies_sold) == 0
+        allowable = available + (1 if may_sell_last else 0)
+        if copies > allowable:
             raise ConflictError(
                 "You do not have that many duplicates.",
                 code="NOT_ENOUGH_DUPLICATES",
                 details={"available": available, "requested": copies},
             )
-        user_plate.duplicate_count = available - copies
+        user_plate.duplicate_count = max(0, available - copies)
         user_plate.copies_sold = int(user_plate.copies_sold) + copies
         user_plate.last_acquired_at = utcnow()
         self.db.flush()

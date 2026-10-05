@@ -1,106 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render as rtlRender, screen } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { RarityBadge, TraitChip } from '@/components/RarityBadge';
-import { ResultOverlay } from '@/components/ResultOverlay';
-import { RollButton } from '@/components/RollButton';
 import { CollectionList } from '@/components/CollectionList';
+import { RarityBadge, TraitChip } from '@/components/RarityBadge';
+import RollButton from '@/components/RollButton';
+import { RollBalanceLine, formatCountdown } from '@/components/RollEconomy';
 import { ValueCounter } from '@/components/ValueCounter';
-import type { PlateCard, PlateRollResult } from '@/types';
 import { I18nProvider } from '@/i18n';
+import { plate, rollBalance, uniquePlate } from '@/test/fixtures';
 
-/** Every component now reads strings from context, so tests need the provider. */
-const wrap = (ui: ReactElement) => <I18nProvider>{ui}</I18nProvider>;
+/** Every component reads strings from context, so tests need the provider. */
+const render = (ui: ReactElement) => rtlRender(<I18nProvider>{ui}</I18nProvider>);
 
-const render = (ui: ReactElement) => rtlRender(wrap(ui));
-
-const visual = {
-  theme: 'european',
-  aspect: 4.6,
-  background: '#f4f6fb',
-  border: '#1f2937',
-  text: '#111827',
-  muted: '#6b7280',
-  accent: '#7c5cff',
-  band_color: '#1d3fa8',
-  band_width: 0.11,
-  header: 'RUS',
-  header_align: 'center' as const,
-  show_flag: true,
-  show_region_flag: true,
-  region_badge: true,
-  font_stack: 'display',
-  letter_spacing: '0.06em',
-  gloss: true,
-  texture: 'metal',
-};
-
-const basePlate: PlateCard = {
-  id: 777,
-  plate_text: 'A777BC777',
-  normalized_text: 'a777bc777',
-  display_segments: ['A777BC', '777'],
-  letters: ['ABC'],
-  numbers: ['777', '777'],
-  plate_type: 'STANDARD',
-  rarity: 'MYTHIC',
-  rarity_score: 480,
-  rarity_color: '#f43f5e',
-  reasons: ['all_same', 'four_of_kind'],
-  reason_labels: ['All Same', 'Four of a Kind'],
-  traits: ['all_same', 'four_of_kind'],
-  tags: ['special'],
-  story: 'Every digit repeats - the purest form of plate repetition.',
-  is_secret: false,
-  season_code: null,
-  discovery_count: 3,
-  first_discovered_at: '2026-01-01T00:00:00Z',
-  first_discoverer: null,
-  collector_value: 25000,
-  currency_code: 'RUB',
-  currency_symbol: '₽',
-  dealer_value: 12500,
-  country: { code: 'RUS', name_en: 'Russia', name_ru: 'Россия', flag: '🇷🇺' },
-  region: { code: 'MOW', name_en: 'Moscow', name_ru: 'Москва' },
-  template: { code: 'RUS_STD', pattern: 'LDDDLLLDD' },
-  visual,
-  owned: true,
-  duplicate_count: 2,
-  is_favorite: false,
-  is_new: false,
-  acquired_at: '2026-01-01T00:00:00Z',
-  kind: 'VEHICLE_PLATE',
-  details: null,
-};
-
-const baseRoll: PlateRollResult = {
-  success: true,
-  roll_id: 99,
-  plate: basePlate,
-  rarity: 'MYTHIC',
-  natural_rarity: 'MYTHIC',
-  luck_rarity: 'COMMON',
-  rarity_score: 480,
-  is_duplicate: false,
-  is_first_discovery: true,
-  is_new_country: false,
-  is_new_region: false,
-  numora_awarded: 0,
-  balance: 500,
-  rolls_remaining: 6,
-  sale_value: 12500,
-  collector_level: 3,
-  missions_completed: [],
-  albums_completed: [],
-  unlocked_achievements: [],
-  event: null,
-  replayed: false,
-  share_start_param: 'plate_777',
-  value: 12500,
-  coins_awarded: 0,
-  conversion_value: 12500,
-  number: basePlate,
-};
 describe('RarityBadge', () => {
   it('renders the human label', () => {
     render(<RarityBadge rarity="LEGENDARY" />);
@@ -111,33 +22,95 @@ describe('RarityBadge', () => {
     render(<RarityBadge rarity="NOT_A_RARITY" />);
     expect(screen.getByText('Common')).toBeInTheDocument();
   });
+
+  it('keeps the visual hierarchy calm for COMMON and rich for the top tiers', () => {
+    const { unmount } = rtlRender(
+      <I18nProvider>
+        <RarityBadge rarity="COMMON" />
+      </I18nProvider>,
+    );
+    // No glow, no halo: an ordinary find must not look like an event.
+    expect(screen.getByText('Common').style.boxShadow).toBe('');
+
+    unmount();
+    render(<RarityBadge rarity="MYTHIC" />);
+    expect(screen.getByText('Mythic').style.boxShadow).toContain('#f43f5e');
+  });
 });
 
 describe('TraitChip', () => {
   it('keeps the trait code for testing and analytics', () => {
     render(<TraitChip code="palindrome" label="Palindrome" />);
-    const chip = screen.getByText('Palindrome');
-    expect(chip).toHaveAttribute('data-trait', 'palindrome');
+    expect(screen.getByText('Palindrome')).toHaveAttribute('data-trait', 'palindrome');
   });
 });
 
 describe('RollButton', () => {
+  const rolls = rollBalance();
+
   it('fires the callback when rolls are available', () => {
     const onRoll = vi.fn();
-    render(<RollButton rollsLeft={3} onRoll={onRoll} />);
-    screen.getByTestId('roll-button').click();
+    render(<RollButton rolls={rolls} onRoll={onRoll} />);
+    screen.getByRole('button', { name: /roll/i }).click();
     expect(onRoll).toHaveBeenCalledTimes(1);
   });
 
   it('is disabled when no rolls remain', () => {
     const onRoll = vi.fn();
-    render(<RollButton rollsLeft={0} onRoll={onRoll} />);
-    expect(screen.getByTestId('roll-button')).toBeDisabled();
+    render(<RollButton rolls={rollBalance({ rolls_remaining: 0, normal_rolls: 0 })} onRoll={onRoll} />);
+    expect(screen.getByRole('button', { name: /no rolls/i })).toBeDisabled();
   });
 
-  it('shows the remaining roll count', () => {
-    render(<RollButton rollsLeft={1} onRoll={vi.fn()} />);
-    expect(screen.getByText('1 roll')).toBeInTheDocument();
+  it('is disabled while a roll is in flight, so a double tap cannot pay twice', () => {
+    render(<RollButton rolls={rolls} onRoll={vi.fn()} rolling />);
+    expect(screen.getByRole('button', { name: /hunting/i })).toBeDisabled();
+  });
+
+  it('announces the remaining count to assistive tech', () => {
+    render(<RollButton rolls={rollBalance({ rolls_remaining: 7, normal_rolls: 7 })} onRoll={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Roll. 7 available.' })).toBeInTheDocument();
+  });
+
+  it('shows the refill countdown when a passive roll is pending', () => {
+    render(
+      <RollButton
+        rolls={rollBalance({
+          rolls_remaining: 3,
+          normal_rolls: 3,
+          next_roll_at: new Date(Date.now() + 32 * 60_000).toISOString(),
+          seconds_to_next_roll: 32 * 60,
+        })}
+        onRoll={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/32m/)).toBeInTheDocument();
+  });
+});
+
+describe('RollBalanceLine', () => {
+  it('shows the bank, the countdown and the bonus separately', () => {
+    const future = new Date(Date.now() + 20 * 60_000).toISOString();
+    render(
+      <RollBalanceLine
+        rolls={rollBalance({
+          rolls_remaining: 21,
+          normal_rolls: 18,
+          bonus_rolls: 3,
+          next_roll_at: future,
+          seconds_to_next_roll: 20 * 60,
+        })}
+      />,
+    );
+    expect(screen.getByText('21 rolls')).toBeInTheDocument();
+    expect(screen.getByText('+3 bonus')).toBeInTheDocument();
+    expect(screen.getByText(/in 20m/)).toBeInTheDocument();
+  });
+
+  it('formats countdowns compactly', () => {
+    expect(formatCountdown(0)).toBe('0:00');
+    expect(formatCountdown(7)).toBe('0:07');
+    expect(formatCountdown(32 * 60)).toBe('32m');
+    expect(formatCountdown(3660)).toBe('1h 01m');
   });
 });
 
@@ -148,56 +121,69 @@ describe('ValueCounter', () => {
   });
 });
 
-describe('ResultOverlay', () => {
-  it('renders the revealed plate when open', async () => {
+describe('CollectionList', () => {
+  it('renders each item as its physical object, with rarity and duplicates', () => {
     render(
-      <ResultOverlay open result={baseRoll} onClose={vi.fn()} onShare={vi.fn()} onSell={vi.fn()} />,
+      <CollectionList items={[plate()]} expanded={null} onToggle={vi.fn()} selling={false} onSell={vi.fn()} />,
     );
-
-    expect(screen.getByTestId('vehicle-plate-visual')).toHaveAttribute('data-plate', 'A777BC777');
+    const row = screen.getByTestId('collection-row');
+    // The object itself is the lead element, not a text placeholder.
+    expect(row.querySelector('.plate-frame')).not.toBeNull();
     expect(screen.getByText('Mythic')).toBeInTheDocument();
-    expect(screen.getByText(/Secret Discovered/)).toBeInTheDocument();
-    // The dealer value animates up to its final number.
-    expect(await screen.findByText('12,500 NUMORA', {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getByText(/₽25,000/)).toBeInTheDocument();
+    expect(screen.getByText('+12,500')).toBeInTheDocument();
+    expect(screen.getByText(/×2 duplicates/)).toBeInTheDocument();
   });
 
-  it('offers a dealer sale for duplicates', () => {
+  it('offers a dealer sale only when duplicates exist', () => {
+    const { unmount } = rtlRender(
+      <I18nProvider>
+        <CollectionList
+          items={[uniquePlate()]}
+          expanded={777}
+          onToggle={vi.fn()}
+          selling={false}
+          onSell={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.queryByRole('button', { name: /sell duplicate copies/i })).toBeNull();
+    unmount();
+
     render(
-      <ResultOverlay
-        open
-        result={{ ...baseRoll, is_duplicate: true, is_first_discovery: false }}
-        onClose={vi.fn()}
-        onShare={vi.fn()}
+      <CollectionList
+        items={[plate()]}
+        expanded={777}
+        onToggle={vi.fn()}
+        selling={false}
         onSell={vi.fn()}
       />,
     );
-    expect(screen.getByText('Duplicate')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Sell duplicates/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sell duplicate copies/i })).toBeInTheDocument();
   });
 
-  it('renders nothing when closed', () => {
+  it('shows the provider brand on a SIM card', () => {
+    const sim = plate({
+      kind: 'SIM_CARD',
+      plate_type: 'SIM',
+      details: {
+        operator_code: 'mts',
+        operator: 'MTS',
+        operator_local: 'МТС',
+        operator_is_real: true,
+        operator_visual: 'waveform',
+        operator_accent: '#ff0032',
+        rarity_modifier: 1.06,
+        value_modifier: 1.1,
+        series: 'N-42',
+        edition: 'APEX',
+        synthetic_number: '+7 900 123 45 67',
+        calling_code: '+7',
+        synthetic: true,
+      },
+    });
     render(
-      <ResultOverlay open={false} result={null} onClose={vi.fn()} onShare={vi.fn()} onSell={vi.fn()} />,
+      <CollectionList items={[sim]} expanded={null} onToggle={vi.fn()} selling={false} onSell={vi.fn()} />,
     );
-    expect(screen.queryByTestId('result-overlay')).not.toBeInTheDocument();
-  });
-});
-
-describe('CollectionList', () => {
-  it('lists owned plates with their dealer value', () => {
-    render(
-      <CollectionList items={[basePlate]} expanded={null} onToggle={vi.fn()} selling={false} onSell={vi.fn()} />,
-    );
-    expect(screen.getByTestId('vehicle-plate-visual')).toHaveAttribute('data-plate', 'A777BC777');
-    expect(screen.getByText('+12,500')).toBeInTheDocument();
-    expect(screen.getByText('×2 dup')).toBeInTheDocument();
-  });
-
-  it('expands a row to reveal the dealer sale action', () => {
-    render(
-      <CollectionList items={[basePlate]} expanded={777} onToggle={vi.fn()} selling={false} onSell={vi.fn()} />,
-    );
-    expect(screen.getByRole('button', { name: /Sell duplicate copies/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/MTS/).length).toBeGreaterThan(0);
   });
 });

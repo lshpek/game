@@ -294,6 +294,44 @@ class PlateAlbum(Base):
     )
 
 
+class SimProvider(Base, TimestampMixin):
+    """One mobile operator brand a country may print on a collectible SIM card.
+
+    The catalogue is *runtime configuration*: the seeder writes it from
+    :mod:`app.game.providers`, and a new country (or a rebranded operator) can be added
+    without a code change in the generator or the client.
+
+    ``rarity_modifier`` / ``value_modifier`` are **game balance numbers only**. They
+    describe how desirable a brand is inside NUMORA's collector game. They say nothing
+    about the operator's real tariffs, customers, coverage or finances, and nothing in
+    this table can influence anything outside the game economy.
+    """
+
+    __tablename__ = "sim_providers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    #: Stable identifier stored on ``plates.details.operator_code``.
+    code: Mapped[str] = mapped_column(String(48), unique=True, index=True, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(3), index=True, nullable=False)
+    brand: Mapped[str] = mapped_column(String(48), nullable=False)
+    #: Brand as written locally, shown when the player's language matches.
+    local_name: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    #: Relative chance of this brand being printed.
+    weight: Mapped[float] = mapped_column(default=1.0, nullable=False)
+    rarity_modifier: Mapped[float] = mapped_column(default=1.0, nullable=False)
+    value_modifier: Mapped[float] = mapped_column(default=1.0, nullable=False)
+    #: Card identity style key the renderer uses for the brand block.
+    visual: Mapped[str] = mapped_column(String(24), default="neutral", nullable=False)
+    accent: Mapped[str] = mapped_column(String(16), default="#c9a227", nullable=False)
+    #: ``False`` for documented game-only brands, so nothing implies a real carrier.
+    is_real_brand: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SimProvider {self.code} {self.brand}>"
+
+
 class PlateChallenge(Base, TimestampMixin):
     """Duel: the opponent's roll is compared on ``rarity_score`` server-side."""
 
@@ -326,5 +364,6 @@ __all__ = [
     "PlateDiscovery",
     "PlateTemplate",
     "Region",
+    "SimProvider",
     "UserPlate",
 ]

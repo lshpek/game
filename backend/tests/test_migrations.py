@@ -1,9 +1,10 @@
 """Migration safety.
 
 The acceptance bar for a schema change is not "it runs" but "running it against a
-populated database loses nothing". These tests exercise migration 0005's data fix
-directly against the live test database, because the one thing a from-scratch upgrade
-cannot prove is that an *existing* player's rows survive it.
+populated database loses nothing". These tests exercise migration 0005's data fix and
+migration 0006's additive schema directly against the live test database, because the
+one thing a from-scratch upgrade cannot prove is that an *existing* player's rows
+survive it.
 """
 
 from __future__ import annotations
@@ -16,14 +17,16 @@ import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 
 from app.core.config import BACKEND_DIR
 from app.models.plates import Country, Plate, PlateTemplate, UserPlate
 from app.models.user import User
 
 MIGRATIONS = Path(BACKEND_DIR) / "alembic" / "versions"
-HEAD_REVISION = "0005_global_world"
+HEAD_REVISION = "0006_roll_economy_providers"
+#: The revision whose data fix folds legacy ``PHONE`` rows into SIM cards.
+FOLD_REVISION = "0005_global_world"
 
 
 def load_revision(name: str):
@@ -40,7 +43,7 @@ class TestRevisionGraph:
     def _script(self) -> ScriptDirectory:
         return ScriptDirectory(str(Path(BACKEND_DIR) / "alembic"))
 
-    def test_0005_is_the_single_head(self, _script):
+    def test_the_head_revision_is_current(self, _script):
         assert _script.get_heads() == [HEAD_REVISION]
 
     def test_the_chain_is_linear(self, _script):
@@ -60,7 +63,7 @@ class TestPhoneFoldIntoSim:
     @pytest.fixture
     def fold(self, db, monkeypatch):
         """Run the migration's data fix against the test database."""
-        module = load_revision(HEAD_REVISION)
+        module = load_revision(FOLD_REVISION)
         context = MigrationContext.configure(db.connection())
         monkeypatch.setattr(module, "op", Operations(context))
 
@@ -180,7 +183,7 @@ class TestPhoneFoldIntoSim:
         directions; getting this wrong is a statement that passes on SQLite and
         crash-loops the production backend on every restart.
         """
-        module = load_revision(HEAD_REVISION)
+        module = load_revision(FOLD_REVISION)
         postgres = [
             statement
             for name in dir(module)
@@ -189,10 +192,49 @@ class TestPhoneFoldIntoSim:
         ]
         assert postgres, "the migration no longer has a dialect-specific tag rewrite"
 
-        source = Path(MIGRATIONS / f"{HEAD_REVISION}.py").read_text(encoding="utf-8")
+        source = Path(MIGRATIONS / f"{FOLD_REVISION}.py").read_text(encoding="utf-8")
         postgres_branch = source.split('if dialect == "postgresql":')[1]
         assert "::text" in postgres_branch
         assert "::json" in postgres_branch
         # The other branch must not use Postgres-only syntax.
         other = source.split('return\n', 1)[1]
         assert "::" not in other
+
+
+class TestRollEconomySchema:
+    """Migration 0006 is additive: it must not rewrite a single existing row."""
+
+    def test_the_provider_table_exists_with_its_stable_columns(self, db):
+        columns = {col["name"] for col in inspect(db.connection()).get_columns("sim_providers")}
+        assert {
+            "code",
+            "country_code",
+            "brand",
+            "local_name",
+            "weight",
+            "rarity_modifier",
+            "value_modifier",
+            "visual",
+            "accent",
+            "is_real_brand",
+            "is_active",
+        } <= columns
+
+    def test_the_regeneration_clock_exists_and_is_nullable(self, db):
+        columns = {col["name"]: col for col in inspect(db.connection()).get_columns("users")}
+        assert "roll_regen_at" in columns
+        # NULL must be allowed: it means "the bank is full, regeneration is idle".
+        assert columns["roll_regen_at"]["nullable"] is True
+
+    def test_the_upgrade_deletes_nothing(self):
+        """The upgrade path is purely additive.
+
+        A ``DROP`` inside ``downgrade()`` is fine - rolling back is explicit - but the
+        forward path must not drop a table or delete a row, or an existing player's
+        collection could be lost on a routine deploy.
+        """
+        source = Path(MIGRATIONS / f"{HEAD_REVISION}.py").read_text(encoding="utf-8")
+        upgrade = source.split("def upgrade()", 1)[1].split("def downgrade()", 1)[0]
+        assert "drop_table" not in upgrade
+        assert "drop_column" not in upgrade
+        assert "DELETE" not in upgrade.upper()

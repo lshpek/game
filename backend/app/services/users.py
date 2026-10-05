@@ -184,6 +184,13 @@ class UserService:
             "daily_allowance": allowance.daily_allowance,
             "daily_resets_at": allowance.resets_at,
             "can_claim_daily": allowance.can_claim,
+            # The full economy, so the profile can show the same normal bank, bonus bank
+            # and passive-regeneration countdown as the hunt screen.
+            "normal_rolls": allowance.normal_rolls,
+            "bonus_rolls": allowance.bonus_rolls,
+            "next_roll_at": allowance.next_roll_at,
+            "seconds_to_next_roll": allowance.seconds_to_next_roll,
+            "roll_regen_minutes": allowance.regen_minutes,
             # --- entitlements and cosmetics
             "premium": {
                 "active": self.premium.is_premium(user.id),

@@ -37,6 +37,7 @@ from app.game.plate_rarity import (
 )
 from app.game.plate_templates import ParsedTemplate, Token, normalize_plate, parse_template
 from app.game.plate_valuation import value_for_analysis
+from app.game.providers import clamp_modifier
 from app.game.rng import weighted_choice
 from app.game.sim_cards import card_details, details_to_dict
 
@@ -176,17 +177,24 @@ def render_template(
     region_code: str | None,
     rng,
 ) -> tuple[str, list[dict[str, str]]]:
-    """Materialise a template into plate text plus per-segment style hints.
+    """Materialise a template into plate text plus grouped style hints.
 
-    Each non-separator segment carries its kind so the client can colour letters,
-    digits and the region distinctly without hardcoding any country logic.
+    Styles are emitted as *printed groups* - ``A683``, ``ВС``, ``54`` - never one entry
+    per character, because that is how a real plate is typeset: a run of letters or
+    digits, separated from the next by a gap. Each group carries its kind so the client
+    can set digits and letters at their different sizes, and a ``sep`` flag so the
+    renderer reproduces the exact spacing without knowing any country logic.
+
+    Joining the groups with their ``sep`` prefixes reproduces ``plate_text`` byte for
+    byte, which is what keeps the printed, stored, searched and shared strings identical.
     """
     parts: list[str] = []
-    styles: list[dict[str, str]] = []
+    chars: list[tuple[str, str]] = []  # (kind, character) in print order
 
     for part in parsed.parts:
         if part.is_literal():
-            parts.append(part.text)  # type: ignore[attr-defined]
+            literal = str(part.text)
+            parts.append(literal)
             continue
 
         token: Token = part  # type: ignore[assignment]
@@ -203,43 +211,138 @@ def render_template(
         elif kind == "R":
             # An empty region slot must not leave a dangling separator.
             parts.append(region_code or "")
-            if region_code:
-                styles.append({"kind": "region", "text": region_code})
+            chars.extend(("region", ch) for ch in (region_code or ""))
             continue
         else:  # pragma: no cover - parse_template rejects unknown kinds
             text = ""
         parts.append(text)
-        styles.append({"kind": "letter" if kind in ("L", "A") else "digit", "text": text})
+        style_kind = "letter" if kind in ("L", "A") else "digit"
+        chars.extend((style_kind, ch) for ch in text)
 
     rendered = "".join(parts)
     while "  " in rendered:
         rendered = rendered.replace("  ", " ")
-    return rendered.strip(), [style for style in styles if style["text"]]
+    rendered = rendered.strip()
+    return rendered, group_styles(rendered, chars)
 
 
-def display_segments(styles: list[dict[str, str]]) -> list[str]:
-    return [style["text"] for style in styles]
+def group_styles(text: str, chars: list[tuple[str, str]]) -> list[dict[str, str]]:
+    """Fold per-character kinds into printed groups aligned with ``text``.
+
+    Alignment is done by walking the rendered string, so a group only merges with the
+    next one when the characters are truly adjacent and of the same kind. Whitespace in
+    the text becomes the ``sep`` of the group that follows it.
+    """
+    styles: list[dict[str, str]] = []
+    index = 0
+    pending_sep = False
+    for char in text:
+        if char.isspace():
+            pending_sep = True
+            continue
+        kind = chars[index][0] if index < len(chars) else _kind_of(char)
+        index += 1
+        if (
+            styles
+            and not pending_sep
+            and styles[-1]["kind"] == kind
+            and kind in ("letter", "digit", "region")
+        ):
+            styles[-1]["text"] += char
+            continue
+        styles.append({"kind": kind, "text": char, "sep": " " if pending_sep else ""})
+        pending_sep = False
+    return styles
+
+
+def _kind_of(char: str) -> str:
+    if char.isdigit():
+        return "digit"
+    if char.isalpha():
+        return "letter"
+    return "mark"
 
 
 def styles_for_text(plate_text: str, region_code: str | None = None) -> list[dict[str, str]]:
-    """Per-segment kind hints for an *authored* plate (used by the admin lab).
+    """Grouped style hints for an *authored* plate (used by the admin lab).
 
-    Mirrors what :func:`render_template` produces while generating, so a plate an
-    admin types by hand renders in the client exactly like a rolled one.
+    Mirrors what :func:`render_template` produces while generating, so a plate an admin
+    types by hand renders in the client exactly like a rolled one.
     """
-    styles: list[dict[str, str]] = []
-    if region_code:
-        start = plate_text.find(region_code)
-        if start >= 0:
-            styles.append({"kind": "region", "text": region_code})
-            consumed = start + len(region_code)
-            plate_text = plate_text[:start] + " " * len(region_code) + plate_text[consumed:]
-    for char in plate_text:
-        if char.isalpha():
-            styles.append({"kind": "letter", "text": char})
-        elif char.isdigit():
-            styles.append({"kind": "digit", "text": char})
-    return [style for style in styles if style["text"]]
+    chars: list[tuple[str, str]] = []
+    text = plate_text
+    if region_code and region_code in text:
+        start = text.find(region_code)
+        for position, char in enumerate(text):
+            if start <= position < start + len(region_code):
+                chars.append(("region", char))
+            else:
+                chars.append((_kind_of(char), char))
+    else:
+        chars = [(_kind_of(char), char) for char in text]
+    return group_styles(text, chars)
+
+
+def display_segments(styles: list[dict[str, str]]) -> list[str]:
+    """The printed groups, in order."""
+    return [style["text"] for style in styles]
+
+
+def segment_gaps(styles: list[dict[str, str]]) -> list[bool]:
+    """Whether a space precedes each printed group.
+
+    The plate text is reconstructed as ``"".join((" " if gap else "") + group)``, so the
+    renderer reproduces the exact spacing without knowing any country logic.
+    """
+    return [str(style.get("sep") or "") == " " for style in styles]
+
+
+def derive_segment_gaps(plate_text: str, segments: list[str]) -> list[bool]:
+    """Whether a space precedes each stored group, recovered from the plate text.
+
+    :func:`segment_gaps` needs the style list, which only exists at render time. A stored
+    collectible keeps just the groups, so the spacing is recovered by locating each group
+    in the authoritative text. Works for rows written before gaps were stored, too.
+    """
+    gaps: list[bool] = []
+    cursor = 0
+    for segment in segments:
+        index = plate_text.find(segment, cursor) if segment else -1
+        if index < 0:
+            gaps.append(False)
+            continue
+        gaps.append(index > 0 and plate_text[index - 1].isspace())
+        cursor = index + len(segment)
+    return gaps
+
+
+def segment_kinds(segments: list[str], region_code: str | None = None) -> list[str]:
+    """Classify each printed group as ``letter`` / ``digit`` / ``region``.
+
+    The renderer needs this to print a plate the way the country prints it - digits and
+    letters are set at different sizes, and a region's own block is separated from the
+    registration. Deriving it from the stored segments (never from the template) keeps
+    the printed object, the stored value and the searched value the same string.
+    """
+    out: list[str] = []
+    for segment in segments:
+        text = str(segment or "")
+        if not text:
+            out.append("")
+            continue
+        has_letters = any(ch.isalpha() for ch in text)
+        has_digits = any(ch.isdigit() for ch in text)
+        if region_code and text == region_code and has_digits:
+            out.append("region")
+        elif has_letters and has_digits:
+            out.append("mixed")
+        elif has_letters:
+            out.append("letter")
+        elif has_digits:
+            out.append("digit")
+        else:
+            out.append("mark")
+    return out
 
 
 def build_generated_plate(
@@ -282,12 +385,18 @@ def build_generated_plate(
     raw_event = float(multipliers.get(country.code, 1.0))
     event_modifier = 1.0 + min(0.35, max(0.0, raw_event - 1.0) * 0.2)
 
+    # The SIM line's operator weighting. Narrow and bounded on purpose: a brand colours a
+    # card, it never decides the tier.
+    provider_rarity = clamp_modifier(_config_value(template.config, "provider_rarity_modifier"))
+    provider_value = clamp_modifier(_config_value(template.config, "provider_value_modifier"))
+
     score = compute_rarity_score(
         analysis,
         country_modifier=country.rarity_modifier,
         template_multiplier=template.multiplier,
         event_modifier=event_modifier,
         novelty_bonus=6.0 if discovery_count == 0 else 0.0,
+        provider_modifier=provider_rarity,
     )
 
     nat = natural_rarity(analysis)
@@ -308,6 +417,7 @@ def build_generated_plate(
         region_multiplier=1.12 if "region_match" in analysis.traits else 1.0,
         template_multiplier=template.multiplier,
         country_value_scale=country.value_scale,
+        provider_multiplier=provider_value,
     )
 
     return GeneratedPlate(
@@ -339,6 +449,14 @@ def build_generated_plate(
     )
 
 
+def _config_value(config: dict[str, object], key: str, default: float = 1.0) -> float:
+    """Read a numeric template-config value, tolerating absent or malformed entries."""
+    try:
+        return float(config.get(key, default))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
 def _details_for(
     template: TemplateOption,
     country: CountryDef,
@@ -347,7 +465,7 @@ def _details_for(
     """Type-specific payload for the generated collectible.
 
     Only SIM cards carry one. The number printed on the card is the value the engine
-    just rendered - the frontend never synthesises it, and the operator, series and
+    just rendered - the frontend never synthesises it, and the provider, series and
     edition come from the template that produced it.
     """
     if kind_for_plate_type(template.plate_type) is not CollectibleKind.SIM_CARD:
@@ -355,9 +473,11 @@ def _details_for(
     config = template.config or {}
     details = card_details(
         country_code=country.code,
-        operator_code=str(config.get("operator_code") or "numa"),
+        operator_code=str(config.get("operator_code") or config.get("provider_code") or ""),
         edition=str(config.get("edition") or "ORIGIN"),
         number=plate_text,
+        rarity_modifier=clamp_modifier(_config_value(config, "provider_rarity_modifier")),
+        value_modifier=clamp_modifier(_config_value(config, "provider_value_modifier")),
     )
     return details_to_dict(details)
 
@@ -603,10 +723,14 @@ __all__ = [
     "RegionOption",
     "TemplateOption",
     "build_generated_plate",
+    "derive_segment_gaps",
     "display_segments",
+    "group_styles",
     "pick_country",
     "pick_region",
     "pick_template",
     "render_template",
+    "segment_gaps",
+    "segment_kinds",
     "styles_for_text",
 ]

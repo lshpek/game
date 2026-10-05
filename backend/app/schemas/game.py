@@ -38,12 +38,22 @@ class RollHistoryItem(BaseModel):
 
 
 class DailyStatusResponse(BaseModel):
+    """The authoritative roll economy, as the client renders it."""
+
     rolls_remaining: int
     daily_allowance: int
     resets_at: str
     streak: int
     can_claim: bool
     claim_reward_coins: int
+    #: The normal, regenerating bank.
+    normal_rolls: int = 0
+    #: Rolls granted above the normal bank; never consumed by regeneration.
+    bonus_rolls: int = 0
+    #: When the next passive roll lands, or ``None`` when the bank is full.
+    next_roll_at: str | None = None
+    seconds_to_next_roll: int = 0
+    regen_minutes: int = 45
 
 
 class DailyClaimResponse(BaseModel):

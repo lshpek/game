@@ -18,6 +18,7 @@ from app.game.plate_visuals import serialize_visual
 from app.models.plates import Album, Country, Plate, PlateTemplate, Region, UserPlate
 from app.models.user import User
 from app.services import catalog
+from app.services.goals import GoalService, country_completion
 
 DEFAULT_PAGE_SIZE = 60
 MAX_PAGE_SIZE = 250
@@ -242,7 +243,11 @@ class WorldService:
             "currency_code": cfg.get("currency_code", "USD"),
             "currency_symbol": cfg.get("currency_symbol", "$"),
             "calling_code": row.calling_code,
-            "visual": serialize_visual(cfg.get("visual", "european")),
+            "visual": serialize_visual(
+                cfg.get("visual", "european"),
+                alpha2=row.iso_alpha2 or "",
+                alpha3=row.code,
+            ),
             "collected": collected,
             "total": total,
             "progress": round(collected / total, 4) if total else 0.0,
@@ -320,7 +325,11 @@ class WorldService:
             "currency_code": cfg.get("currency_code", "USD"),
             "currency_symbol": cfg.get("currency_symbol", "$"),
             "calling_code": row.calling_code,
-            "visual": serialize_visual(cfg.get("visual", "european")),
+            "visual": serialize_visual(
+                cfg.get("visual", "european"),
+                alpha2=row.iso_alpha2 or "",
+                alpha3=row.code,
+            ),
             "is_playable": bool(row.is_playable),
             "collected": collected,
             "total": total,
@@ -349,6 +358,10 @@ class WorldService:
                 }
                 for template in templates
             ],
+            # Country completion sets, so the country screen can show real goals
+            # instead of a single opaque fraction.
+            "completion": country_completion(self.db, user, row),
+            "next_target": GoalService(self.db).next_target(user, country_code=row.code),
         }
 
     # --- economy context ---------------------------------------------------

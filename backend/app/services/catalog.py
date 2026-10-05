@@ -169,7 +169,11 @@ def country_card(country: Country) -> dict[str, object]:
         "currency_symbol": config.get("currency_symbol", "$"),
         "calling_code": country.calling_code,
         "weight": config.get("weight", 1.0),
-        "visual": serialize_visual(config.get("visual", "european")),
+        "visual": serialize_visual(
+            config.get("visual", "european"),
+            alpha2=country.iso_alpha2 or "",
+            alpha3=country.code,
+        ),
         "sort_order": country.sort_order,
         "is_active": bool(country.is_active),
         "is_playable": bool(country.is_playable),

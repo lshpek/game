@@ -37,6 +37,7 @@ from app.models.payment import Payment, Product
 from app.models.user import User
 from app.services.analytics import AnalyticsService
 from app.services.cosmetics import CosmeticService
+from app.services.daily import DailyService
 from app.services.economy import EconomyService
 from app.services.premium import PremiumService
 from app.services.seasons import SeasonService
@@ -45,11 +46,14 @@ logger = get_logger("app.services.payments")
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 HTTP_TIMEOUT_SECONDS = 15.0
-COINS_GRANT_TYPE = GRANT_TYPES[0]
-PREMIUM_GRANT_TYPE = GRANT_TYPES[1]
-SUPPORTER_GRANT_TYPE = GRANT_TYPES[2]
-COSMETIC_GRANT_TYPE = GRANT_TYPES[3]
-SEASON_PASS_GRANT_TYPE = GRANT_TYPES[4]
+#: Grant type codes, resolved by name rather than position: the catalogue grows, and an
+#: index-based alias silently starts granting the wrong thing when a type is inserted.
+COINS_GRANT_TYPE = "COINS"
+ROLLS_GRANT_TYPE = "ROLLS"
+PREMIUM_GRANT_TYPE = "PREMIUM"
+SUPPORTER_GRANT_TYPE = "SUPPORTER"
+COSMETIC_GRANT_TYPE = "COSMETIC"
+SEASON_PASS_GRANT_TYPE = "SEASON_PASS"
 #: Every grant type a product may declare. Anything outside this set is a catalogue
 #: bug, and :meth:`PaymentService._grant` raises on it instead of losing a purchase.
 SUPPORTED_GRANT_TYPES = frozenset(GRANT_TYPES)
@@ -134,6 +138,7 @@ class PaymentService:
         self.analytics = AnalyticsService(db)
         self.cosmetics = CosmeticService(db)
         self.seasons = SeasonService(db)
+        self.daily = DailyService(db, self.settings)
 
     # --- catalogue ------------------------------------------------------
     def list_products(self) -> list[dict[str, object]]:
@@ -360,6 +365,16 @@ class PaymentService:
             if numora <= 0:
                 raise PaymentError("Product grants no NUMORA.", code="BAD_PRODUCT")
             return summary
+
+        if grant_type == ROLLS_GRANT_TYPE:
+            # A fixed, fully disclosed number of rolls into the bonus bank. Buying
+            # rolls never touches the odds: the tier still comes from the number the
+            # engine generates, so a purchase can never guarantee a rarity.
+            rolls = int(payload.get("rolls") or 0)
+            if rolls <= 0:
+                raise PaymentError("Product grants no rolls.", code="BAD_PRODUCT")
+            self.daily.grant_bonus_rolls(self._require_user(payment.user_id), rolls)
+            summary["rolls"] = rolls
 
         if grant_type in (PREMIUM_GRANT_TYPE, SUPPORTER_GRANT_TYPE):
             days = int(payload.get("days") or (30 if grant_type == PREMIUM_GRANT_TYPE else 3650))

@@ -102,6 +102,51 @@ export function hapticError(): void {
   }
 }
 
+/**
+ * Haptics tuned to the moment they belong to.
+ *
+ * The product rule is that *touch confirms the action, and rarity confirms the reward*,
+ * so a common find stays calm and a legendary one escalates. Each pattern is a short,
+ * bounded sequence - never a long buzz and never anything that fires on a loop.
+ */
+export type HapticCue =
+  /** Any button press. */
+  | 'tap'
+  /** A roll starts. */
+  | 'roll'
+  /** The collectible settles into place. */
+  | 'lock'
+  /** RARE and above. */
+  | 'rare'
+  /** LEGENDARY and above. */
+  | 'legendary'
+  /** Something the player must notice went wrong. */
+  | 'error'
+  /** A reward landed. */
+  | 'success';
+
+const CUES: Record<HapticCue, () => void> = {
+  tap: () => haptic('light'),
+  roll: () => haptic('medium'),
+  lock: () => haptic('heavy'),
+  rare: () => {
+    haptic('medium');
+    haptic('heavy');
+  },
+  legendary: () => {
+    haptic('heavy');
+    haptic('heavy');
+    hapticSuccess();
+  },
+  error: () => hapticError(),
+  success: () => hapticSuccess(),
+};
+
+/** Fire a named haptic cue. Never throws, whatever the client supports. */
+export function hapticCue(cue: HapticCue): void {
+  CUES[cue]();
+}
+
 /** Invite/share helpers - all deep links are produced by the backend. */
 export function openTelegramLink(url: string): void {
   if (telegram?.openTelegramLink) {

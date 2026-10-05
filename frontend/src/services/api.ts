@@ -85,40 +85,59 @@ export const game = {
 
   claimDaily: () => apiRequest<DailyClaimResult>('/api/daily/claim', { method: 'POST' }),
 
-  collection: (params: {
-    page?: number;
-    pageSize?: number;
-    rarity?: string;
-    country?: string;
-    kind?: string;
-    search?: string;
-    sort?: string;
-    favoritesOnly?: boolean;
-    duplicatesOnly?: boolean;
-  }) =>
-    apiRequest<CollectionResponse>('/api/collection', {
-      query: {
-        page: params.page ?? 1,
-        page_size: params.pageSize ?? 30,
-        rarity: params.rarity,
-        country: params.country,
-        kind: params.kind,
-        sort: params.sort,
-        search: params.search,
-        favorites_only: params.favoritesOnly ?? false,
-        duplicates_only: params.duplicatesOnly ?? false,
-      },
-    }),
+collection: (params: {
+page?: number;
+pageSize?: number;
+rarity?: string;
+country?: string;
+kind?: string;
+search?: string;
+sort?: string;
+/** Filter by the region printed on the plate. */
+region?: string;
+/** Filter SIM cards by the operator brand printed on them. */
+provider?: string;
+favoritesOnly?: boolean;
+duplicatesOnly?: boolean;
+newOnly?: boolean;
+}) =>
+apiRequest<CollectionResponse>('/api/collection', {
+query: {
+page: params.page ?? 1,
+page_size: params.pageSize ?? 30,
+rarity: params.rarity,
+country: params.country,
+kind: params.kind,
+sort: params.sort,
+search: params.search,
+region: params.region,
+provider: params.provider,
+favorites_only: params.favoritesOnly ?? false,
+duplicates_only: params.duplicatesOnly ?? false,
+new_only: params.newOnly ?? false,
+},
+}),
 
-  /** Sell copies to the DEALER for NUMORA. */
-  sell: (plateId: number, copies = 1) =>
-    apiRequest<SaleResult>(`/api/plates/${plateId}/sell`, {
-      method: 'POST',
-      body: { copies },
-    }),
+/**
+ * Sell duplicate copies to the DEALER.
+ *
+ * `copies` must be a real duplicate count: the backend refuses anything above what the
+ * player actually holds, so this is never called with a fabricated `max(1, 0)`. The
+ * idempotency key makes a double tap, a retry or a flaky connection replay the first
+ * result instead of paying twice.
+ */
+sell: (plateId: number, copies = 1, key?: string) =>
+apiRequest<SaleResult>(`/api/plates/${plateId}/sell`, {
+method: 'POST',
+body: { copies },
+idempotencyKey: key ?? makeIdempotencyKey('sell'),
+}),
 
-  sellDuplicates: () =>
-    apiRequest<SellAllResult>('/api/collection/sell-duplicates', { method: 'POST' }),
+sellDuplicates: (key?: string) =>
+apiRequest<SellAllResult>('/api/collection/sell-duplicates', {
+method: 'POST',
+idempotencyKey: key ?? makeIdempotencyKey('sell-all'),
+}),
 
   favorite: (plateId: number) =>
     apiRequest<{ plate_id: number; is_favorite: boolean }>(`/api/plates/${plateId}/favorite`, {

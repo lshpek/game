@@ -1,79 +1,91 @@
-import clsx from 'clsx';
-import type { CollectibleKind, PlateCard } from '@/types';
-import { SimCardVisual, type PhysicalSize } from './SimCardVisual';
-import { VehiclePlateVisual } from './VehiclePlateVisual';
+import { formatCoins } from '../lib/format';
+import SimCardVisual from './SimCardVisual';
+import VehiclePlateVisual from './VehiclePlateVisual';
+import type { PlateCard } from '../types';
 
-export type CollectibleSize = PhysicalSize;
-
-interface CollectibleVisualProps {
-  collectible: PlateCard;
-  size?: CollectibleSize;
-  className?: string;
-  /** Rarity accent, supplied by the caller so object and reveal stay consistent. */
-  accent?: string;
-  /** Adds the entrance animation used by the roll reveal. */
-  reveal?: boolean;
-  /** Pauses the idle shimmer - used while the reveal is cycling previews. */
-  still?: boolean;
+/**
+ * The kind of a collectible, resolved from whatever the payload carries.
+ *
+ * `kind` is authoritative when present. `plate_type` is the fallback for payloads written
+ * before the SIM line existed: a legacy `PHONE` collectible is a *vehicle plate* here,
+ * because in NUMORA a number is never an object in its own right.
+ */
+export function resolveKind(collectible: Pick<PlateCard, 'kind' | 'plate_type'>): string {
+  if (collectible.kind) return collectible.kind;
+  return String(collectible.plate_type ?? '').toUpperCase() === 'SIM' ? 'SIM_CARD' : 'VEHICLE_PLATE';
 }
 
 /**
- * The hero object of the whole game.
+ * The physical collectible, at any size.
  *
- * One component draws every collectible kind, so NUMORA reads as a single game:
- * a vehicle plate is a physical metal object and a SIM is a physical plastic card.
- * The kind is decided by the server (``kind``); the client only decides how to draw
- * it. Adding a kind means adding a renderer here - the roll pipeline, ownership,
- * albums and the ledger need no change.
+ * One dispatcher for both kinds, so a plate and a SIM card are rendered identically
+ * wherever they appear - hero, list row, detail screen. Whatever a country looks like is
+ * the server recipe's job, never this file's.
  */
-export function resolveKind(collectible: PlateCard): CollectibleKind {
-  if (collectible.kind === 'SIM_CARD') return 'SIM_CARD';
-  if (collectible.kind === 'VEHICLE_PLATE') return 'VEHICLE_PLATE';
-  // Payloads cached before the SIM line have no `kind`; fall back to the type.
-  return collectible.plate_type === 'SIM' ? 'SIM_CARD' : 'VEHICLE_PLATE';
+
+interface Props {
+  card: PlateCard;
+  /** 1 = hero size, 0.6 = list thumbnail, 0.4 = dense grid. */
+  scale?: number;
+  showValue?: boolean;
+  className?: string;
+  animate?: boolean;
 }
 
-/** Compatibility alias for the previous dispatcher's name. */
-export const resolveCategory = resolveKind;
+export default function CollectibleVisual({
+  card,
+  scale = 0.6,
+  showValue = false,
+  className = '',
+  animate = false,
+}: Props) {
+  const regionName = card.region?.name_en ?? card.region?.name_ru ?? null;
 
-export function CollectibleVisual({
-  collectible,
-  size = 'md',
-  className,
-  accent = '#8b93a7',
-  reveal = false,
-  still = false,
-}: CollectibleVisualProps) {
-  const kind = resolveKind(collectible);
-  if (kind === 'SIM_CARD') {
-    return (
+  const object =
+    resolveKind(card) === 'SIM_CARD' ? (
       <SimCardVisual
-        collectible={collectible}
-        size={size}
-        className={className}
-        accent={accent}
-        reveal={reveal}
-        still={still}
+        details={card.details}
+        scale={scale}
+        className="mx-auto"
+        animate={animate}
+      />
+    ) : (
+      <VehiclePlateVisual
+        visual={card.visual}
+        plateText={card.plate_text}
+        displaySegments={card.display_segments}
+        displaySegmentGaps={card.display_segment_gaps}
+        displaySegmentKinds={card.display_segment_kinds}
+        regionName={regionName}
+        scale={scale}
+        className="mx-auto"
       />
     );
-  }
+
   return (
-    <VehiclePlateVisual
-      collectible={collectible}
-      size={size}
-      className={className}
-      accent={accent}
-      reveal={reveal}
-      still={still}
-    />
+    <div className={`flex flex-col items-center gap-1.5 ${className}`}>
+      {object}
+      {showValue && (
+        <span className="text-[11px] font-semibold text-white/70">
+          {card.currency_symbol}
+          {formatCoins(card.collector_value)}
+        </span>
+      )}
+    </div>
   );
 }
 
-/** Stable test hook shared by both renderers. */
-export function collectibleTestId(kind: CollectibleKind): string {
-  return clsx(kind === 'SIM_CARD' ? 'sim-card-visual' : 'vehicle-plate-visual');
+/** The SIM provider's own name, shown wherever a card needs its brand in prose. */
+export function SimProviderName({ card }: { card: PlateCard }) {
+  if (resolveKind(card) !== 'SIM_CARD' || !card.details) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        aria-hidden
+        className="inline-block h-2 w-2 rounded-full"
+        style={{ background: card.details.operator_accent }}
+      />
+      {card.details.operator}
+    </span>
+  );
 }
-
-export default CollectibleVisual;
-export { SimCardVisual, VehiclePlateVisual };
-export type { PhysicalSize };

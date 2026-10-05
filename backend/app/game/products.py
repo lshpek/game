@@ -50,6 +50,29 @@ PRODUCT_DEFINITIONS: tuple[ProductDefinition, ...] = (
         "Самое большое пополнение NUMORA.",
         2000, "COINS", {"amount": 100000}, category="NUMORA", sort_order=3,
     ),
+    # --- fixed roll bundles ---------------------------------------------
+    # Fully disclosed, fixed contents. These grant a flat number of rolls and nothing
+    # else: no guaranteed rarity, no altered odds, no hidden RNG. The rolls land in the
+    # bonus bank above the normal cap, so they are never consumed by passive
+    # regeneration and cannot be lost to it.
+    ProductDefinition(
+        "rolls_5", "5 Rolls", "5 прокруток",
+        "Exactly 5 extra rolls. Fixed contents, unchanged odds.",
+        "Ровно 5 дополнительных прокруток. Фиксированное содержимое, шансы прежние.",
+        60, "ROLLS", {"rolls": 5}, category="ROLLS", sort_order=5,
+    ),
+    ProductDefinition(
+        "rolls_15", "15 Rolls", "15 прокруток",
+        "Exactly 15 extra rolls. Fixed contents, unchanged odds.",
+        "Ровно 15 дополнительных прокруток. Фиксированное содержимое, шансы прежние.",
+        150, "ROLLS", {"rolls": 15}, category="ROLLS", sort_order=6,
+    ),
+    ProductDefinition(
+        "rolls_40", "40 Rolls", "40 прокруток",
+        "Exactly 40 extra rolls. Fixed contents, unchanged odds.",
+        "Ровно 40 дополнительных прокруток. Фиксированное содержимое, шансы прежние.",
+        350, "ROLLS", {"rolls": 40}, category="ROLLS", sort_order=7,
+    ),
     # --- PRO subscription
     ProductDefinition(
         "pro_30d", "NUMORA PRO - 30 days", "NUMORA PRO - 30 дней",
@@ -154,7 +177,14 @@ def product_by_code(code: str) -> ProductDefinition | None:
 #: catalogue and :meth:`PaymentService._grant` cannot drift apart. A product whose
 #: grant type is not listed here is a purchase the backend cannot fulfil, and
 #: ``tests/test_payments.py`` asserts the two sets are identical.
-GRANT_TYPES: tuple[str, ...] = ("COINS", "PREMIUM", "SUPPORTER", "COSMETIC", "SEASON_PASS")
+GRANT_TYPES: tuple[str, ...] = (
+    "COINS",
+    "ROLLS",
+    "PREMIUM",
+    "SUPPORTER",
+    "COSMETIC",
+    "SEASON_PASS",
+)
 
 
 def premium_tier_config(tier: str) -> dict[str, object]:

@@ -318,6 +318,44 @@ PRIORITY_ORDER: tuple[str, ...] = (
     "ZAF",
 )
 
+#: Countries whose layout family is right but whose *presentation* differs, so they get
+#: their own visual recipe instead of the family's generic one. Poland is the flagship
+#: example: its plates are EU long plates with a ``PL`` band, not the compact French
+#: shape the family would otherwise give it.
+COUNTRY_VISUAL_OVERRIDES: dict[str, str] = {
+    "POL": "pol",
+    "CZE": "eu_long",
+    "SVK": "eu_long",
+    "HUN": "eu_long",
+    "ROU": "eu_long",
+    "BGR": "eu_long",
+    "GRC": "eu_long",
+    "IRL": "britain",
+    "EST": "nordic",
+    "LVA": "nordic",
+    "LTU": "nordic",
+    "ISL": "nordic",
+    "ESP": "latam",
+    "PRT": "latam",
+    "NLD": "latam",
+    "BEL": "latam",
+    "CHE": "latam",
+    "AUT": "latam",
+    "TUR": "mideast",
+    "ISR": "mideast",
+    "SAU": "mideast",
+    "IND": "seasia",
+    "THA": "seasia",
+    "CHN": "seasia",
+    "KOR": "jp",
+}
+
+
+def visual_theme_for(code: str, family_visual: str) -> str:
+    """Visual recipe key for a country: its own override, else the family's."""
+    return COUNTRY_VISUAL_OVERRIDES.get(code, family_visual)
+
+
 #: ``code -> (family, weight, value_scale, rarity_modifier)`` for the playable
 #: countries that use a shared layout family.
 PLAYABLE_TUNING: dict[str, tuple[str, float, float, float]] = {
@@ -334,7 +372,6 @@ PLAYABLE_TUNING: dict[str, tuple[str, float, float, float]] = {
     "AUT": ("euro_compact", 2.6, 1.08, 1.0),
     "POL": ("euro_compact", 3.0, 0.92, 1.02),
     "CZE": ("euro_compact", 2.2, 0.95, 1.0),
-    "SKV": ("euro_compact", 2.0, 0.95, 1.0),
     "SVK": ("euro_compact", 2.0, 0.95, 1.0),
     "HUN": ("euro_compact", 2.0, 0.9, 1.0),
     "ROU": ("euro_compact", 2.0, 0.88, 1.0),
@@ -556,6 +593,9 @@ EXTRA_REGIONS: dict[str, tuple[RegionDef, ...]] = {
         RegionDef("MZ", "Mazovia", "Мазовия", 3.0),
         RegionDef("SL", "Silesia", "Силезия", 2.2),
         RegionDef("PM", "Pomerania", "Поморье", 1.8),
+        RegionDef("PMK", "Greater Poland", "Великая Польша", 1.8),
+        RegionDef("LB", "Lublin", "Люблин", 1.6),
+        RegionDef("OP", "Opole", "Ополе", 1.4),
     ),
     "UKR": (
         RegionDef("KV", "Kyiv", "Киев", 3.4),
@@ -835,6 +875,29 @@ CURATED: tuple[CountryDef, ...] = (
         ),
     ),
     CountryDef(
+        code="POL",
+        name_en="Poland",
+        name_ru="Польша",
+        flag="\U0001F1F5\U0001F1F1",
+        region_group="EUROPE",
+        currency_code="PLN",
+        currency_symbol="zł",
+        weight=3.0,
+        alphabet=LATIN,
+        value_scale=0.92,
+        rarity_modifier=1.02,
+        visual="pol",
+        sort_order=13,
+        playable=True,
+        regions=EXTRA_REGIONS["POL"],
+        templates=(
+            TemplateDef("pl_standard", "LL DDDDD", 6.0),
+            TemplateDef("pl_three_letters", "LLL DDDDD", 2.4),
+            TemplateDef("pl_moto", "LLL LL", 0.8, plate_type="MOTORCYCLE"),
+            TemplateDef("pl_diplomatic", "LL DDDD DD", 0.4, plate_type="DIPLOMATIC_STYLE", rarity_floor="RARE"),
+        ),
+    ),
+    CountryDef(
         code="ARM",
         name_en="Armenia",
         name_ru="Армения",
@@ -914,7 +977,7 @@ def _generic_country(iso: IsoCountry, sort_order: int) -> CountryDef:
         alphabet=LATIN,
         value_scale=1.0,
         rarity_modifier=1.0,
-        visual=PLATE_FAMILIES[family].visual,
+        visual=visual_theme_for(iso.alpha3, PLATE_FAMILIES[family].visual),
         sort_order=sort_order,
         iso_alpha2=iso.alpha2,
         calling_code=iso.calling_code,
@@ -940,7 +1003,7 @@ def _playable_country(iso: IsoCountry, sort_order: int) -> CountryDef:
         alphabet=LATIN,
         value_scale=value_scale,
         rarity_modifier=rarity_modifier,
-        visual=family.visual,
+        visual=visual_theme_for(iso.alpha3, family.visual),
         sort_order=sort_order,
         iso_alpha2=iso.alpha2,
         calling_code=iso.calling_code,
@@ -968,7 +1031,14 @@ def _with_iso_identity(country: CountryDef) -> CountryDef:
 def _build_catalogue() -> tuple[CountryDef, ...]:
     curated_by_code = {country.code: _with_iso_identity(country) for country in CURATED}
     order: list[str] = [code for code in ORIGINAL_ORDER if code in curated_by_code]
-    order += [code for code in PRIORITY_ORDER if code in PLAYABLE_TUNING and code not in curated_by_code]
+    # A country may be both curated (its own layouts and regions) and listed in the
+    # priority order (its position in the atlas), so the curated set is not filtered
+    # out here - it simply wins over the shared family when the row is built.
+    order += [
+        code
+        for code in PRIORITY_ORDER
+        if code in PLAYABLE_TUNING and code not in order
+    ]
 
     built: dict[str, CountryDef] = {}
     for index, code in enumerate(order, start=1):
@@ -1111,6 +1181,7 @@ __all__ = [
     "COUNTRIES",
     "COUNTRY_ALBUM_REWARD",
     "COUNTRY_BY_CODE",
+    "COUNTRY_VISUAL_OVERRIDES",
     "CYRILLIC",
     "DEFAULT_COUNTRY",
     "EVENTS",
@@ -1137,4 +1208,5 @@ __all__ = [
     "country_by_code",
     "is_playable",
     "playable_countries",
+    "visual_theme_for",
 ]

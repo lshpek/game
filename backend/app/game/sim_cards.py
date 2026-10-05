@@ -1,7 +1,7 @@
-"""Collectible SIM cards: fictional operators and synthetic printed numbers.
+"""Collectible SIM cards: real operator brands and synthetic printed numbers.
 
 A SIM card in NUMORA is a **physical collectible object** - a plastic card with a
-chip, a printed operator brand, a series and an edition. The phone number printed on
+contact module, a printed operator brand, a series and an edition. The number printed on
 it is *information on the card*, never an independent collectible and never a real
 subscriber line.
 
@@ -9,19 +9,25 @@ Safety contract
 ---------------
 Every number produced here is synthetic:
 
-* it is built from a documented **game block** (``GAME_PREFIX``) that is not an
-  assigned national prefix, so the result cannot collide with a live number;
-* the generator never resolves, validates or reverse-looks-up a number;
-* nothing is dialled, sent or published anywhere outside the game;
-* the number is tagged ``synthetic`` so no downstream consumer can mistake the card
-  for a subscriber identity.
+* it is built from a documented **game block** (``GAME_PREFIX``) and a per-country
+  stylised grouping, so it can never be resolved to a live subscriber line;
+* the generator never resolves, validates, reverse-looks-up or dialled anything;
+* nothing leaves the game;
+* the number is tagged ``synthetic`` and the card prints a synthetic marker, so no
+  downstream consumer can mistake it for a subscriber identity.
+
+Operator catalogue
+------------------
+Brands come from :mod:`app.game.providers`: real, current mobile operators for the
+curated countries and documented *game* brands elsewhere. A provider carries two game
+modifiers - rarity and value - which are game balance numbers, not claims about the
+operator's real tariffs, customers or market position.
 
 Format contract
 ---------------
-``FORMATS`` maps a country to the *grouping* used when printing its number. These are
-a stylised game representation inspired by how each country's numbers are usually
-grouped for humans. They are **not** a real numbering plan and make no regulatory
-claim; every card is explicitly fictional.
+``_FORMATS`` maps a country to the *grouping* used when printing its number. These are a
+stylised game representation inspired by how each country's numbers are usually grouped
+for humans. They are **not** a real numbering plan and make no regulatory claim.
 """
 
 from __future__ import annotations
@@ -30,12 +36,13 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.game.iso_countries import iso_country
+from app.game.providers import ProviderDef, providers_for
 
 #: Attached to every generated SIM collectible.
 SYNTHETIC_FLAG = "synthetic"
 
-#: Digits that are guaranteed not to be an assigned national prefix anywhere, used
-#: as the leading game block of every synthetic number.
+#: Digits guaranteed not to be an assigned national prefix anywhere, used as the leading
+#: game block of every synthetic number built for a country without a tuned format.
 GAME_PREFIX = "9"
 
 #: Marker written on the card so a printed number is never mistaken for a contact.
@@ -52,8 +59,8 @@ class SimEdition(StrEnum):
     CROWN = "CROWN"
 
 
-#: ``(edition, weight, rarity_floor)``. Heavier weights on the cheap editions so a
-#: CROWN card really is rare.
+#: ``(edition, weight, rarity_floor)``. Heavier weights on the cheap editions so a CROWN
+#: card really is rare.
 EDITIONS: tuple[tuple[str, float, str], ...] = (
     ("ORIGIN", 3.0, "COMMON"),
     ("SIGNAL", 2.0, "UNCOMMON"),
@@ -62,47 +69,9 @@ EDITIONS: tuple[tuple[str, float, str], ...] = (
     ("CROWN", 0.35, "LEGENDARY"),
 )
 
-#: Fictional operator brands. None of them is modelled on a real carrier; the names
-#: are invented so the collectible line cannot be mistaken for a real network.
-OPERATORS: tuple[tuple[str, str, str], ...] = (
-    ("numa", "NUMA", "НУМА"),
-    ("nova", "NOVA", "НОВА"),
-    ("orbit", "ORBIT", "ОРБИТ"),
-    ("volt", "VOLT", "ВОЛЬТ"),
-    ("pulse", "PULSE", "ПУЛЬС"),
-    ("axis", "AXIS", "ОСИ"),
-    ("ion", "ION", "ИОН"),
-    ("lumen", "LUMEN", "ЛЮМЕН"),
-    ("kite", "KITE", "КАЙТ"),
-)
-
-#: Countries that get a hand-picked operator line. Everything else is assigned
-#: deterministically from its ISO code, so a new country needs no configuration.
-_OPERATORS_BY_COUNTRY: dict[str, tuple[str, ...]] = {
-    "RUS": ("numa", "nova", "orbit"),
-    "USA": ("volt", "pulse", "axis"),
-    "GBR": ("ion", "nova"),
-    "DEU": ("volt", "ion"),
-    "JPN": ("orbit", "axis"),
-    "ARE": ("pulse", "numa"),
-    "FRA": ("axis", "ion"),
-    "ITA": ("nova", "volt"),
-    "KAZ": ("orbit", "numa"),
-    "CAN": ("pulse", "axis"),
-    "ARM": ("ion",),
-    "GEO": ("volt",),
-    "CHN": ("lumen", "kite"),
-    "KOR": ("orbit", "pulse"),
-    "IND": ("kite", "lumen"),
-    "AUS": ("nova", "axis"),
-    "NZL": ("ion", "orbit"),
-    "SGP": ("kite", "pulse"),
-    "BRA": ("volt", "nova"),
-    "MEX": ("axis", "pulse"),
-    "ZAF": ("lumen", "ion"),
-}
-
-_OPERATOR_BY_CODE = {code: (code, latin, local) for code, latin, local in OPERATORS}
+#: Documented editions, in order. Kept as a class of constants for callers that only
+#: need the codes.
+EDITION_CODES: tuple[str, ...] = tuple(edition for edition, _w, _f in EDITIONS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +96,7 @@ class SimFormat:
     def pattern(self) -> str:
         """Template-language pattern for the country's numbers.
 
-        The prefix and the calling code are written as plain literals: they survive
+        The prefix and the calling code are plain literals: they survive
         :func:`app.game.plate_templates.parse_template` verbatim, while the ``F`` token
         only ever emits a single digit.
         """
@@ -148,7 +117,7 @@ _FORMATS: dict[str, SimFormat] = {
     "CHL": SimFormat("+56", (("9", 1.0),), (1, 4, 4)),
     "COL": SimFormat("+57", (("300", 1.0), ("601", 1.0)), (3, 3, 4)),
     "GBR": SimFormat("+44", (("7700", 2.0), ("7800", 1.5)), (6, 6)),
-    "DEU": SimFormat("+49", (("151", 2.0), ("170", 1.0)), (8, 7, 2)),
+    "DEU": SimFormat("+49", (("151", 2.0), ("170", 1.0)), (4, 4), alt_groups=((8,),)),
     "FRA": SimFormat("+33", (("6", 1.0), ("7", 0.6)), (2, 2, 2, 2)),
     "ITA": SimFormat("+39", (("3", 1.0),), (3, 7)),
     "ESP": SimFormat("+34", (("6", 1.0),), (3, 3, 3)),
@@ -157,7 +126,7 @@ _FORMATS: dict[str, SimFormat] = {
     "BEL": SimFormat("+32", (("4", 1.0),), (9, 2)),
     "CHE": SimFormat("+41", (("79", 1.0),), (9, 2)),
     "AUT": SimFormat("+43", (("660", 1.0),), (7, 4)),
-    "POL": SimFormat("+48", (("512", 1.0),), (3, 3, 3)),
+    "POL": SimFormat("+48", (("512", 1.0), ("601", 1.0)), (3, 3, 3)),
     "CZE": SimFormat("+420", (("601", 1.0),), (3, 3, 3)),
     "SVK": SimFormat("+421", (("9", 1.0),), (3, 3, 2)),
     "HUN": SimFormat("+36", (("20", 1.0), ("30", 1.0)), (2, 3, 4)),
@@ -198,8 +167,8 @@ def _generic_format(country_code: str) -> SimFormat:
     """Documented synthetic format for a country without a tuned entry.
 
     The game block plus seven digits in two groups: plausible at a glance, impossible
-    to mistake for a real line, and identical in shape for every unconfigured country
-    so the line never claims a numbering plan it does not have.
+    to mistake for a real line, and identical in shape for every unconfigured country so
+    the line never claims a numbering plan it does not have.
     """
     iso = iso_country(country_code)
     calling = iso.calling_code if iso and iso.calling_code else "+999"
@@ -227,19 +196,35 @@ def sim_patterns(country_code: str) -> tuple[str, ...]:
     return tuple(seen)
 
 
-def operators_for(country_code: str) -> tuple[tuple[str, str, str], ...]:
-    """Fictional operator brands available in one country."""
-    code = str(country_code or "").strip().upper()
-    names = _OPERATORS_BY_COUNTRY.get(code)
-    if not names:
-        # Deterministic round-robin so two different countries never share an exact
-        # line by accident, and so adding a country needs no configuration.
-        start = sum(ord(ch) for ch in code) % len(OPERATORS)
-        count = 2 + (start % 2)
-        names = tuple(
-            OPERATORS[(start + offset) % len(OPERATORS)][0] for offset in range(count)
-        )
-    return tuple(_OPERATOR_BY_CODE[name] for name in names)
+def operators_for(country_code: str) -> tuple[ProviderDef, ...]:
+    """Operator brands a country may print on a collectible SIM card.
+
+    Real, current operators for curated countries; documented game brands otherwise.
+    """
+    return providers_for(country_code)
+
+
+def legacy_operator_label(code: str | None) -> str:
+    """Best-effort brand label for a provider code, including retired game brands.
+
+    Cards printed with the retired fictional operators must still render, so an unknown
+    code falls back to its upper-cased form rather than disappearing.
+    """
+    text = str(code or "").strip()
+    if not text:
+        return ""
+    for provider in operators_for("RUS"):
+        if provider.code == text.lower():
+            return provider.brand
+    from app.game.providers import PROVIDERS, provider_by_code
+
+    found = provider_by_code(text)
+    if found is not None:
+        return found.brand
+    for provider in PROVIDERS:
+        if provider.code == text.lower():
+            return provider.brand
+    return text.upper()
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +238,13 @@ class SimCardDetails:
     edition: str
     synthetic_number: str
     calling_code: str
+    #: Whether the brand is a real operator. Game-only brands are marked so the UI can
+    #: be honest about them.
+    operator_is_real: bool = True
+    operator_visual: str = "neutral"
+    operator_accent: str = "#c9a227"
+    rarity_modifier: float = 1.0
+    value_modifier: float = 1.0
     tags: tuple[str, ...] = field(default=("sim", SYNTHETIC_FLAG))
 
 
@@ -273,17 +265,39 @@ def card_details(
     operator_code: str,
     edition: str,
     number: str,
+    rarity_modifier: float = 1.0,
+    value_modifier: float = 1.0,
 ) -> SimCardDetails:
     """Assemble the stored payload for one generated SIM card."""
-    operator = _OPERATOR_BY_CODE.get(operator_code) or OPERATORS[0]
+    provider = next(
+        (item for item in operators_for(country_code) if item.code == operator_code),
+        None,
+    )
+    if provider is None:
+        # Unknown/retired brand: keep the card printable rather than losing it.
+        brand = legacy_operator_label(operator_code) or "NUMORA"
+        provider = ProviderDef(
+            code=operator_code or "unknown",
+            country=country_code,
+            brand=brand,
+            local_name=brand,
+            rarity_modifier=rarity_modifier,
+            value_modifier=value_modifier,
+            real_brand=False,
+        )
     return SimCardDetails(
-        operator_code=operator[0],
-        operator=operator[1],
-        operator_local=operator[2],
+        operator_code=provider.code,
+        operator=provider.brand,
+        operator_local=provider.local_name,
         series=series_for(number),
         edition=edition,
         synthetic_number=number,
         calling_code=sim_format(country_code).calling_code,
+        operator_is_real=provider.real_brand,
+        operator_visual=provider.visual,
+        operator_accent=provider.accent,
+        rarity_modifier=float(provider.rarity_modifier),
+        value_modifier=float(provider.value_modifier),
     )
 
 
@@ -293,25 +307,32 @@ def details_to_dict(details: SimCardDetails) -> dict[str, object]:
         "operator_code": details.operator_code,
         "operator": details.operator,
         "operator_local": details.operator_local,
+        "operator_is_real": details.operator_is_real,
+        "operator_visual": details.operator_visual,
+        "operator_accent": details.operator_accent,
         "series": details.series,
         "edition": details.edition,
         "synthetic_number": details.synthetic_number,
         "calling_code": details.calling_code,
-        "synthetic": True,
+        # Game balance numbers carried with the card so the value stays explainable.
+        "rarity_modifier": details.rarity_modifier,
+        "value_modifier": details.value_modifier,
+        SYNTHETIC_FLAG: True,
     }
 
 
 __all__ = [
     "EDITIONS",
+    "EDITION_CODES",
     "GAME_PREFIX",
     "GAME_TAG",
-    "OPERATORS",
     "SYNTHETIC_FLAG",
     "SimCardDetails",
     "SimEdition",
     "SimFormat",
     "card_details",
     "details_to_dict",
+    "legacy_operator_label",
     "operators_for",
     "series_for",
     "sim_format",

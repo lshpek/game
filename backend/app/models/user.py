@@ -89,9 +89,14 @@ class User(Base, TimestampMixin):
     pity_legendary_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Daily roll allowance (server authority; never trusts client time).
+    # ``daily_rolls_used`` counts only rolls drawn from the normal bank, so the
+    # regenerating bank and the separately-banked ``bonus_rolls`` never interfere.
     daily_rolls_used: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     daily_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     bonus_rolls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: When the next passive regenerating roll becomes available. ``None`` means the
+    #: normal bank is full, so regeneration is idle.
+    roll_regen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     wallet: Mapped["Wallet"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     numbers: Mapped[list["UserNumber"]] = relationship(back_populates="user", cascade="all, delete-orphan")

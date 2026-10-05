@@ -141,6 +141,14 @@ class AlbumService:
         }
 
     # --- public API -----------------------------------------------------
+    def collected_count(self, user_id: int, album: Album) -> int:
+        """How many qualifying collectibles the player holds for this album."""
+        return self._collected_for(user_id, album)
+
+    def total_count(self, album: Album) -> int:
+        """How many collectibles the album can ever contain."""
+        return self._total_for(album)
+
     def progress_for_user(self, user: User) -> list[dict[str, object]]:
         """Album board for the collection screen."""
         items: list[dict[str, object]] = []

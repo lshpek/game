@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+
 import { CountrySelector } from '@/components/CountrySelector';
 import { EmptyState, LoadingSpinner } from '@/components/States';
 import { useI18n, type I18nValue } from '@/i18n';
+import { SPRING, useReducedMotion } from '@/lib/motion';
 import { useRouteBackButton } from '@/lib/useRouteBackButton';
 import { useNavigate } from 'react-router-dom';
 import { countries as countriesApi, game } from '@/services/api';
@@ -14,15 +16,18 @@ import type { CountrySummary } from '@/types';
 const PAGE_SIZE = 60;
 
 /**
- * The world screen: country completion across the whole planet.
+ * The world: a collector's atlas, not a table of countries.
  *
- * The design goal is a reason to come back, so every card answers the same three
- * questions: how close am I, what is left, and what am I missing. A country that is
- * 91% complete with three items left reads as a nearly finished job; a bare "12/120"
- * does not.
+ * Each entry answers the questions a collector actually has about a country - how far in
+ * I am, how many formats exist, what my best find there is, how many regions I have
+ * touched, whether I can hunt it yet, and whether an event is boosting it right now.
  *
- * The atlas pages: the ISO list is ~250 entries, so shipping them all in one payload
- * and one DOM would cost more than the screen can afford on a phone.
+ * The call to action is phrased as an intention, not a filter: **HUNT THIS COUNTRY**.
+ * The player should read the screen as "I'm going to hunt Japan", not "I am setting a
+ * filter to JPN".
+ *
+ * The atlas pages. The ISO list is ~250 entries, so shipping them all in one payload and
+ * one DOM would cost more than the screen can afford on a phone.
  */
 export function WorldPage() {
   useRouteBackButton();
@@ -43,7 +48,7 @@ export function WorldPage() {
     staleTime: 60_000,
   });
 
-  // Every country for the selector, cached once for the whole session.
+  // One payload for the selector, cached for the whole session.
   const selectorQuery = useQuery({
     queryKey: ['countries', 'selector'],
     queryFn: () => countriesApi.list({ limit: 250 }),
@@ -61,15 +66,16 @@ export function WorldPage() {
 
   const overall = Number(query.data?.progress ?? 0);
   const totalPages = Math.max(1, Math.ceil((query.data?.countries_total ?? 0) / PAGE_SIZE));
+  const eventMultipliers = query.data?.event?.country_multipliers ?? {};
 
-  const select = async (code: string | null) => {
+  const hunt = async (code: string | null) => {
     if (code === null) return;
     try {
       const data = await countriesApi.setActive(code);
       applyCountry(data);
       navigate('/');
     } catch {
-      // The backend refused; nothing changes and the player stays where they are.
+      // The backend refused: nothing changes and the player stays where they are.
       void activeQuery.refetch();
     }
   };
@@ -93,7 +99,7 @@ export function WorldPage() {
       {selectorCountries.length ? (
         <CountrySelector
           value={activeQuery.data?.code ?? null}
-          onChange={(code) => void select(code)}
+          onChange={(code) => void hunt(code)}
           countries={selectorCountries}
           loading={activeQuery.isFetching}
         />
@@ -117,8 +123,9 @@ export function WorldPage() {
               key={country.code}
               country={country}
               name={lang === 'ru' ? country.name_ru : country.name_en}
+              eventMultiplier={eventMultipliers[country.code]}
               t={t}
-              onSelect={() => void select(country.code)}
+              onHunt={() => void hunt(country.code)}
             />
           ))}
         </ul>
@@ -154,17 +161,21 @@ export function WorldPage() {
 function CountryCard({
   country,
   name,
+  eventMultiplier,
   t,
-  onSelect,
+  onHunt,
 }: {
   country: CountrySummary;
   name: string;
+  eventMultiplier: number | undefined;
   t: I18nValue['t'];
-  onSelect: () => void;
+  onHunt: () => void;
 }) {
+  const reduced = useReducedMotion();
   const locked = !country.is_playable;
   const percent = country.total ? Math.round((country.collected / country.total) * 100) : 0;
   const left = Math.max(0, country.total - country.collected);
+  const boosted = Boolean(eventMultiplier && eventMultiplier > 1);
 
   // Completion hooks, strongest first. These are what pull the player back.
   const hook = (() => {
@@ -178,45 +189,65 @@ function CountryCard({
   return (
     <motion.li
       className={clsx(
-        'relative overflow-hidden rounded-2xl border bg-white/[0.03] p-4',
+        'relative flex flex-col gap-3 overflow-hidden rounded-2xl border bg-white/[0.03] p-4',
         locked ? 'border-white/5 opacity-60' : 'border-white/8',
+        boosted && !locked && 'border-amber-300/30',
       )}
-      whileTap={locked ? undefined : { scale: 0.98 }}
+      whileTap={locked || reduced ? undefined : { scale: 0.985 }}
       data-testid={`world-country-${country.code}`}
       data-locked={locked}
     >
-      <div className="flex items-center gap-3">
-        <span className="text-2xl" aria-hidden>
+      <div className="flex items-start gap-3">
+        <span className="text-3xl leading-none" aria-hidden>
           {country.flag}
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold uppercase tracking-[0.12em] text-white">{name}</p>
           <p className="text-[11px] text-white/40">
-            {locked ? `${country.code} · ${t('world.comingSoon')}` : `${country.collected} / ${country.total} · ${percent}%`}
+            {locked
+              ? `${country.code} · ${t('world.comingSoon')}`
+              : `${country.collected} / ${country.total} · ${percent}%`}
           </p>
+          {/* How many formats exist here, and how many regions I have reached. */}
+          {!locked && (
+            <p className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-white/30">
+              {t('world.formats', { count: country.total })} ·{' '}
+              {t('world.regions', {
+                found: country.regions_collected,
+                total: country.regions_total,
+              })}
+            </p>
+          )}
         </div>
-        {locked ? (
-          <span className="shrink-0 rounded-md border border-amber-300/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-amber-200/70">
-            {t('country.locked')}
-          </span>
-        ) : country.best_rarity ? (
-          <span className="shrink-0 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60">
-            {country.best_rarity}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {boosted && (
+            <span className="rounded-md border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-200">
+              ×{eventMultiplier?.toFixed(1)}
+            </span>
+          )}
+          {locked ? (
+            <span className="rounded-md border border-amber-300/25 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-amber-200/70">
+              {t('country.locked')}
+            </span>
+          ) : country.best_rarity ? (
+            <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60">
+              {country.best_rarity}
+            </span>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
         <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-white/40 to-white/80"
-          initial={{ width: 0 }}
+          className="h-full rounded-full bg-gradient-to-r from-accent to-fuchsia-500"
+          initial={reduced ? false : { width: 0 }}
           animate={{ width: `${Math.max(percent, 2)}%` }}
-          transition={{ type: 'spring', stiffness: 120, damping: 22 }}
+          transition={SPRING.settle}
           style={{ width: `${Math.max(percent, 2)}%` }}
         />
       </div>
 
-      <div className="mt-2 flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span
           className={clsx(
             'text-[10px] font-bold uppercase tracking-[0.18em]',
@@ -229,15 +260,15 @@ function CountryCard({
         >
           {hook?.text ?? `${percent}%`}
         </span>
-        {!locked ? (
+        {!locked && (
           <button
             type="button"
-            onClick={onSelect}
-            className="min-h-[32px] rounded-full border border-white/12 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/70 active:scale-95"
+            onClick={onHunt}
+            className="min-h-[34px] rounded-full border border-white/12 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/80 transition active:scale-95"
           >
-            {t('world.selectCountry')}
+            {t('world.huntThisCountry')}
           </button>
-        ) : null}
+        )}
       </div>
     </motion.li>
   );

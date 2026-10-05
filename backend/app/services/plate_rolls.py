@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, settings
 from app.core.locks import user_lock
 from app.core.timeutils import utcnow
-from app.game.collectibles import CollectibleCategory
+from app.game.collectibles import CollectibleCategory, CollectibleKind, kind_for_plate_type
 from app.game.plate_generator import PlateGenerator
 from app.game.plate_rarity import RARITY_RANK, Rarity, pity_weights, rarity_rank
 from app.game.plate_valuation import duplicate_sale_value
@@ -44,6 +44,7 @@ from app.services.catalog import snapshot
 from app.services.daily import DailyService
 from app.services.economy import EconomyService
 from app.services.events import EventService
+from app.services.goals import GoalService
 from app.services.missions import MissionService
 from app.services.plates import PlateService
 from app.services.premium import PremiumService
@@ -87,6 +88,12 @@ class PlateRollOutcome:
     replayed: bool = False
     event: dict[str, object] | None = None
     share_start_param: str = ""
+    #: The authoritative roll balance after this roll: normal bank, bonus bank and the
+    #: countdown to the next passive roll. The client renders the roll button from this
+    #: and never keeps its own economy.
+    rolls: dict[str, object] = field(default_factory=dict)
+    #: The single next objective, machine-readable.
+    next_target: dict[str, object] = field(default_factory=dict)
 
 
 class PlateRollService:
@@ -111,6 +118,7 @@ class PlateRollService:
         self.missions = MissionService(db, self.economy)
         self.albums = AlbumService(db, self.economy)
         self.events = EventService(db)
+        self.goals = GoalService(db)
 
     # --- helpers --------------------------------------------------------
     def _existing_roll(self, user_id: int, idempotency_key: str | None) -> PlateRoll | None:
@@ -182,9 +190,11 @@ class PlateRollService:
         achievements: list[dict[str, object]] | None = None,
         event: dict[str, object] | None = None,
         replayed: bool = False,
+        category: CollectibleCategory | None = None,
     ) -> PlateRollOutcome:
         plate = self.plates.require_plate(roll.plate_id)
         user_plate = self.plates.get_user_plate(user.id, plate.id)
+        state = self.daily.sync(user)
         return PlateRollOutcome(
             roll=roll,
             plate=plate,
@@ -195,7 +205,7 @@ class PlateRollService:
             is_new_region=bool(getattr(grants, "is_new_region", False)),
             numora_awarded=numora_awarded,
             balance=self.economy.balance(user.id),
-            rolls_remaining=self.daily.rolls_remaining(user),
+            rolls_remaining=state.rolls_remaining,
             sale_value=duplicate_sale_value(int(plate.dealer_value)),
             collector_level=int(user.collector_level),
             missions_completed=missions or [],
@@ -204,6 +214,10 @@ class PlateRollService:
             replayed=replayed,
             event=event,
             share_start_param=f"plate_{plate.id}",
+            rolls=state.to_dict(),
+            next_target=self.goals.next_target(
+                user, country_code=plate.country_code, category=category
+            ),
         )
 
     def perform_roll(
@@ -226,10 +240,14 @@ class PlateRollService:
         with user_lock(user.id):
             existing = self._existing_roll(user.id, idempotency_key)
             if existing is not None:
-                return self._build_outcome(user, existing, replayed=True)
+                return self._build_outcome(
+                    user, existing, replayed=True, category=category
+                )
 
             if not bypass_allowance:
-                self.daily.ensure_reset(user)
+                # Settle the day rollover and every roll that has regenerated before
+                # spending one, so a roll can never be refused on a stale balance.
+                self.daily.sync(user)
                 self.daily.consume_roll(user)
 
             now = utcnow()
@@ -305,7 +323,7 @@ class PlateRollService:
             albums_done = self.albums.evaluate(user)
             unlocked = self.achievements.evaluate(user)
 
-            self._track_events(user, plate, roll, is_first, rank)
+            self._track_events(user, plate, roll, is_first, rank, grant=grant, albums=albums_done)
 
             self.db.commit()
             self.db.refresh(roll)
@@ -320,6 +338,7 @@ class PlateRollService:
                 albums=albums_done,
                 achievements=summarize(unlocked),
                 event=event.to_dict(),
+                category=category,
             )
 
     def _update_user(self, user: User, plate: Plate, rank: int, now) -> None:
@@ -358,8 +377,16 @@ class PlateRollService:
         roll: PlateRoll,
         is_first: bool,
         rank: int,
+        *,
+        grant=None,
+        albums: list[dict[str, object]] | None = None,
     ) -> None:
-        """Analytics for one roll. No secrets, no PII beyond internal ids."""
+        """Analytics for one roll. No secrets, no PII beyond internal ids.
+
+        The roll *ordinal* is the metric that matters: raw app opens say nothing, while
+        "did they roll a second, third, fifth or tenth time" measures whether the core
+        loop actually held.
+        """
         props = {
             "plate_id": plate.id,
             "country": plate.country_code,
@@ -367,31 +394,57 @@ class PlateRollService:
             "rarity": plate.rarity,
             "score": int(plate.rarity_score),
             "template": plate.template.code if plate.template else "",
+            "kind": kind_for_plate_type(plate.plate_type).value,
             "collector_value": int(plate.collector_value),
             "dealer_value": int(plate.dealer_value),
             "duplicate": bool(roll.is_duplicate),
+            "ordinal": int(user.total_rolls),
         }
 
-        def _track(name) -> None:
+        def _track(name, extra: dict[str, object] | None = None) -> None:
+            payload = dict(props)
+            if extra:
+                payload.update(extra)
             self.analytics.track(
                 name.value if hasattr(name, "value") else str(name),
                 user_id=user.id,
                 telegram_id=user.telegram_id,
-                props=props,
+                props=payload,
             )
 
         _track(AnalyticsEventName.ROLL_COMPLETED)
+        # The repeat metric: the first ten rolls of a player's life, then every tenth.
+        ordinal = int(user.total_rolls)
+        if ordinal <= 10 or ordinal % 10 == 0:
+            _track(AnalyticsEventName.ROLL_ORDINAL, {"milestone": ordinal <= 10})
+
         if is_first:
             _track(AnalyticsEventName.FIRST_DISCOVERY)
         if rank >= RARE_RANK:
             _track(AnalyticsEventName.RARE_FOUND)
+        if rank >= rarity_rank(Rarity.LEGENDARY.value):
+            _track(AnalyticsEventName.LEGENDARY_FOUND)
+        if rank >= rarity_rank(Rarity.MYTHIC.value):
+            _track(AnalyticsEventName.MYTHIC_FOUND)
+        if plate.is_secret:
+            _track(AnalyticsEventName.SECRET_FOUND)
+        if getattr(grant, "is_new_country", False):
+            _track(AnalyticsEventName.NEW_COUNTRY)
+        if getattr(grant, "is_new_region", False):
+            _track(AnalyticsEventName.NEW_REGION)
+        if kind_for_plate_type(plate.plate_type) is CollectibleKind.SIM_CARD:
+            code = str((plate.details or {}).get("operator_code") or "")
+            if code and getattr(grant, "is_new_plate", False):
+                _track(AnalyticsEventName.OPERATOR_DISCOVERED, {"operator": code})
+        for album in albums or []:
+            _track(AnalyticsEventName.SET_COMPLETED, {"album": album.get("code", "")})
         _track(
             AnalyticsEventName.PLATE_DUPLICATE
             if roll.is_duplicate
             else AnalyticsEventName.PLATE_COLLECTED
         )
 
-        if int(user.total_rolls) == 1:
+        if ordinal == 1:
             self.analytics.track(
                 AnalyticsEventName.FIRST_ROLL.value,
                 user_id=user.id,

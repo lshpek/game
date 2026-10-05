@@ -330,4 +330,5 @@ class TestCountrySeed:
         assert rows
         for row in rows:
             assert row.sim_config.get("synthetic") is True
-            assert row.sim_config.get("operators")
+            # The provider line, not a list of invented brands.
+            assert row.sim_config.get("providers")

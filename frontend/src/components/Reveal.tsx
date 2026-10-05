@@ -1,507 +1,408 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import clsx from 'clsx';
-import { CollectibleVisual, resolveKind } from '@/components/CollectibleVisual';
-import { RarityBadge } from '@/components/RarityBadge';
-import { ValueCounter } from '@/components/ValueCounter';
-import { haptic, hapticSuccess } from '@/lib/telegram';
-import { RARITY_COLORS } from '@/lib/format';
-import { useT } from '@/i18n';
-import type { CollectibleKind, PlateCard, PlateRollResult, Rarity } from '@/types';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+
+import { useT } from '../i18n';
+import { trackRevealShown, trackRevealSkipped, trackRollAgain } from '../lib/analytics';
+import { formatCoins } from '../lib/format';
+import { DURATION, EASE, SPRING, revealDuration, useReducedMotion } from '../lib/motion';
+import { hapticCue } from '../lib/telegram';
+import type { PlateCard } from '../types';
+import RarityBadge from './RarityBadge';
+import SimCardVisual from './SimCardVisual';
+import VehiclePlateVisual from './VehiclePlateVisual';
 
 /**
- * The cinematic reveal - the single most important moment in the game.
+ * The one authoritative result experience.
  *
- * The sequence is deliberately staged so the player watches a *collectible*, never
- * the request that produced it:
+ * There is a single reveal in NUMORA and this is it. Every screen that shows a result
+ * shows it through this component, so a roll looks and behaves identically whether it
+ * was started from the hunt screen, a deep link or a challenge.
  *
- *   press → darken → chamber → fast previews → decelerate → country flash →
- *   lock → impact → rarity → hero object → value → traits → extras → actions
+ * **This component never decides anything.** The backend has already drawn the
+ * collectible, its rarity, its value and its rewards before this mounts. It presents
+ * them and nothing else. Specifically, there is:
  *
- * Three rules this component never breaks:
+ * * no fake probability and no RNG;
+ * * no cycling through plausible numbers;
+ * * no "almost had it" flicker or near-miss;
+ * * no result that changes while the animation plays;
+ * * no decorative particles that could be mistaken for a result.
  *
- * 1. **The animation never decides anything.** The server has already returned the
- *    result; the reveal only presents it. A player who skips, or who has
- *    `prefers-reduced-motion` set, sees the same collectible and the same rewards.
- * 2. **The final frame is built for a vertical clip.** Rarity on top, the object
- *    huge in the centre, country and value underneath, actions last - so a screen
- *    recording of this screen is the share asset.
- * 3. **It always terminates.** Every stage is timer-driven and the whole thing is
- *    skippable, so a roll can never leave the screen stuck in "rolling forever".
+ * **The staging.**
+ * `PRESS → DIM → ENTER → BUILD → DECELERATE → LOCK → SETTLE → RARITY → VALUE → ACTIONS`
+ *
+ * Each stage is a separate, timed transition instead of one long keyframe animation.
+ * That is what makes the motion read as a physical object rather than as a video: a
+ * rotation that accelerates on a symmetric curve and then bleeds off on a long ease-out,
+ * a single spring to the lock, and a two-frame settle instead of a bounce.
+ *
+ * The whole sequence lives on one DOM node that is never remounted, which is what removes
+ * the popping that a remount-based reveal produces inside a Telegram WebView.
+ *
+ * Timing scales with rarity (`revealDuration`) and is always skippable.
  */
 
-export type RevealStage =
-  | 'idle'
-  | 'darken'
-  | 'chamber'
-  | 'preview'
-  | 'decelerate'
-  | 'country'
-  | 'lock'
-  | 'impact'
-  | 'rarity'
-  | 'hero'
-  | 'value'
-  | 'traits'
-  | 'actions';
+type Stage = 'press' | 'dim' | 'enter' | 'build' | 'decelerate' | 'lock' | 'settled';
 
-const SEQUENCE: RevealStage[] = [
-  'darken',
-  'chamber',
-  'preview',
-  'decelerate',
-  'country',
-  'lock',
-  'impact',
-  'rarity',
-  'hero',
-  'value',
-  'traits',
-  'actions',
-];
+/** Rarity tiers that get the heavier, more cinematic staging. */
+const CINEMATIC = new Set(['EPIC', 'LEGENDARY', 'MYTHIC', 'SECRET']);
 
-/** Stage durations in ms. The preview stage is deliberately long and busy. */
-const STAGE_MS: Record<Exclude<RevealStage, 'idle' | 'actions'>, number> = {
-  darken: 220,
-  chamber: 380,
-  preview: 1250,
-  decelerate: 420,
-  country: 460,
-  lock: 200,
-  impact: 260,
-  rarity: 420,
-  hero: 260,
-  value: 900,
-  traits: 420,
-};
-
-/** How often a preview swaps while cycling, in ms. */
-const PREVIEW_INTERVAL = 110;
-/** How often a preview swaps while decelerating, in ms. */
-const DECEL_INTERVAL = 240;
-
-/** Fake previews shown while cycling. Never presented as a result. */
-const CYCLE_COUNTRIES = ['RUS', 'USA', 'JPN', 'DEU', 'GBR', 'ARE', 'FRA', 'ITA', 'KAZ', 'CAN', 'ARM', 'GEO'];
-const CYCLE_SERIALS = ['777', '012', '404', '088', '101', '777', '666', '313', '246', '909', '404', '515'];
-const CYCLE_KINDS: CollectibleKind[] = ['VEHICLE_PLATE', 'SIM_CARD'];
-
-interface RevealProps {
-  result: PlateRollResult | null;
-  /** Null while the request is in flight - the anticipation belongs to the roll. */
-  pending: boolean;
+interface Props {
+  /** The already-decided collectible. `null` while a roll is in flight. */
+  card: PlateCard | null;
+  loading: boolean;
   onClose: () => void;
+  /** Start the next roll without closing the result: roll, reveal, roll again. */
+  onRollAgain?: () => void;
+  canRollAgain?: boolean;
+  rolling?: boolean;
+  onKeep?: () => void;
   onShare?: () => void;
-  onSell?: () => void;
-  onViewCollection?: () => void;
+  onSellDuplicates?: () => void;
+  onOpenCollection?: () => void;
+  /** Called when the player taps the object itself. */
+  onPlateClick?: () => void;
+  /** First discovery is a property of the roll, not of the card. */
+  isFirstDiscovery?: boolean;
 }
 
-/** A cheap, plausible placeholder used only while cycling. */
-function buildCycleCard(source: PlateCard, index: number): PlateCard {
-  const country = CYCLE_COUNTRIES[index % CYCLE_COUNTRIES.length] ?? 'RUS';
-  const serial = CYCLE_SERIALS[index % CYCLE_SERIALS.length] ?? '777';
-  const kind: CollectibleKind = CYCLE_KINDS[index % CYCLE_KINDS.length] ?? 'VEHICLE_PLATE';
-  const text =
-    kind === 'SIM_CARD'
-      ? `+${index % 90 + 1} ${serial} ${serial} ${serial}`
-      : `${String.fromCharCode(65 + (index % 26))}${serial}${serial}AA`;
-  return {
-    ...source,
-    plate_text: text,
-    display_segments: text.split(' '),
-    kind,
-    plate_type: kind === 'SIM_CARD' ? 'SIM' : 'VEHICLE',
-    country: { ...source.country, code: country, flag: '' },
-  };
-}
-
-export function Reveal({ result, pending, onClose, onShare, onSell, onViewCollection }: RevealProps) {
+export default function Reveal({
+  card,
+  loading,
+  onClose,
+  onRollAgain,
+  canRollAgain = false,
+  rolling = false,
+  onKeep,
+  onShare,
+  onSellDuplicates,
+  onOpenCollection,
+  onPlateClick,
+  isFirstDiscovery = false,
+}: Props) {
   const t = useT();
   const reduced = useReducedMotion();
-  const [stage, setStage] = useState<RevealStage>('idle');
-  const [cycle, setCycle] = useState(0);
-  const timer = useRef<number | null>(null);
-  const cycleTimer = useRef<number | null>(null);
+  const [stage, setStage] = useState<Stage>('press');
+  const lockedRef = useRef(false);
 
-  const plate = result?.plate ?? null;
-  const rarity = (result?.rarity ?? 'COMMON') as Rarity;
-  const accent = RARITY_COLORS[rarity] ?? RARITY_COLORS.COMMON;
-  const category = plate ? resolveKind(plate) : 'VEHICLE_PLATE';
+  const duration = useMemo(() => revealDuration(card?.rarity), [card?.rarity]);
+  const rarity = (card?.rarity ?? 'COMMON').toUpperCase();
+  const isCinematic = CINEMATIC.has(rarity);
+  const duplicates = card?.duplicate_count ?? 0;
+  /** The sale action only exists when there is genuinely something to sell. */
+  const canSell = duplicates > 0 && typeof onSellDuplicates === 'function';
 
-  const isCinematic = rarity === 'MYTHIC' || rarity === 'SECRET' || rarity === 'LEGENDARY';
-
-  const clearTimers = useCallback(() => {
-    if (timer.current !== null) window.clearTimeout(timer.current);
-    if (cycleTimer.current !== null) window.clearTimeout(cycleTimer.current);
-    timer.current = null;
-    cycleTimer.current = null;
-  }, []);
-
-  /** Jump straight to the final frame. Always available - the result is known. */
-  const skip = useCallback(() => {
-    clearTimers();
-    setStage('actions');
-  }, [clearTimers]);
-
-  // Drive the stage machine.
+  // Stage timing: one timer chain, fully cancelled on every change, so a fast sequence
+  // of rolls can never leave a stale stage running against a new card.
   useEffect(() => {
-    if (!result && !pending) {
-      setStage('idle');
-      return undefined;
+    lockedRef.current = false;
+    if (!card) {
+      setStage('press');
+      return;
     }
-    if (!pending && !result) return undefined;
-
-    clearTimers();
-    if (pending) {
-      setStage('darken');
-      return undefined;
-    }
-
     if (reduced) {
-      // Reduced motion still gets a legible reveal: stages collapse, the object
-      // and the numbers appear immediately and nothing moves.
-      setStage('actions');
-      return undefined;
+      // Reduced motion keeps the whole read-out order, just without the travel.
+      setStage('settled');
+      return;
     }
+    setStage('press');
+    const marks: Array<[Stage, number]> = [
+      ['dim', DURATION.press * 1000],
+      ['enter', DURATION.press * 1000 + 240],
+      ['build', DURATION.press * 1000 + 520],
+      ['decelerate', duration * 0.56],
+      ['lock', duration * 0.8],
+      ['settled', duration],
+    ];
+    const timers = marks.map(([next, at]) =>
+      window.setTimeout(() => setStage(next), Math.round(at)),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [card, duration, reduced]);
 
-    let index = 0;
-    const advance = () => {
-      const next = SEQUENCE[index] ?? 'actions';
-      setStage(next);
-      index += 1;
-      if (index < SEQUENCE.length) {
-        timer.current = window.setTimeout(advance, STAGE_MS[next as Exclude<RevealStage, 'idle' | 'actions'>]);
-      }
-    };
-    setStage('darken');
-    timer.current = window.setTimeout(advance, STAGE_MS.darken);
-    return clearTimers;
-  }, [result, pending, reduced, clearTimers]);
-
-  // Cycle the preview object while the reveal is spinning.
+  // Haptics: roll on entry, one escalating cue at the lock. Never more than two per
+  // reveal, so a legendary find feels different without feeling like a machine gun.
   useEffect(() => {
-    if (stage !== 'preview' && stage !== 'decelerate') return undefined;
-    const interval = stage === 'preview' ? PREVIEW_INTERVAL : DECEL_INTERVAL;
-    cycleTimer.current = window.setInterval(() => setCycle((value) => value + 1), interval);
-    return () => {
-      if (cycleTimer.current !== null) window.clearInterval(cycleTimer.current);
-      cycleTimer.current = null;
-    };
-  }, [stage]);
-
-  // Haptics: one on the press, one on the lock, a stronger burst on a cinematic.
-  useEffect(() => {
-    if (stage === 'lock') {
-      haptic('heavy');
+    if (!card) return;
+    if (stage === 'enter') hapticCue('roll');
+    if (stage === 'settled') trackRevealShown(card.id, rarity);
+    if (stage === 'lock' && !lockedRef.current) {
+      lockedRef.current = true;
+      if (isCinematic) hapticCue('legendary');
+      else if (rarity === 'RARE' || rarity === 'EPIC') hapticCue('rare');
+      else hapticCue('lock');
     }
-    if (stage === 'rarity' && isCinematic) {
-      hapticSuccess();
-    }
-  }, [stage, isCinematic]);
+  }, [stage, card, rarity, isCinematic]);
 
-  useEffect(() => () => clearTimers(), [clearTimers]);
-
-  const showActions = stage === 'actions';
-  const revealStage = stage !== 'idle' && stage !== 'darken' ? stage : null;
-  const cycling = stage === 'preview' || stage === 'decelerate';
-
-  const shownCard: PlateCard | null = useMemo(() => {
-    if (!plate) return null;
-    if (cycling) return buildCycleCard(plate, cycle);
-    return plate;
-  }, [plate, cycling, cycle]);
-
-  if (!pending && !result) return null;
-
-  const closing = () => {
-    haptic('light');
-    onClose();
+  const skip = () => {
+    if (card) trackRevealSkipped(card.id);
+    setStage('settled');
   };
 
-  return (
+  const settled = stage === 'settled' || reduced;
+  const visible = Boolean(card) || loading;
+
+  // The spin is one monotonic rotation whose angle is a function of the stage, so it
+  // accelerates and then decelerates without ever reversing or jittering.
+  const spin = stage === 'build' ? 200 : stage === 'decelerate' ? 430 : 0;
+  const blur = stage === 'enter' ? 7 : stage === 'build' ? 3.5 : stage === 'decelerate' ? 1 : 0;
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <AnimatePresence>
-      <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-ink-950/92 p-4 backdrop-blur-md"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: pending || stage !== 'idle' ? 1 : 0 }}
-        exit={{ opacity: 0 }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('result.aria')}
-        data-testid="reveal"
-        data-stage={stage}
-        data-rarity={rarity}
-        onClick={revealStage && !showActions ? skip : undefined}
-      >
-        {/* Cinematic backdrop: a soft pool of light behind the object. */}
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background: `radial-gradient(circle at 50% 42%, ${accent}2e, transparent 62%)`,
-            opacity: revealStage ? 1 : 0,
-          }}
-          animate={isCinematic && stage !== 'idle' && !reduced ? { opacity: [0.7, 1, 0.7] } : { opacity: 1 }}
-          transition={{ duration: 2.4, repeat: isCinematic ? Infinity : 0 }}
-        />
+      {visible && (
+        <motion.div
+          key="reveal-root"
+          className="fixed inset-0 z-[70] flex items-center justify-center px-5"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: EASE.out }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('reveal.dialogLabel')}
+        >
+          {/* The dim. Blur is deliberately capped at 3px: a heavier blur is the single
+              biggest cause of dropped frames in a Telegram WebView. */}
+          <motion.div
+            className="absolute inset-0 bg-ink-950"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: card ? 0.93 : 0.6 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.26, ease: EASE.out }}
+            style={{ backdropFilter: 'blur(3px)' }}
+            onClick={onClose}
+            aria-hidden="true"
+          />
 
-        <div className="relative flex w-full max-w-md flex-col items-center gap-5">
-          {/* Top: rarity. Kept above everything so a clip always reads. */}
-          <AnimatePresence>
-            {(stage === 'rarity' || stage === 'hero' || stage === 'value' || stage === 'traits' || showActions) && plate ? (
-              <motion.div
-                key="rarity"
-                initial={{ opacity: 0, y: -14, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 320, damping: 18 }}
-              >
-                <RarityBadge rarity={rarity} size={isCinematic ? 'lg' : 'md'} />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          {/* Extras: first discovery, new country, secret. */}
-          <AnimatePresence>
-            {plate && (stage === 'hero' || stage === 'value' || stage === 'traits' || showActions) ? (
-              <motion.div
-                key="extras"
-                className="flex flex-wrap items-center justify-center gap-2"
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.12 }}
-              >
-                {result?.is_first_discovery ? <ExtraBadge label={t('reveal.result.firstDiscovery')} tone="gold" /> : null}
-                {result?.is_new_country ? <ExtraBadge label={t('reveal.result.newCountry')} tone="accent" /> : null}
-                {result?.is_duplicate ? <ExtraBadge label={t('reveal.result.duplicate')} tone="muted" /> : null}
-                {plate.is_secret ? <ExtraBadge label={t('reveal.result.secret')} tone="secret" /> : null}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          {/* Centre: the object. */}
-          <div className="relative flex w-full items-center justify-center">
-            {pending ? (
-              <Chamber reduced={Boolean(reduced)} accent={accent} />
-            ) : shownCard ? (
-              <motion.div
-                key={cycling ? `cycle-${cycle}` : 'final'}
-                className="w-full"
-                animate={
-                  cycling && !reduced
-                    ? { scale: [0.97, 1.02], opacity: [0.75, 1] }
-                    : { scale: 1, opacity: 1 }
-                }
-                transition={
-                  cycling && !reduced
-                    ? { duration: 0.16, repeat: Infinity, ease: 'easeInOut' }
-                    : { type: 'spring', stiffness: 240, damping: 20 }
-                }
-              >
-                <CollectibleVisual
-                  collectible={shownCard}
-                  size={showActions || stage === 'hero' || stage === 'value' || stage === 'traits' ? 'hero' : 'lg'}
-                  accent={accent}
-                  reveal={stage === 'lock' || stage === 'impact' || showActions}
-                  still={cycling}
-                />
-              </motion.div>
-            ) : null}
-
-            {/* Impact flash on the lock. */}
-            {stage === 'impact' && !reduced ? (
-              <motion.span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-2xl"
-                style={{ background: `radial-gradient(circle, ${accent}cc, transparent 65%)` }}
-                initial={{ opacity: 0.9, scale: 0.8 }}
-                animate={{ opacity: 0, scale: 1.25 }}
-                transition={{ duration: 0.42, ease: 'easeOut' }}
-              />
-            ) : null}
-          </div>
-
-          {/* Country flash just before the lock. */}
-          <AnimatePresence>
-            {stage === 'country' && plate && !reduced ? (
-              <motion.div
-                key="country"
-                className="pointer-events-none absolute inset-x-0 top-1/3 flex flex-col items-center gap-1"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 1.06 }}
-                transition={{ duration: 0.24 }}
-              >
-                <span className="text-5xl leading-none" aria-hidden>
-                  {plate.country.flag}
+          <div
+            className="relative z-10 flex max-h-full w-full max-w-md flex-col items-center gap-6 overflow-y-auto py-10"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {loading && !card && (
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+                <span className="text-[11px] uppercase tracking-[0.22em] text-white/40">
+                  {t('reveal.searching')}
                 </span>
-                <span
-                  className="text-xl font-black uppercase tracking-[0.3em]"
-                  style={{ color: accent }}
-                >
-                  {plate.country.code}
-                </span>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
+              </div>
+            )}
 
-          {/* Under the object: country, then the reward. */}
-          <div className="flex min-h-[68px] flex-col items-center gap-2 text-center">
-            {plate && (stage === 'hero' || stage === 'value' || stage === 'traits' || showActions) ? (
+            {card && (
               <motion.div
-                key="country-line"
-                className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.22em] text-white/70"
+                className="flex w-full flex-col items-center gap-5"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
+                transition={{ duration: 0.2, ease: EASE.out }}
               >
-                <span aria-hidden>{plate.country.flag}</span>
-                <span>
-                  {category === 'SIM_CARD' ? t('category.sim') : t('category.plate')}
-                </span>
-                <span className="h-3 w-px bg-white/15" />
-                <span className="text-white/50">{plate.country.code}</span>
-              </motion.div>
-            ) : null}
-
-            {result && (stage === 'value' || stage === 'traits' || showActions) ? (
-              <motion.div
-                key="value"
-                className="flex flex-col items-center gap-1"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <ValueCounter
-                  value={result.numora_awarded}
-                  label={t('reveal.result.numora')}
-                  className="text-2xl font-black tracking-tight text-emerald-300"
-                />
-                <span className="text-[10px] uppercase tracking-[0.24em] text-white/35">
-                  {t('reveal.result.collectorValue')} {plate ? `${plate.currency_symbol}${plate.collector_value.toLocaleString()}` : ''}
-                </span>
-              </motion.div>
-            ) : null}
-          </div>
-
-          {/* Trait chips. */}
-          {plate && (stage === 'traits' || showActions) && plate.traits.length ? (
-            <motion.div
-              key="traits"
-              className="flex max-w-[min(92vw,26rem)] flex-wrap items-center justify-center gap-1.5"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              {plate.reason_labels.slice(0, 4).map((label) => (
-                <span
-                  key={label}
-                  className="rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]"
-                  style={{ borderColor: `${accent}55`, color: `${accent}`, background: `${accent}14` }}
+                {/* The object. A single persistent node: never remounted, never
+                    teleported, so the motion is continuous frame to frame. */}
+                <motion.div
+                  className="w-full"
+                  initial={{ opacity: 0, rotateX: 58, scale: 0.9 }}
+                  animate={
+                    settled
+                      ? { opacity: 1, rotateX: 0, rotate: 0, scale: 1 }
+                      : { opacity: 1, rotateX: 0, rotate: spin, scale: 1 }
+                  }
+                  transition={
+                    settled
+                      ? { ...SPRING.settle, duration: DURATION.lock }
+                      : {
+                          rotate: { duration: 0.5, ease: EASE.continuous },
+                          scale: { duration: 0.42, ease: EASE.out },
+                          opacity: { duration: 0.24, ease: EASE.out },
+                        }
+                  }
+                  style={{
+                    filter: reduced ? 'none' : `blur(${blur}px)`,
+                    perspective: 900,
+                    transformStyle: 'preserve-3d',
+                  }}
                 >
-                  {label}
-                </span>
-              ))}
-            </motion.div>
-          ) : null}
+                  <motion.button
+                    type="button"
+                    className="block w-full"
+                    onClick={onPlateClick}
+                    aria-label={card.plate_text}
+                    animate={
+                      settled && isCinematic && !reduced
+                        ? { scaleY: [1, 0.965, 1], scaleX: [1, 1.012, 1] }
+                        : { scaleY: 1, scaleX: 1 }
+                    }
+                    transition={{ duration: 0.46, ease: EASE.lock, times: [0, 0.4, 1] }}
+                  >
+                    {card.kind === 'SIM_CARD' ? (
+                      <SimCardVisual details={card.details} rarity={rarity} className="mx-auto" />
+                    ) : (
+                      <VehiclePlateVisual
+                        visual={card.visual}
+                        plateText={card.plate_text}
+                        displaySegments={card.display_segments}
+                        displaySegmentGaps={card.display_segment_gaps}
+                        displaySegmentKinds={card.display_segment_kinds}
+                        regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
+                        className="mx-auto"
+                      />
+                    )}
+                  </motion.button>
+                </motion.div>
 
-          {/* Actions last, and never more than four. */}
-          {showActions ? (
-            <motion.div
-              key="actions"
-              className="mt-1 grid w-full grid-cols-4 gap-2"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <ActionButton onClick={closing}>{t('reveal.result.keep')}</ActionButton>
-              <ActionButton onClick={() => { onShare?.(); }} accent={accent}>
-                {t('reveal.result.share')}
-              </ActionButton>
-              <ActionButton onClick={() => { onSell?.(); }}>
-                {t('reveal.result.sell')}
-              </ActionButton>
-              <ActionButton onClick={() => { onViewCollection?.(); }}>
-                {t('reveal.result.collection')}
-              </ActionButton>
-            </motion.div>
-          ) : (
-            <button
-              type="button"
-              onClick={skip}
-              className="mt-1 rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40 transition hover:text-white/70"
-              data-testid="reveal-skip"
-            >
-              {t('reveal.skip')}
-            </button>
-          )}
-        </div>
-      </motion.div>
-    </AnimatePresence>
-  );
-}
+                <AnimatePresence>
+                  {settled && (
+                    <motion.div
+                      key="readout"
+                      className="flex w-full flex-col items-center gap-4 text-center"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.34, ease: EASE.out }}
+                    >
+                      {/* 1. Rarity */}
+                      <RarityBadge rarity={rarity} size="lg" pulse={isCinematic && !reduced} />
 
-/** The anticipation object: a dark chamber that breathes while the roll runs. */
-function Chamber({ reduced, accent }: { reduced: boolean; accent: string }) {
-  return (
-    <div
-      className="relative flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d1017] to-[#04050a]"
-      data-testid="reveal-chamber"
-    >
-      <motion.span
-        aria-hidden
-        className="absolute inset-x-0 h-24"
-        style={{ background: `linear-gradient(180deg, transparent, ${accent}22, transparent)` }}
-        animate={reduced ? undefined : { y: [-40, 40, -40] }}
-        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.span
-        aria-hidden
-        className="h-10 w-10 rounded-full border-2"
-        style={{ borderColor: accent }}
-        animate={reduced ? undefined : { scale: [0.7, 1.15, 0.7], opacity: [0.5, 1, 0.5] }}
-        transition={{ duration: 1.3, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <span className="absolute bottom-4 text-[10px] font-bold uppercase tracking-[0.3em] text-white/30">
-        hunting
-      </span>
-    </div>
-  );
-}
+                      {/* 2. Country, then the specific thing it is */}
+                      <div className="space-y-0.5">
+                        <div className="text-sm font-semibold tracking-wide text-white/80">
+                          {card.country.flag} {card.country.name_en.toUpperCase()}
+                        </div>
+                        <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">
+                          {card.kind === 'SIM_CARD'
+                            ? card.details?.operator
+                            : (card.region?.name_en ?? card.plate_type)}
+                        </div>
+                      </div>
 
-function ExtraBadge({ label, tone }: { label: string; tone: 'gold' | 'accent' | 'muted' | 'secret' }) {
-  const styles: Record<string, string> = {
-    gold: 'border-amber-300/50 bg-amber-300/10 text-amber-200',
-    accent: 'border-sky-300/40 bg-sky-300/10 text-sky-200',
-    muted: 'border-white/15 bg-white/5 text-white/60',
-    secret: 'border-fuchsia-400/50 bg-fuchsia-400/10 text-fuchsia-200',
-  };
-  return (
-    <span
-      className={clsx(
-        'rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.2em]',
-        styles[tone],
+                      {/* 3. One main value. Everything secondary belongs in Details, so
+                          the reveal never dumps competing prices on the player. */}
+                      <div className="space-y-1">
+                        <div className="number-display text-4xl text-emerald-300">
+                          +{formatCoins(card.dealer_value)}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-white/40">
+                          NUMORA
+                        </div>
+                      </div>
+
+                      {/* 4. One or two traits: why this one is worth anything. */}
+                      {card.reason_labels?.length ? (
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          {card.reason_labels.slice(0, 2).map((label) => (
+                            <span
+                              key={label}
+                              className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium text-white/60"
+                            >
+                              {label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {/* 5. First discovery: a status on the card, never a feed. */}
+                      {isFirstDiscovery && (
+                        <motion.div
+                          className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-2"
+                          initial={{ opacity: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.32, ease: EASE.lock }}
+                        >
+                          <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-amber-200">
+                            {t('reveal.firstDiscovery')}
+                          </span>
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {settled && (
+                  <motion.div
+                    key="actions"
+                    className="w-full space-y-2.5"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.28, ease: EASE.out, delay: 0.06 }}
+                  >
+                    {onRollAgain && (
+                      <button
+                        type="button"
+                        className="btn-primary w-full text-base"
+                        disabled={!canRollAgain || rolling}
+                        onClick={() => {
+                          if (card) trackRollAgain(card.id);
+                          onRollAgain?.();
+                        }}
+                      >
+                        {rolling ? t('reveal.rolling') : t('reveal.rollAgain')}
+                      </button>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {onKeep && (
+                        <button type="button" className="btn-ghost text-sm" onClick={onKeep}>
+                          {t('reveal.keep')}
+                        </button>
+                      )}
+                      {onShare && (
+                        <button type="button" className="btn-ghost text-sm" onClick={onShare}>
+                          {t('reveal.share')}
+                        </button>
+                      )}
+                      {canSell && (
+                        <button
+                          type="button"
+                          className="btn-ghost col-span-2 text-sm"
+                          onClick={onSellDuplicates}
+                        >
+                          {t('reveal.sellDuplicates')}
+                          <span className="text-emerald-300">
+                            +{formatCoins(card.sale_value)}
+                          </span>
+                        </button>
+                      )}
+                      {onOpenCollection && (
+                        <button
+                          type="button"
+                          className="btn-ghost col-span-2 text-sm"
+                          onClick={onOpenCollection}
+                        >
+                          {t('reveal.collection')}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* When there is nothing to sell, say why instead of showing a
+                        button that would be refused. */}
+                    {duplicates === 0 && (
+                      <p className="pt-1 text-center text-[11px] text-white/30">
+                        {t('reveal.noDuplicates')}
+                      </p>
+                    )}
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+
+            {/* Skip: present, reachable, deliberately quiet. */}
+            {card && !settled && (
+              <motion.button
+                type="button"
+                className="absolute right-4 top-4 rounded-full px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-white/35 transition hover:text-white/70"
+                onClick={skip}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.24, ease: EASE.out, delay: 0.6 }}
+              >
+                {t('reveal.skip')}
+              </motion.button>
+            )}
+          </div>
+        </motion.div>
       )}
-    >
-      {label}
-    </span>
+    </AnimatePresence>,
+    document.body,
   );
 }
-
-function ActionButton({
-  children,
-  onClick,
-  accent,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  accent?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="min-h-[44px] rounded-xl border border-white/12 bg-white/[0.06] px-2 py-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white/80 transition active:scale-[0.97]"
-      style={accent ? { borderColor: `${accent}55`, color: accent } : undefined}
-    >
-      {children}
-    </button>
-  );
-}
-
-export default Reveal;
+export { Reveal };

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { BottomNav } from '@/components/BottomNav';
 import { LoadingSpinner } from '@/components/States';
@@ -17,6 +17,7 @@ function AppShell() {
   const error = useAuthStore((state) => state.error);
   const login = useAuthStore((state) => state.login);
   const { t } = useI18n();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (status === 'idle') void login();
@@ -48,7 +49,7 @@ function AppShell() {
         <Routes>
           {/* ROLL is the product now. Boxes is the legacy four-digit line and is
               reachable from the profile, not from the primary navigation. */}
-          <Route path="/" element={<HuntPage />} />
+          <Route path="/" element={<HuntPage onOpenCollection={() => navigate('/collection')} />} />
           <Route path="/world" element={<WorldPage />} />
           <Route path="/legacy" element={<BoxesPage />} />
           <Route path="/collection" element={<CollectionPage />} />

@@ -94,6 +94,14 @@ class UserSummary(BaseModel):
     daily_allowance: int = 0
     daily_resets_at: str | None = None
     can_claim_daily: bool = False
+    #: The normal, regenerating bank.
+    normal_rolls: int = 0
+    #: Rolls granted above the normal bank; never consumed by regeneration.
+    bonus_rolls: int = 0
+    #: When the next passive roll lands, or ``None`` while the bank is full.
+    next_roll_at: str | None = None
+    seconds_to_next_roll: int = 0
+    roll_regen_minutes: int = 45
 
     # --- entitlements and cosmetics ---
     premium: PremiumState = Field(default_factory=PremiumState)

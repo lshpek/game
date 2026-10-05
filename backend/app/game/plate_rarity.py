@@ -109,6 +109,11 @@ PITY_EPIC_AFTER = 34
 PITY_LEGENDARY_AFTER = 120
 PITY_LUCK_MULTIPLIER = 2.6
 
+# Bounds for the SIM line's operator weighting. Narrow on purpose: a provider colours a
+# card, it never manufactures a tier. See :func:`compute_rarity_score`.
+MIN_PROVIDER_SCORE_MODIFIER = 0.85
+MAX_PROVIDER_SCORE_MODIFIER = 1.20
+
 
 def load_rarity_weights(override_json: str | None = None) -> dict[str, float]:
     """Return validated rarity weights, honouring an optional JSON override."""
@@ -196,16 +201,23 @@ def compute_rarity_score(
     template_multiplier: float = 1.0,
     event_modifier: float = 1.0,
     novelty_bonus: float = 0.0,
+    provider_modifier: float = 1.0,
 ) -> int:
     """Deterministic score in the 0-200 band.
 
-    Sums the per-trait scores, then applies country/template/event modifiers and
-    a small bonus for a plate nobody has discovered yet.
+    Sums the per-trait scores, then applies country/template/event modifiers and a small
+    bonus for a collectible nobody has discovered yet.
+
+    ``provider_modifier`` is the SIM line's operator weighting. It is deliberately narrow
+    (``[0.85, 1.20]``): a famous brand with an ordinary number must stay ordinary, and an
+    ordinary brand with an extraordinary number must still be able to reach the top. The
+    *pattern* is always what moves a card up the ladder; the provider only colours it.
     """
     raw = float(sum(analysis.scores.values()))
     bonus = sum(code in analysis.traits for code in ("region_match", "rare_template")) * 4
     total = raw + bonus
     total *= max(0.5, country_modifier) * max(0.5, template_multiplier) * max(0.5, event_modifier)
+    total *= max(MIN_PROVIDER_SCORE_MODIFIER, min(MAX_PROVIDER_SCORE_MODIFIER, provider_modifier))
     total += max(0.0, novelty_bonus)
     return max(0, min(200, round(total)))
 
@@ -270,6 +282,8 @@ def pity_weights(
 
 __all__ = [
     "DEFAULT_RARITY_WEIGHTS",
+    "MAX_PROVIDER_SCORE_MODIFIER",
+    "MIN_PROVIDER_SCORE_MODIFIER",
     "PITY_EPIC_AFTER",
     "PITY_LEGENDARY_AFTER",
     "PITY_RARE_AFTER",
