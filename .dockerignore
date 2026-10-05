@@ -1,0 +1,23 @@
+# Keep the Docker build context small and free of local state.
+#
+# The root context is only used by `Dockerfile.backend`, which copies
+# `backend/requirements.txt`, `backend/alembic*` and `backend/app`. The frontend and
+# bot build from their own directories, so their build contexts are governed by
+# `frontend/.dockerignore` and `bot/.dockerignore`.
+.git
+.gitignore
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/.env
+**/.env.*
+**/.vscode
+**/*.log
+*.pem
+*.key

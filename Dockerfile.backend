@@ -1,0 +1,46 @@
+# Backend image built from the **repository root**.
+#
+# Why this file exists
+# --------------------
+# The backend service on Railway has its root directory set to the repository root,
+# while the backend itself lives in `backend/`. A git-triggered build therefore sees
+# only the top level - no `Dockerfile`, no `requirements.txt` - and Railpack refuses it
+# with "could not determine how to build the app". `railway up` from inside `backend/`
+# works because it uploads that directory as the build context, but it is a manual
+# step that is easy to forget after a push.
+#
+# `railway.json` at the repository root points Railway here so a push deploys the
+# backend the same way it deploys the bot.
+#
+# This file is intentionally a thin wrapper: `backend/Dockerfile` stays the single
+# source of truth for the image, and the context difference is absorbed here.
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Dependencies first so the layer is cached across code changes.
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic
+COPY backend/app ./app
+
+# Run unprivileged.
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import httpx,sys; sys.exit(0 if httpx.get('http://127.0.0.1:8000/health', timeout=4).status_code == 200 else 1)"
+
+# AUTO_MIGRATE=true runs `alembic upgrade head` on startup, so a deploy applies its own
+# migrations before serving. Railway injects a random $PORT and routes traffic to it,
+# so the port must not be hardcoded - a fixed 8000 makes the service answer 502.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers

@@ -24,16 +24,30 @@ railway login
 ## Deploying an update (the order matters)
 
 `VITE_API_BASE_URL` is **inlined at build time**, so the frontend must be rebuilt
-after the backend domain is known. Railway services are not guaranteed to
-auto-deploy on push here, so push `railway up` explicitly.
+after the backend domain is known.
 
 ```bash
-railway up backend                      # applies migrations (AUTO_MIGRATE=true)
-railway up bot                          # picks up backend changes immediately
-railway variables set --service frontend \
-  VITE_API_BASE_URL=https://backend-production-74fd.up.railway.app
-railway up frontend                     # rebuilds with the current API base
+cd backend  && railway up --service backend   # applies migrations (AUTO_MIGRATE=true)
+cd bot     && railway up --service bot        # picks up backend changes immediately
+cd frontend && railway variables set VITE_API_BASE_URL=https://backend-production-74fd.up.railway.app
+cd frontend && railway up --service frontend  # rebuilds with the current API base
 ```
+
+Run `railway up` **from inside the service directory**, not from the repository root
+with a path argument: the CLI resolves the project link from the current directory,
+and `railway up backend` from the root fails with `prefix not found` on some
+platforms.
+
+### Auto-deploy on push
+
+The backend service has its Railway **root directory set to the repository root**,
+while the code lives in `backend/`. A git-triggered build therefore saw only the top
+level and Railpack refused it with *could not determine how to build the app*, so every
+push produced a failed deployment. `Dockerfile.backend` + `railway.json` at the
+repository root fix that: a push now builds the backend image from the root context.
+
+If you ever point another service at the repository root, give it its own
+`railway.json` — the root one builds the backend.
 
 Afterwards:
 
@@ -56,8 +70,9 @@ railway add --plugin postgresql
 ## 2. Backend service
 
 ```bash
-railway up backend
-railway variables set --service backend \
+cd backend
+railway up --service backend
+railway variables set \
   SECRET_KEY="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')" \
   APP_ENV=production DEBUG=false \
   AUTO_MIGRATE=true AUTO_SEED=true \
@@ -82,8 +97,8 @@ domain exists, then deploy:
 
 ```bash
 BACKEND=https://<your-backend>.up.railway.app
-railway variables set --service frontend VITE_API_BASE_URL=$BACKEND
-railway up frontend
+railway variables set VITE_API_BASE_URL=$BACKEND
+railway up --service frontend
 railway domain --service frontend
 ```
 
@@ -92,8 +107,9 @@ railway domain --service frontend
 Run the bot as a service (it needs a long-running process, not one-shot):
 
 ```bash
-railway up bot
-railway variables set --service bot \
+cd bot
+railway up --service bot
+railway variables set \
   BOT_TOKEN=<token> BACKEND_URL=https://<your-backend>.up.railway.app \
   FRONTEND_URL=https://<your-frontend>.up.railway.app
 ```
