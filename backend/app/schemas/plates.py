@@ -300,6 +300,9 @@ class CountryDetail(BaseModel):
     percent: float
     best_rarity: str | None = None
     completed: bool
+    #: How many of the country's regions the player has something from.
+    regions_collected: int = 0
+    regions_total: int = 0
     regions: list[dict[str, Any]] = Field(default_factory=list)
     templates: list[dict[str, Any]] = Field(default_factory=list)
 

@@ -20,7 +20,7 @@ from app.game import collectibles, sim_cards
 from app.game.achievements import ACHIEVEMENT_DEFINITIONS
 from app.game.analyzer import analyze
 from app.game.containers import CONTAINER_DEFINITIONS
-from app.game.countries import ALL_ALBUMS, COUNTRIES, CountryDef, EVENTS, TemplateDef
+from app.game.countries import ALL_ALBUMS, COUNTRIES, EVENTS, CountryDef, TemplateDef
 from app.game.products import PRODUCT_DEFINITIONS
 from app.game.rarity import LEGENDARY_NUMBERS, MYTHIC_NUMBERS, SECRET_NUMBERS, SPECIAL_NUMBER_RARITY
 from app.game.seasons import SEASON_DEFINITIONS

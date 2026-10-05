@@ -1,3 +1,3 @@
-"""Collectible Number Game backend package."""
+"""NUMORA backend package: global collectible numbers."""
 
 __version__ = "1.0.0"

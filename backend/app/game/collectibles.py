@@ -232,8 +232,8 @@ def parse_hunt_filter(
 __all__ = [
     "DEFAULT_VEHICLE_PLATE_TYPE",
     "KINDS",
-    "SIM_PLATE_TYPES",
     "SIM_PLATE_TYPE",
+    "SIM_PLATE_TYPES",
     "VEHICLE_PLATE_TYPES",
     "CollectibleCategory",
     "CollectibleKind",

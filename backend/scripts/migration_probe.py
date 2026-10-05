@@ -19,11 +19,11 @@ os.environ["APP_ENV"] = "development"
 os.environ["AUTO_MIGRATE"] = "true"
 os.environ["AUTO_SEED"] = "true"
 
-from app.bootstrap import bootstrap, run_migrations  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
-from sqlalchemy import func, select, text  # noqa: E402
+from sqlalchemy import func, select, text
 
-from app.models.plates import Country, Plate, PlateTemplate  # noqa: E402
+from app.bootstrap import bootstrap
+from app.db.session import SessionLocal
+from app.models.plates import Country, PlateTemplate
 
 
 def report(label: str) -> None:
@@ -45,10 +45,10 @@ def main() -> int:
     report("after second boot")
 
     # A roll must work end to end against the migrated schema.
+    from app.core.config import settings as app_settings
     from app.game.plate_generator import PlateGenerator
     from app.game.rng import default_rng
     from app.services.catalog import snapshot
-    from app.core.config import settings as app_settings
 
     with SessionLocal() as db:
         ctx = snapshot(db, app_settings.rarity_weights)

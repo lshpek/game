@@ -263,28 +263,33 @@ class WorldService:
             raise NotFoundError("Country not found.", code="COUNTRY_NOT_FOUND")
 
         collected = self._collected_counts(user.id).get(row.code, 0)
-        regions_total = int(
-            self.db.execute(
-                select(func.count(Region.id)).where(
-                    Region.country_id == row.id, Region.is_active.is_(True)
-                )
-            ).scalar_one()
-            or 0
-        )
-        regions_collected = int(
-            self.db.execute(
-                select(func.count(func.distinct(Plate.region_code)))
+        total = self.estimate_country_total(row.code)
+        cfg = row.config or {}
+
+        regions = self.db.execute(
+            select(Region).where(
+                Region.country_id == row.id, Region.is_active.is_(True)
+            ).order_by(Region.sort_order)
+        ).scalars().all()
+
+        # Per-region counts in one grouped query, so a country with 20 regions costs
+        # the same as one with 2 - and so the detail screen can actually show which
+        # regions are still missing instead of a column of zeroes.
+        region_have: dict[str, int] = {}
+        if regions:
+            rows = self.db.execute(
+                select(Plate.region_code, func.count(func.distinct(Plate.id)))
                 .join(UserPlate, UserPlate.plate_id == Plate.id)
                 .where(
                     UserPlate.user_id == user.id,
                     Plate.country_id == row.id,
                     Plate.region_code.isnot(None),
                 )
-            ).scalar_one()
-            or 0
-        )
-        total = self.estimate_country_total(row.code)
-        cfg = row.config or {}
+                .group_by(Plate.region_code)
+            ).all()
+            region_have = {str(code): int(count) for code, count in rows}
+        regions_collected = sum(1 for value in region_have.values() if value > 0)
+        regions_total = len(regions)
 
         best = self.db.execute(
             select(Plate.rarity, func.count(Plate.id))
@@ -299,11 +304,6 @@ class WorldService:
             None,
         )
 
-        regions = self.db.execute(
-            select(Region).where(
-                Region.country_id == row.id, Region.is_active.is_(True)
-            ).order_by(Region.sort_order)
-        ).scalars().all()
         templates = self.db.execute(
             select(PlateTemplate).where(
                 PlateTemplate.country_id == row.id, PlateTemplate.is_active.is_(True)
@@ -328,12 +328,14 @@ class WorldService:
             "percent": int(collected / total * 100) if total else 0,
             "best_rarity": best_rarity,
             "completed": bool(total and collected >= total),
+            "regions_collected": regions_collected,
+            "regions_total": regions_total,
             "regions": [
                 {
                     "code": region.code,
                     "name_en": region.name_en,
                     "name_ru": region.name_ru,
-                    "collected": 0,
+                    "collected": region_have.get(region.code, 0),
                 }
                 for region in regions
             ],

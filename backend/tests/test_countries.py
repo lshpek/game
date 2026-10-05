@@ -77,7 +77,7 @@ class TestIsoReferenceData:
 
 class TestPlayableState:
     def test_the_priority_group_ships_playable(self):
-        assert PRIORITY <= set(PLAYABLE_CODES)
+        assert set(PLAYABLE_CODES) >= PRIORITY
 
     def test_locked_countries_exist_and_are_marked(self):
         locked = [country for country in COUNTRIES if not country.playable]

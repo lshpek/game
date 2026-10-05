@@ -166,7 +166,7 @@ class TestPhoneFoldIntoSim:
     def test_nothing_is_deleted(self, db, fold):
         before_plates = db.query(Plate).count()
         before_templates = db.query(PlateTemplate).count()
-        plate_id, _user_id = self._legacy_phone(db)
+        _plate_id, _user_id = self._legacy_phone(db)
 
         fold()
 

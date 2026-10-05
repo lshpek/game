@@ -15,7 +15,7 @@ from uuid import uuid4
 TEST_SECRET_KEY = "test-secret-key-0123456789abcdefghij"
 TEST_ADMIN_TELEGRAM_ID = 900001
 TEST_SERVICE_TOKEN = "test-service-token-abcdef0123456789"
-_TMP_DIR = tempfile.mkdtemp(prefix="numbergame-tests-")
+_TMP_DIR = tempfile.mkdtemp(prefix="numora-tests-")
 
 os.environ.update(
     {
