@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.errors import NotFoundError
+from app.game.plate_formats import serialize_visual
 from app.game.plate_traits import trait_labels
-from app.game.plate_visuals import serialize_visual
 from app.models.plates import Album, Country, Plate, PlateTemplate, Region, UserPlate
 from app.models.user import User
 from app.services import catalog
@@ -244,9 +244,10 @@ class WorldService:
             "currency_symbol": cfg.get("currency_symbol", "$"),
             "calling_code": row.calling_code,
             "visual": serialize_visual(
-                cfg.get("visual", "european"),
+                cfg.get("visual", "eu_long"),
                 alpha2=row.iso_alpha2 or "",
                 alpha3=row.code,
+                country_code=row.code,
             ),
             "collected": collected,
             "total": total,
@@ -326,9 +327,10 @@ class WorldService:
             "currency_symbol": cfg.get("currency_symbol", "$"),
             "calling_code": row.calling_code,
             "visual": serialize_visual(
-                cfg.get("visual", "european"),
+                cfg.get("visual", "eu_long"),
                 alpha2=row.iso_alpha2 or "",
                 alpha3=row.code,
+                country_code=row.code,
             ),
             "is_playable": bool(row.is_playable),
             "collected": collected,

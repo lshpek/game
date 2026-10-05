@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING
 
 from app.core.timeutils import as_aware
 from app.game.collectibles import CollectibleKind, kind_for_plate_type
+from app.game.plate_formats import serialize_visual
 from app.game.plate_generator import derive_segment_gaps, segment_kinds
 from app.game.plate_rarity import RARITY_COLOR
 from app.game.plate_traits import trait_labels
-from app.game.plate_visuals import serialize_visual
 from app.game.sim_cards import legacy_operator_label
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -158,10 +158,14 @@ def plate_card(
             "code": plate.template.code if plate.template else "",
             "pattern": plate.template.pattern if plate.template else "",
         },
+        # The physical format, plus the country's own identity: its two-letter code goes
+        # into the band and its accent colour travels with the recipe, so two countries on
+        # one standard never render as the same picture.
         "visual": serialize_visual(
-            (country.config or {}).get("visual", "european") if country else "european",
+            (country.config or {}).get("visual", "eu_long") if country else "eu_long",
             alpha2=(country.iso_alpha2 or "") if country else "",
             alpha3=country.code if country else "",
+            country_code=country.code if country else "",
         ),
         # Present for SIM cards (operator, series, edition, printed number); ``None``
         # for a vehicle plate, so the client can branch on the payload it receives

@@ -328,6 +328,29 @@ export interface NextTarget {
  * normal bank, the bonus bank, the cap and the regeneration countdown all come from the
  * server, which is the only thing allowed to decide them.
  */
+/**
+ * One selectable display currency.
+ *
+ * Presentation only. `rate` is a fixed display rate - units of this currency per 1 NUMORA -
+ * and switching it changes nothing the backend stores or the economy pays out.
+ */
+export interface DisplayCurrency {
+  code: string;
+  name: string;
+  /** A representative country flag, so a picker row is recognisable at a glance. */
+  flag: string;
+  rate: number;
+  /** Minor digits to print; 0 for a whole-unit currency such as JPY or NUMORA. */
+  fraction_digits: number;
+}
+
+/** The currencies a playable country actually uses, plus the game's own. */
+export interface CurrencyCatalog {
+  game_currency: string;
+  game_currency_code: string;
+  currencies: DisplayCurrency[];
+}
+
 export interface RollBalance {
   rolls_remaining: number;
   normal_rolls: number;

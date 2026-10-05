@@ -10,8 +10,8 @@ import { DURATION, EASE, SPRING, revealDuration, useReducedMotion } from '../lib
 import { hapticCue } from '../lib/telegram';
 import type { PlateCard, ReelFrame } from '../types';
 import RarityBadge from './RarityBadge';
-import RollReel from './RollReel';
 import SimCardVisual from './SimCardVisual';
+import SymbolReel from './SymbolReel';
 import VehiclePlateVisual from './VehiclePlateVisual';
 
 /**
@@ -257,16 +257,22 @@ export default function Reveal({
                 {/*
                   The object - or, before it, the reel.
 
-                  The flow is exactly: many random collectibles scroll past, the scroll
-                  decelerates, and it settles on ONE real backend result. After the reel
-                  has landed, the result does a short physical settle of its own, so the
-                  moment it becomes the answer is unmistakable.
+                  The flow is exactly: the physical object appears, its printed number
+                  area spins symbol by symbol, each position locks in turn left to right,
+                  and the result is the real backend collectible. The object never leaves
+                  the screen during the spin - the reels live inside its printed area.
                 */}
-                <RollReel
+                <SymbolReel
                   frames={reel}
                   settled={settled}
                   onSettled={() => setStage('settled')}
                   finalLabel={card.plate_text}
+                  kind={card.kind ?? 'VEHICLE_PLATE'}
+                  visual={card.visual}
+                  plateText={card.plate_text}
+                  displaySegments={card.display_segments}
+                  displaySegmentGaps={card.display_segment_gaps}
+                  displaySegmentKinds={card.display_segment_kinds}
                   final={
                     <motion.div
                       className="w-full"

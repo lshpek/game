@@ -174,7 +174,11 @@ class TestGarageAndWorld:
         assert russia["currency_symbol"] == "₽"
         assert russia["currency_code"] == "RUB"
         assert russia["total"] > 0
-        assert russia["visual"]["theme"] == "ru"
+        # The theme names the physical format, not the country: Russia and Kazakhstan
+        # share the CIS two-compartment standard and differ in the code printed inside it.
+        assert russia["visual"]["theme"] == "cis_right_region"
+        assert russia["visual"]["country_code"] == "RUS"
+        assert russia["visual"]["region_text"] == "RUS"
 
     def test_country_detail_has_regions_and_templates(self, client, authed):
         session = authed(600022)

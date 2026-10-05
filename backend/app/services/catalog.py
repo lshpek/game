@@ -17,8 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.game.countries import COUNTRIES as CATALOG_COUNTRIES
+from app.game.plate_formats import serialize_visual
 from app.game.plate_generator import GenerationContext, RegionOption, TemplateOption
-from app.game.plate_visuals import serialize_visual
 from app.models.plates import Country, PlateTemplate, Region
 
 CACHE_TTL_SECONDS = 60.0
@@ -170,9 +170,10 @@ def country_card(country: Country) -> dict[str, object]:
         "calling_code": country.calling_code,
         "weight": config.get("weight", 1.0),
         "visual": serialize_visual(
-            config.get("visual", "european"),
+            config.get("visual", "eu_long"),
             alpha2=country.iso_alpha2 or "",
             alpha3=country.code,
+            country_code=country.code,
         ),
         "sort_order": country.sort_order,
         "is_active": bool(country.is_active),

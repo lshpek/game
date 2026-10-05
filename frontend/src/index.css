@@ -957,6 +957,46 @@
   }
 
   /* ==========================================================================
+   * The symbol reel
+   * ==========================================================================
+   *
+   * An odometer inside the printed area of a physical object. The object itself is a
+   * sibling that never unmounts; these columns sit *over* its printed area and are removed
+   * the moment the last one locks.
+   *
+   * The whole mechanism is `transform` on a strip of pre-rendered symbols: no layout, no
+   * paint, no filter, no `textContent` write per tick. That is what lets it run at full
+   * frame rate in a Telegram WebView on a mid-range phone, and it is why the columns are
+   * clipped rather than allowed to grow a strip wider than the plate.
+   */
+  .reel-column {
+    /* One character box. `overflow: hidden` is the containment: a column can never show
+       more than one symbol, whatever the strip is doing. */
+    position: relative;
+    display: block;
+    overflow: hidden;
+    height: 1em;
+    width: 0.62em;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .reel-strip-symbols {
+    display: block;
+    /* One row per symbol, so translating by `1em` moves exactly one character and the strip
+       lands on whole rows - never a half-symbol. */
+    line-height: 1;
+  }
+
+  .reel-symbol {
+    display: flex;
+    height: 1em;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  /* ==========================================================================
    * Overlays: bottom sheets and modals
    * ========================================================================== */
 

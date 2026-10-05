@@ -22,7 +22,11 @@ class PlateVisualSchema(BaseModel):
     truth and a payload where they disagree is a bug on the server.
     """
 
-    theme: str = "european"
+    theme: str = "eu_long"
+    #: The country this recipe belongs to. Two countries on one physical standard differ
+    #: only here - in the code printed in their band and in their accent colour - so the
+    #: client needs it to tell them apart.
+    country_code: str = ""
     plate_family: str = "eu_long"
     variant: str = "standard"
 
@@ -333,6 +337,36 @@ class ReelFrame(BaseModel):
     country_code: str = ""
     country_name_en: str = ""
     country_flag: str = ""
+
+
+class DisplayCurrencySchema(BaseModel):
+    """One selectable display currency.
+
+    Presentation only. ``rate`` is a fixed display rate - units of this currency per 1
+    NUMORA - and switching it changes nothing the backend stores or the economy pays out.
+    """
+
+    code: str
+    name: str
+    #: A representative country flag, so a picker row is recognisable at a glance.
+    flag: str = ""
+    rate: float = 1.0
+    #: Minor digits to print; 0 for a whole-unit currency such as JPY.
+    fraction_digits: int = 2
+
+
+class CurrencyCatalogResponse(BaseModel):
+    """The currencies a playable country in the catalogue actually uses, plus the game's.
+
+    Derived from the country catalogue rather than written out, so the list cannot drift
+    from the world and a country added later brings its currency with it.
+    """
+
+    #: The currency the economy is denominated in. Also the default display currency.
+    game_currency: str = "NUMORA"
+    #: The three-letter code shown in the picker.
+    game_currency_code: str = "NMR"
+    currencies: list[DisplayCurrencySchema] = Field(default_factory=list)
 
 
 class PlateRollResponse(BaseModel):

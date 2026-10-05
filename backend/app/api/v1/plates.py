@@ -14,6 +14,13 @@ from app.core.errors import NotFoundError, ValidationError
 from app.core.timeutils import utcnow
 from app.db.session import get_db
 from app.game.collectibles import normalize_kind, parse_hunt_filter, plate_types_for
+from app.game.currencies import (
+    GAME_CURRENCY,
+    GAME_CURRENCY_CODE,
+)
+from app.game.currencies import (
+    catalog as currency_catalog,
+)
 from app.game.plate_rarity import RARITY_RANK
 from app.game.roll_reel import build_reel
 from app.models.enums import AnalyticsEventName, RollSource, TransactionType
@@ -23,7 +30,9 @@ from app.models.user import User
 from app.schemas.plates import (
     CollectionResponse,
     CountryDetail,
+    CurrencyCatalogResponse,
     DealerSaleRequest,
+    DisplayCurrencySchema,
     FavoriteResponse,
     PlateCard,
     PlateRollHistoryItem,
@@ -164,6 +173,28 @@ def perform_roll(
         kind=hunt.get("category"),
     )
     return _roll_response(outcome, db, reel=reel)
+
+
+@router.get(
+    "/currencies",
+    response_model=CurrencyCatalogResponse,
+    summary="Display currencies available for pricing",
+)
+def currencies() -> CurrencyCatalogResponse:
+    """The currencies the picker may offer, and nothing else.
+
+    Presentation only. The list is derived from the playable country catalogue, so it
+    always matches the world, and it is public because it carries no player data - the
+    client needs it before it can render the first price on the hunt screen.
+
+    Switching currency changes what a number is *printed* in and nothing more: the
+    backend stores and pays out in NUMORA.
+    """
+    return CurrencyCatalogResponse(
+        game_currency=GAME_CURRENCY,
+        game_currency_code=GAME_CURRENCY_CODE,
+        currencies=[DisplayCurrencySchema(**item.to_dict()) for item in currency_catalog()],
+    )
 
 
 @router.get("/roll/history", response_model=list[PlateRollHistoryItem], summary="Recent rolls")

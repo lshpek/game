@@ -12,6 +12,7 @@ import type {
   CollectionResponse,
   ContainerCard,
   ContainerOpenResult,
+  CurrencyCatalog,
   DailyClaimResult,
   DailyStatus,
   GarageData,
@@ -80,6 +81,15 @@ export const game = {
     >('/api/roll/history', { query: { limit } }),
 
   garage: () => apiRequest<GarageData>('/api/garage'),
+
+  /**
+   * The display currencies the world actually uses.
+   *
+   * Derived server-side from the playable country catalogue, so the picker can never offer
+   * a currency that does not exist in the game. Public, and it carries no player data: the
+   * client needs a currency before it can render the first price.
+   */
+  currencies: () => apiRequest<CurrencyCatalog>('/api/currencies'),
 
   daily: () => apiRequest<DailyStatus>('/api/daily'),
 

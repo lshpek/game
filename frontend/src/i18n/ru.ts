@@ -25,6 +25,10 @@ export const ru: Dict = {
   'app.profileUnavailable': 'Профиль недоступен.',
   'app.language': 'Язык',
   'app.notifications': 'Уведомления',
+  // Выбор валюты отображения. Только presentation: меняет единицу, в которой печатается
+  // число, и ничего в экономике.
+  'currency.title': 'Валюта отображения',
+  'currency.change': 'Изменить валюту отображения',
   'app.navigation': 'Основная навигация',
   'app.tagline': 'Физический атлас',
   'home.streak': 'Серия',

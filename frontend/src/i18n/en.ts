@@ -23,6 +23,10 @@ export const en = {
   // The in-app toast region. Named, so a screen reader announces "notifications"
   // instead of reading each message with no context.
   'app.notifications': 'Notifications',
+  // The display-currency picker. A presentation control: it changes what a number is
+  // printed in and nothing about the economy.
+  'currency.title': 'Display currency',
+  'currency.change': 'Change display currency',
   'app.navigation': 'Main navigation',
   'app.tagline': 'Physical atlas',
   'home.streak': 'Streak',

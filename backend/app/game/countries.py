@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 from app.game.iso_countries import ISO_COUNTRIES, IsoCountry, iso_country
+from app.game.plate_formats import COUNTRY_FORMATS
 
 LATIN = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 CYRILLIC = "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
@@ -318,42 +319,29 @@ PRIORITY_ORDER: tuple[str, ...] = (
     "ZAF",
 )
 
-#: Countries whose layout family is right but whose *presentation* differs, so they get
-#: their own visual recipe instead of the family's generic one. Poland is the flagship
-#: example: its plates are EU long plates with a ``PL`` band, not the compact French
-#: shape the family would otherwise give it.
-COUNTRY_VISUAL_OVERRIDES: dict[str, str] = {
-    "POL": "pol",
-    "CZE": "eu_long",
-    "SVK": "eu_long",
-    "HUN": "eu_long",
-    "ROU": "eu_long",
-    "BGR": "eu_long",
-    "GRC": "eu_long",
-    "IRL": "britain",
-    "EST": "nordic",
-    "LVA": "nordic",
-    "LTU": "nordic",
-    "ISL": "nordic",
-    "ESP": "latam",
-    "PRT": "latam",
-    "NLD": "latam",
-    "BEL": "latam",
-    "CHE": "latam",
-    "AUT": "latam",
-    "TUR": "mideast",
-    "ISR": "mideast",
-    "SAU": "mideast",
-    "IND": "seasia",
-    "THA": "seasia",
-    "CHN": "seasia",
-    "KOR": "jp",
-}
+#: Every country mapped to the physical plate format it actually uses.
+#:
+#: A country does not need a *layout family* of its own - several genuinely share one
+#: standard - but it does need a physical *format*, and that is what decides the
+#: millimetres, the border, the identifier band and the mounting hardware. The rows
+#: resolve through :mod:`app.game.plate_formats.COUNTRY_FORMATS`, so there is one place
+#: that knows what the world's plates look like.
+#:
+#: The curated launch countries carry their format key inline on the ``CountryDef``; this
+#: table is what every derived country uses, and it is also consulted for the curated ones
+#: so that a curated row can never drift away from the shared source of truth.
+COUNTRY_VISUAL_OVERRIDES: dict[str, str] = dict(COUNTRY_FORMATS)
 
 
 def visual_theme_for(code: str, family_visual: str) -> str:
-    """Visual recipe key for a country: its own override, else the family's."""
-    return COUNTRY_VISUAL_OVERRIDES.get(code, family_visual)
+    """The physical format for a country, else the family it was grouped under.
+
+    A derived country is grouped by *layout family* for generation - that is a statement
+    about the shape of its registration - but its presentation is a statement about its
+    physical plate, and the two are not the same thing. That is why Spain is grouped with
+    the compact European layouts and still renders as a 520x110 EU plate.
+    """
+    return COUNTRY_VISUAL_OVERRIDES.get(code) or family_visual
 
 
 #: ``code -> (family, weight, value_scale, rarity_modifier)`` for the playable
@@ -651,7 +639,7 @@ CURATED: tuple[CountryDef, ...] = (
         weight=18.0,
         alphabet=CYRILLIC,
         letter_style="CYRILLIC",
-        visual="ru",
+        visual="cis_right_region",
         sort_order=1,
         playable=True,
         regions=RU_REGIONS,
@@ -676,7 +664,7 @@ CURATED: tuple[CountryDef, ...] = (
         alphabet=LATIN,
         value_scale=1.35,
         rarity_modifier=1.05,
-        visual="us",
+        visual="north_america",
         sort_order=2,
         playable=True,
         regions=US_REGIONS,
@@ -704,7 +692,7 @@ CURATED: tuple[CountryDef, ...] = (
         letter_style="CYRILLIC",
         value_scale=0.8,
         rarity_modifier=1.08,
-        visual="kz",
+        visual="cis_right_kaz",
         sort_order=3,
         playable=True,
         regions=KZ_REGIONS,
@@ -726,7 +714,7 @@ CURATED: tuple[CountryDef, ...] = (
         weight=10.0,
         alphabet=LATIN,
         value_scale=1.1,
-        visual="de",
+        visual="eu_long",
         sort_order=4,
         playable=True,
         regions=DE_REGIONS,
@@ -749,7 +737,7 @@ CURATED: tuple[CountryDef, ...] = (
         weight=9.0,
         alphabet=LATIN,
         value_scale=1.15,
-        visual="gb",
+        visual="uk_rear",
         sort_order=5,
         playable=True,
         regions=GB_REGIONS,
@@ -771,7 +759,7 @@ CURATED: tuple[CountryDef, ...] = (
         weight=8.0,
         alphabet=LATIN,
         value_scale=1.05,
-        visual="fr",
+        visual="eu_long",
         sort_order=6,
         playable=True,
         regions=FR_REGIONS,
@@ -792,7 +780,7 @@ CURATED: tuple[CountryDef, ...] = (
         currency_symbol="€",
         weight=7.0,
         alphabet=LATIN,
-        visual="it",
+        visual="eu_long",
         sort_order=7,
         playable=True,
         regions=IT_REGIONS,
@@ -814,7 +802,7 @@ CURATED: tuple[CountryDef, ...] = (
         weight=6.0,
         alphabet=LATIN,
         value_scale=1.1,
-        visual="ca",
+        visual="canada",
         sort_order=8,
         playable=True,
         regions=CA_REGIONS,
@@ -838,7 +826,7 @@ CURATED: tuple[CountryDef, ...] = (
         letter_style="KANJI",
         value_scale=1.6,
         rarity_modifier=1.15,
-        visual="jp",
+        visual="japan",
         sort_order=9,
         playable=True,
         regions=JP_REGIONS,
@@ -862,7 +850,7 @@ CURATED: tuple[CountryDef, ...] = (
         alphabet=LATIN,
         value_scale=1.5,
         rarity_modifier=1.12,
-        visual="ae",
+        visual="gulf",
         sort_order=10,
         playable=True,
         regions=AE_REGIONS,
@@ -886,7 +874,7 @@ CURATED: tuple[CountryDef, ...] = (
         alphabet=LATIN,
         value_scale=0.92,
         rarity_modifier=1.02,
-        visual="pol",
+        visual="eu_long",
         sort_order=13,
         playable=True,
         regions=EXTRA_REGIONS["POL"],
@@ -910,7 +898,7 @@ CURATED: tuple[CountryDef, ...] = (
         letter_style="ARMENIAN",
         value_scale=0.75,
         rarity_modifier=1.05,
-        visual="am",
+        visual="eu_long",
         sort_order=11,
         playable=True,
         regions=AM_REGIONS,
