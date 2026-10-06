@@ -638,9 +638,10 @@
    * code itself, because on the real format it is subordinate to it.
    */
   .plate-region-legend {
-    font-size: 0.62em;
-    letter-spacing: 0.04em;
-    opacity: 0.75;
+    font-size: 0.68em;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    opacity: 0.85;
   }
 
   /*
@@ -650,9 +651,10 @@
    */
   .plate-flag-ru {
     display: block;
-    width: 2.6em;
-    height: 1.6em;
-    border-radius: 1px;
+    width: 3em;
+    height: 1.5em;
+    border-radius: 2px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
     background: linear-gradient(
       to bottom,
       #ffffff 0%,
@@ -662,7 +664,20 @@
       #d52b1e 66.7%,
       #d52b1e 100%
     );
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  }
+
+  /*
+   * CIS two-compartment plates (Russia, Kazakhstan, Belarus): the region compartment
+   * is a clean continuation of the white field, separated by a heavy black rule -
+   * not a tinted inset, which is what the generic block draws. The tricolour flag,
+   * the alpha-3 legend and the region code are printed as three distinct elements,
+   * exactly as GOST R 50577-2018 specifies for the right-hand compartment.
+   */
+  [data-plate-family="cis_right_region"] .plate-region-block {
+    background: var(--plate-bg, #ffffff);
+    border-left: 3px solid var(--plate-border-color, #111111);
+    gap: 0.4em;
+    padding: 0.5em 0.4em;
   }
 
   /*
@@ -861,6 +876,18 @@
     right: 0;
     height: 9%;
     pointer-events: none;
+  }
+
+  /*
+   * The printed synthetic number. Monospace and non-wrapping: a phone number is a single
+   * token that must never break across lines, and it must never escape the card. The
+   * `cqw`-driven clamp above it shrinks the type before it clips, so this is a safety net
+   * for an adversarial length rather than the primary defence.
+   */
+  .sim-number {
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
   }
 
   /*

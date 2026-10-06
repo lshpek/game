@@ -174,7 +174,7 @@ export default function SimCardVisual({
 
       <span className="sim-sheen" aria-hidden="true" />
 
-      <div className="relative z-10 flex w-full flex-col justify-between p-[6%] pl-[27%]">
+      <div className="relative z-10 flex w-full min-w-0 flex-col justify-between p-[6%] pl-[27%]">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -199,8 +199,8 @@ export default function SimCardVisual({
         </div>
 
         {/* The printed number, grouped the way the country groups it. */}
-        <div className="my-[3%]">
-          <span className="block font-mono text-[clamp(14px,5.6cqw,30px)] font-bold leading-tight tracking-[0.04em] text-white tabular-nums">
+        <div className="my-[3%] min-w-0 overflow-hidden">
+          <span className="sim-number block font-mono text-[clamp(14px,5.6cqw,30px)] font-bold leading-tight tracking-[0.04em] text-white tabular-nums">
             {number}
           </span>
         </div>

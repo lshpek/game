@@ -268,10 +268,11 @@ export default function VehiclePlateVisual({
       role={decorative ? 'presentation' : 'img'}
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : (ariaLabel ?? plateText)}
-      tabIndex={decorative ? -1 : undefined}
-      data-plate-theme={visual.theme}
-      data-mount={visual.mount}
-    >
+       tabIndex={decorative ? -1 : undefined}
+       data-plate-theme={visual.theme}
+       data-plate-family={visual.plate_family}
+       data-plate-mount={visual.mount}
+     >
       <div className="plate-face" style={faceVars as React.CSSProperties}>
         {hasBand && visual.band_position === 'left' && (
           <PlateBand visual={visual} width={bandWidth} />
