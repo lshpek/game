@@ -30,7 +30,6 @@ from app.game.collectibles import (
 )
 from app.game.countries import CountryDef
 from app.game.plate_patterns import PlateAnalysis, analyze_plate
-from app.game.plate_status import status_series_for
 from app.game.plate_rarity import (
     Rarity,
     compute_rarity_score,
@@ -38,6 +37,7 @@ from app.game.plate_rarity import (
     rarity_rank,
     resolve_final_rarity,
 )
+from app.game.plate_status import status_series_for
 from app.game.plate_templates import (
     ParsedTemplate,
     Token,

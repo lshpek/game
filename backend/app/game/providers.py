@@ -425,14 +425,13 @@ def legacy_operator_label(operator_code: str | None) -> str:
 
 __all__ = [
     "LEGACY_PROVIDERS",
-    "LEGACY_OPERATOR_CODES",
     "LINE_SIZE",
     "MAX_PROVIDER_MODIFIER",
     "MIN_PROVIDERS_PER_COUNTRY",
     "MIN_PROVIDER_MODIFIER",
     "NUMORA_CARRIERS",
-    "ProviderDef",
     "RETIRED_OPERATOR_CODES",
+    "ProviderDef",
     "clamp_modifier",
     "legacy_operator_label",
     "provider_by_code",

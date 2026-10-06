@@ -6,7 +6,7 @@ sleeping, so they are deterministic and fast.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -120,7 +120,18 @@ class TestPassiveRegeneration:
         assert state.rolls_remaining == 20
         assert state.next_roll_at is None
 
-    def test_catch_up_is_exact_not_rounded_up(self, db, user, service):
+    def test_catch_up_is_exact_not_rounded_up(self, db, user, service, monkeypatch):
+        # The whole suite is meant to drive time explicitly. This case used to
+        # call ``sync``/``consume_roll`` with the real clock, so a run that
+        # straddled a UTC midnight reset would fire ``ensure_reset`` inside the
+        # catch-up window and refill the bank to the cap (20) instead of 18.
+        # Pin the clock to a fixed midday so the daily boundary can never fall
+        # between the pending slot and the catch-up window.
+        import app.services.daily as daily_module
+
+        fixed_now = datetime(2026, 6, 17, 12, 0, 0, tzinfo=UTC)
+        monkeypatch.setattr(daily_module, "utcnow", lambda: fixed_now)
+
         for _ in range(5):
             service.consume_roll(user)
         service.sync(user)

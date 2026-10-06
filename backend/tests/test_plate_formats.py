@@ -7,8 +7,9 @@ different text ends up in the atlas.
 
 from __future__ import annotations
 
-import pytest
 import random
+
+import pytest
 
 from app.game.countries import (
     COUNTRIES,

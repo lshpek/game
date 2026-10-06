@@ -40,9 +40,11 @@ from enum import StrEnum
 from app.game.iso_countries import iso_country
 from app.game.providers import (
     ProviderDef,
-    legacy_operator_label as _catalogue_label,
     provider_by_code,
     providers_for,
+)
+from app.game.providers import (
+    legacy_operator_label as _catalogue_label,
 )
 
 #: Attached to every generated SIM collectible.

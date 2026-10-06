@@ -25,6 +25,7 @@ scoring, floors and pity logic stay in this module.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from app.game.rarity import (
@@ -233,11 +234,8 @@ def _repeat_quality(value: str) -> int:
 def _sequence_quality(value: str) -> int:
     longest = current = 1 if value else 0
     direction = 0
-    for left, right in zip(value, value[1:]):
-        if left.isdigit() and right.isdigit():
-            step = int(right) - int(left)
-        else:
-            step = ord(right) - ord(left)
+    for left, right in pairwise(value):
+        step = int(right) - int(left) if left.isdigit() and right.isdigit() else ord(right) - ord(left)
         if step in (-1, 1) and direction in (0, step):
             current += 1
             direction = step

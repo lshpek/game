@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.game.countries import COUNTRIES
 from app.game import sim_cards
+from app.game.countries import COUNTRIES
 from app.game.plate_generator import (
     RegionOption,
     TemplateOption,
