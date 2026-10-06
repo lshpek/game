@@ -192,6 +192,61 @@ def _letter(alphabet: str, rng) -> str:
     return alphabet[rng.randint(0, len(alphabet) - 1)]
 
 
+def _neutral_digit(
+    rendered_digits: list[str],
+    choices: tuple[str, ...] = (),
+    rng=None,
+) -> str:
+    if not choices:
+        choices = tuple("0123456789")
+    candidates = list(choices)
+    if len(rendered_digits) >= 2:
+        a, b = rendered_digits[-2], rendered_digits[-1]
+        if a == b:
+            candidates = [d for d in candidates if d != b]
+        elif abs(int(b) - int(a)) == 1:
+            direction = int(b) - int(a)
+            candidates = [d for d in candidates if not (0 <= int(d) - int(b) == direction)]
+    if len(rendered_digits) >= 3:
+        a, b, c = rendered_digits[-3], rendered_digits[-2], rendered_digits[-1]
+        if b == c:
+            candidates = [d for d in candidates if d != a]
+        if a == c:
+            candidates = [d for d in candidates if d != b]
+    if not candidates:
+        candidates = list(choices)
+    return candidates[rng.randint(0, len(candidates) - 1)]
+
+
+def _neutral_letter(rendered_letters: list[str], alphabet: str, rng=None) -> str:
+    if not alphabet:
+        return "A"
+    candidates = list(alphabet)
+    if len(rendered_letters) >= 2:
+        a, b = rendered_letters[-2], rendered_letters[-1]
+        if a == b:
+            candidates = [ch for ch in candidates if ch != b]
+        elif abs(ord(b) - ord(a)) == 1:
+            direction = ord(b) - ord(a)
+            candidates = [ch for ch in candidates if not (0 < ord(ch) - ord(b) == direction)]
+    if len(rendered_letters) >= 3:
+        a, b, c = rendered_letters[-3], rendered_letters[-2], rendered_letters[-1]
+        if b == c:
+            candidates = [ch for ch in candidates if ch != a]
+        if a == c:
+            candidates = [ch for ch in candidates if ch != b]
+    if not candidates:
+        candidates = list(alphabet)
+    return candidates[rng.randint(0, len(candidates) - 1)]
+
+
+def _region_suffix_equals_region(plate_text: str, region_code: str | None) -> bool:
+    if not region_code or not region_code.isdigit():
+        return False
+    digits = "".join(ch for ch in plate_text if ch.isdigit())
+    return len(digits) > len(region_code) and digits.endswith(region_code)
+
+
 def _target_digit_pattern(
     target: Rarity | None,
     digit_slots: int,
@@ -240,8 +295,6 @@ def render_template(
     Joining the groups with their ``sep`` prefixes reproduces ``plate_text`` byte for
     byte, which is what keeps the printed, stored, searched and shared strings identical.
     """
-    parts: list[str] = []
-    chars: list[tuple[str, str]] = []  # (kind, character) in print order
     target_digits = _target_digit_pattern(
         quality_target,
         parsed.digit_slots,
@@ -251,56 +304,73 @@ def render_template(
     digit_index = 0
     target_letter = (
         _letter(alphabet, rng)
-        if quality_target in (Rarity.LEGENDARY, Rarity.MYTHIC, Rarity.SECRET)
+        if quality_target is Rarity.SECRET
         else None
     )
 
-    for part in parsed.parts:
-        if part.is_literal():
-            literal = str(part.text)
-            parts.append(literal)
-            continue
+    try:
+        rng_state = rng.getstate() if rng is not None else None
+    except NotImplementedError:
+        rng_state = None
+    rendered_digits: list[str] = []
+    rendered_letters: list[str] = []
 
-        token: Token = part  # type: ignore[assignment]
-        kind = token.kind
-        if kind == "D":
-            if digit_index < len(target_digits):
-                selected = target_digits[digit_index]
-                text = selected if not token.choices or selected in token.choices else token.choices[
-                    rng.randint(0, len(token.choices) - 1)
-                ]
-            else:
-                choices = token.choices or tuple("0123456789")
-                text = choices[rng.randint(0, len(choices) - 1)]
-            digit_index += 1
-        elif kind in ("L", "A"):
-            choices = token.choices or tuple(alphabet)
-            if target_letter is not None:
-                text = target_letter if target_letter in choices else choices[
-                    rng.randint(0, len(choices) - 1)
-                ]
-            else:
-                text = choices[rng.randint(0, len(choices) - 1)]
-        elif kind == "F":
-            text = token.choices[0] if token.choices else "0"
-        elif kind == "X":
-            choices = token.choices or "0123456789"
-            text = choices[rng.randint(0, len(choices) - 1)]
-        elif kind == "R":
-            # An empty region slot must not leave a dangling separator.
-            parts.append(region_code or "")
-            chars.extend(("region", ch) for ch in (region_code or ""))
-            continue
-        else:  # pragma: no cover - parse_template rejects unknown kinds
-            text = ""
-        parts.append(text)
-        style_kind = "letter" if kind in ("L", "A") else "digit"
-        chars.extend((style_kind, ch) for ch in text)
+    for _attempt in range(4):
+        if _attempt > 0 and rng_state is not None:
+            rng.setstate(rng_state)
+        parts: list[str] = []
+        chars: list[tuple[str, str]] = []
+        rendered_digits = []
+        rendered_letters = []
+        digit_index = 0
 
-    rendered = "".join(parts)
-    while "  " in rendered:
-        rendered = rendered.replace("  ", " ")
-    rendered = rendered.strip()
+        for part in parsed.parts:
+            if part.is_literal():
+                parts.append(str(part.text))
+                continue
+
+            token: Token = part  # type: ignore[assignment]
+            kind = token.kind
+            if kind == "D":
+                if digit_index < len(target_digits):
+                    selected = target_digits[digit_index]
+                    if token.choices and selected not in token.choices:
+                        selected = token.choices[rng.randint(0, len(token.choices) - 1)]
+                    text = selected
+                    rendered_digits.append(text)
+                else:
+                    choices = token.choices or tuple("0123456789")
+                    text = _neutral_digit(rendered_digits, choices, rng)
+                    rendered_digits.append(text)
+                digit_index += 1
+            elif kind in ("L", "A"):
+                choices = token.choices or tuple(alphabet)
+                if target_letter is not None and target_letter in choices:
+                    text = target_letter
+                else:
+                    text = _neutral_letter(rendered_letters, "".join(choices), rng)
+                rendered_letters.append(text)
+            elif kind == "F":
+                text = token.choices[0] if token.choices else "0"
+                rendered_digits.append(text)
+            elif kind == "R":
+                parts.append(region_code or "")
+                chars.extend(("region", ch) for ch in (region_code or ""))
+                continue
+            else:  # pragma: no cover - parse_template rejects unknown kinds
+                text = ""
+            parts.append(text)
+            style_kind = "letter" if kind in ("L", "A") else "digit"
+            chars.extend((style_kind, ch) for ch in text)
+
+        rendered = "".join(parts)
+        while "  " in rendered:
+            rendered = rendered.replace("  ", " ")
+        rendered = rendered.strip()
+
+        if not _region_suffix_equals_region(rendered, region_code):
+            return rendered, group_styles(rendered, chars)
+
     return rendered, group_styles(rendered, chars)
 
 

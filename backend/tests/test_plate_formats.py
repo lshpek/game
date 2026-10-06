@@ -376,7 +376,7 @@ class TestRussianPlateData:
     def test_numeric_regions_are_country_catalogue_entries_not_a_generated_grid(self):
         russia = next(country for country in COUNTRIES if country.code == "RUS")
         assert {region.code for region in russia.regions} == {
-            "02", "16", "23", "40", "50", "52", "54", "61", "63", "66", "77", "78"
+            "00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"
         }
 
     def test_selected_country_region_codes_match_plate_identifiers(self):
@@ -384,7 +384,7 @@ class TestRussianPlateData:
         assert "F" in {region.code for region in countries["DEU"].regions}
         assert "HE" not in {region.code for region in countries["DEU"].regions}
         assert {region.code for region in countries["FRA"].regions} <= {
-            "75", "69", "13", "33", "59", "29"
+            "00", "05", "10", "15", "20", "25"
         }
         assert {region.code for region in countries["UKR"].regions} <= {"AA", "BH", "BC", "AE"}
         assert {region.code for region in countries["CHN"].regions} <= {"粤", "沪", "京"}

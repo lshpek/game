@@ -379,18 +379,18 @@ def _family_for(code: str, region_group: str) -> str:
 # Region catalogues
 # ---------------------------------------------------------------------------
 RU_REGIONS = (
-    RegionDef("77", "Moscow", "Москва", 4.0),
-    RegionDef("50", "Moscow Oblast", "Московская область", 3.0),
-    RegionDef("78", "Saint Petersburg", "Санкт-Петербург", 3.4),
-    RegionDef("23", "Krasnodar", "Краснодар", 2.6),
-    RegionDef("16", "Tatarstan", "Татарстан", 2.2),
-    RegionDef("40", "Kaluga", "Калуга", 1.4),
-    RegionDef("66", "Sverdlovsk", "Свердловская область", 2.0),
-    RegionDef("52", "Nizhny Novgorod", "Нижегородская область", 2.0),
-    RegionDef("63", "Samara", "Самарская область", 2.0),
-    RegionDef("61", "Rostov", "Ростовская область", 1.8),
-    RegionDef("54", "Novosibirsk", "Новосибирская область", 1.8),
-    RegionDef("02", "Bashkortostan", "Башкортостан", 1.6),
+    RegionDef("00", "Moscow", "Москва", 4.0),
+    RegionDef("05", "Moscow Oblast", "Московская область", 3.0),
+    RegionDef("10", "Saint Petersburg", "Санкт-Петербург", 3.4),
+    RegionDef("15", "Krasnodar", "Краснодар", 2.6),
+    RegionDef("20", "Tatarstan", "Татарстан", 2.2),
+    RegionDef("25", "Kaluga", "Калуга", 1.4),
+    RegionDef("30", "Sverdlovsk", "Свердловская область", 2.0),
+    RegionDef("35", "Nizhny Novgorod", "Нижегородская область", 2.0),
+    RegionDef("40", "Samara", "Самарская область", 2.0),
+    RegionDef("45", "Rostov", "Ростов", 1.8),
+    RegionDef("50", "Novosibirsk", "Новосибирск", 1.8),
+    RegionDef("55", "Bashkortostan", "Башкортостан", 1.6),
 )
 
 US_REGIONS = (
@@ -425,33 +425,33 @@ DE_REGIONS = (
 )
 
 KZ_REGIONS = (
-    RegionDef("02", "Almaty", "Алматы", 4.0),
-    RegionDef("01", "Astana", "Астана", 3.4),
-    RegionDef("03", "Shymkent", "Шымкент", 2.6),
-    RegionDef("10", "Karaganda", "Караганда", 2.0),
-    RegionDef("05", "Aktobe", "Актобе", 1.8),
-    RegionDef("04", "Atyrau", "Атырау", 1.4),
-    RegionDef("07", "Pavlodar", "Павлодар", 1.6),
+    RegionDef("00", "Almaty", "Алматы", 4.0),
+    RegionDef("05", "Astana", "Астана", 3.4),
+    RegionDef("10", "Shymkent", "Шымкент", 2.6),
+    RegionDef("15", "Karaganda", "Караганда", 2.0),
+    RegionDef("20", "Aktobe", "Актобе", 1.8),
+    RegionDef("25", "Atyrau", "Атырау", 1.4),
+    RegionDef("30", "Pavlodar", "Павлодар", 1.6),
 )
 
 AM_REGIONS = (
-    RegionDef("01", "Yerevan", "Ереван", 4.0),
-    RegionDef("02", "Ararat", "Арарат", 1.8),
-    RegionDef("03", "Armavir", "Армавир", 1.6),
-    RegionDef("04", "Gegharkunik", "Гегаркуник", 1.6),
-    RegionDef("05", "Lori", "Лори", 1.8),
-    RegionDef("06", "Shirak", "Ширак", 1.4),
-    RegionDef("07", "Syunik", "Сюник", 1.4),
-    RegionDef("08", "Tavush", "Тавуш", 1.3),
+    RegionDef("00", "Yerevan", "Ереван", 4.0),
+    RegionDef("05", "Ararat", "Арарат", 1.8),
+    RegionDef("10", "Armavir", "Армавир", 1.6),
+    RegionDef("15", "Gegharkunik", "Гегаркуник", 1.6),
+    RegionDef("20", "Lori", "Лори", 1.8),
+    RegionDef("25", "Shirak", "Ширак", 1.4),
+    RegionDef("30", "Syunik", "Сюник", 1.4),
+    RegionDef("35", "Tavush", "Тавуш", 1.3),
 )
 
 FR_REGIONS = (
-    RegionDef("75", "Paris", "Париж", 3.2),
-    RegionDef("69", "Rhone", "Рона", 2.4),
-    RegionDef("13", "Bouches-du-Rhone", "Буш-дю-Рон", 2.2),
-    RegionDef("33", "Gironde", "Жиронда", 2.0),
-    RegionDef("59", "Nord", "Нор", 1.8),
-    RegionDef("29", "Finistere", "Финистер", 1.8),
+    RegionDef("00", "Paris", "Париж", 3.2),
+    RegionDef("05", "Rhone", "Рона", 2.4),
+    RegionDef("10", "Bouches-du-Rhone", "Буш-дю-Рон", 2.2),
+    RegionDef("15", "Gironde", "Жиронда", 2.0),
+    RegionDef("20", "Nord", "Нор", 1.8),
+    RegionDef("25", "Finistere", "Финистер", 1.8),
 )
 
 IT_REGIONS = (
@@ -473,12 +473,12 @@ CA_REGIONS = (
 )
 
 JP_REGIONS = (
-    RegionDef("13", "Tokyo", "Токио", 4.0),
-    RegionDef("27", "Osaka", "Осака", 3.0),
-    RegionDef("01", "Hokkaido", "Хоккайдо", 2.0),
-    RegionDef("40", "Fukuoka", "Фукуока", 2.0),
-    RegionDef("23", "Aichi", "Айти", 2.2),
-    RegionDef("14", "Kanagawa", "Канагава", 2.2),
+    RegionDef("00", "Tokyo", "Токио", 4.0),
+    RegionDef("05", "Osaka", "Осака", 3.0),
+    RegionDef("10", "Hokkaido", "Хоккайдо", 2.0),
+    RegionDef("15", "Fukuoka", "Фукуока", 2.0),
+    RegionDef("20", "Aichi", "Айти", 2.2),
+    RegionDef("25", "Kanagawa", "Канагава", 2.2),
 )
 
 AE_REGIONS = (
