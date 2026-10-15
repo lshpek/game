@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n';
 import { formatCoins, rarityColor } from '@/lib/format';
 import SimCardVisual from './SimCardVisual';
 import VehiclePlateVisual from './VehiclePlateVisual';
-import type { PlateCard } from '../types';
+import type { PlateCard, PlateSegmentKind } from '../types';
 
 /**
  * Renders a collectible as the *right physical object*.
@@ -29,11 +29,22 @@ export default function CollectibleVisual({
   scale = 1,
   className = '',
   showValue = false,
+  // TEMPORARY frontend-only visual override for video recording.
+  // Removed after recording; nothing is saved or shared.
+  temporaryPlateOverride,
 }: {
   card: PlateCard;
   scale?: number;
   className?: string;
   showValue?: boolean;
+  temporaryPlateOverride?: {
+    plateText: string;
+    regionCode?: string | null;
+    regionName?: string | null;
+    displaySegments?: string[];
+    displaySegmentGaps?: boolean[];
+    displaySegmentKinds?: PlateSegmentKind[];
+  };
 }) {
   const { t, lang } = useI18n();
   const kind = resolveKind(card);
@@ -65,6 +76,7 @@ export default function CollectibleVisual({
           regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
           regionCode={card.region?.code ?? null}
           scale={scale}
+          temporaryPlateOverride={temporaryPlateOverride}
         />
       )}
 

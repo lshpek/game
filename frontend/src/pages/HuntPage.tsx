@@ -23,6 +23,7 @@ import type {
   CountrySummary,
   PlateCard,
   PlateRollResult,
+  PlateSegmentKind,
   RollBalance,
 } from '@/types';
 
@@ -229,6 +230,21 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   }, [onOpenCollection]);
 
   const recentCard: PlateCard | null = garage.data?.recent ?? null;
+
+  // TEMPORARY frontend-only visual override for video recording.
+  // Displays a fixed Russian plate on the main-screen preview. Nothing is saved,
+  // sent to the API, or shared. Remove this block and the CollectiblePreview prop
+  // after recording to revert.
+  const TEMP_RECORDING_PLATE_OVERRIDE = recentCard
+    ? {
+        plateText: 'А777МР',
+        regionCode: '97',
+        regionName: null,
+        displaySegments: ['А777МР', '97'],
+        displaySegmentGaps: [false, true],
+        displaySegmentKinds: ['mixed', 'region'] as PlateSegmentKind[],
+      }
+    : undefined;
   const rolls: RollBalance | null =
     result?.rolls ?? garage.data?.rolls ?? profileToRollBalance(profile?.rolls_remaining);
   const nextTarget = result?.next_target ?? garage.data?.next_target ?? null;
@@ -369,7 +385,7 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...SPRING.settle, duration: 0.4 }}
           >
-            <CollectiblePreview card={recentCard} scale={0.62} onOpen={openCollection} />
+            <CollectiblePreview card={recentCard} scale={0.62} onOpen={openCollection} temporaryPlateOverride={TEMP_RECORDING_PLATE_OVERRIDE} />
           </motion.div>
         ) : (
           <p className="stage px-4 py-8 text-center t-caption text-white/35">{t('hunt.empty')}</p>

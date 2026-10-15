@@ -17,6 +17,17 @@ interface Props {
   ariaLabel?: string;
   decorative?: boolean;
   sweep?: boolean;
+  // TEMPORARY frontend-only visual override for video recording.
+  // Replaces the plate text/region without touching the API, backend,
+  // inventory or shared data. Remove after recording.
+  temporaryPlateOverride?: {
+    plateText: string;
+    regionCode?: string | null;
+    regionName?: string | null;
+    displaySegments?: string[];
+    displaySegmentGaps?: boolean[];
+    displaySegmentKinds?: PlateSegmentKind[];
+  };
 }
 
 type StyleVars = Record<string, string | number>;
@@ -180,8 +191,22 @@ export default function VehiclePlateVisual({
   ariaLabel,
   decorative = false,
   sweep = false,
+  temporaryPlateOverride,
 }: Props) {
-  const code = (regionCode ?? '').trim();
+  // TEMPORARY frontend-only visual override for video recording.
+  // Applies to this plate instance only; nothing is saved or shared.
+  const override = temporaryPlateOverride;
+
+  const effectivePlateText = override?.plateText ?? plateText;
+  const effectiveRegionCode = (override?.regionCode ?? regionCode ?? '').trim();
+  const effectiveRegionName = override?.regionName ?? regionName;
+  const effectiveDisplaySegments = override?.displaySegments ?? displaySegments;
+  const effectiveDisplaySegmentGaps =
+    override?.displaySegmentGaps ?? displaySegmentGaps;
+  const effectiveDisplaySegmentKinds =
+    override?.displaySegmentKinds ?? displaySegmentKinds;
+
+  const code = effectiveRegionCode;
 
   const hasRegionCompartment =
     visual.region_position === 'right' && Boolean(code);
@@ -192,18 +217,18 @@ export default function VehiclePlateVisual({
   const segments = useMemo(
     () =>
       buildSegments(
-        plateText,
-        displaySegments,
-        displaySegmentGaps,
-        displaySegmentKinds,
+        effectivePlateText,
+        effectiveDisplaySegments,
+        effectiveDisplaySegmentGaps,
+        effectiveDisplaySegmentKinds,
         code,
         hasRegionCompartment,
       ),
     [
-      plateText,
-      displaySegments,
-      displaySegmentGaps,
-      displaySegmentKinds,
+      effectivePlateText,
+      effectiveDisplaySegments,
+      effectiveDisplaySegmentGaps,
+      effectiveDisplaySegmentKinds,
       code,
       hasRegionCompartment,
     ],
@@ -315,11 +340,11 @@ export default function VehiclePlateVisual({
     };
   }, [printed, scale]);
 
-  const header = resolveHeader(visual, regionName);
+  const header = resolveHeader(visual, effectiveRegionName);
 
   return (
     <div
-      className={`plate-frame plate-texture plate-wear ${className}`}
+      className={`plate-frame plate-texture plate-wear ${override ? 'temp-recording-plate' : ''} ${className}`}
       style={
         { ...frameVars, containerType: 'inline-size' } as React.CSSProperties
       }

@@ -9,7 +9,7 @@ import { useI18n } from '@/i18n';
 import CollectibleVisual from './CollectibleVisual';
 import { RarityBadge } from './RarityBadge';
 import { resolveKind } from './CollectibleVisual';
-import type { PlateCard } from '@/types';
+import type { PlateCard, PlateSegmentKind } from '@/types';
 
 /**
  * The collectible, shown as a collectible.
@@ -35,6 +35,16 @@ interface Props {
   showCountry?: boolean;
   /** Shows the dealer value under the object. On by default. */
   showValue?: boolean;
+  /** TEMPORARY frontend-only visual override for video recording.
+   * Removed after recording; nothing is saved or shared. */
+  temporaryPlateOverride?: {
+    plateText: string;
+    regionCode?: string | null;
+    regionName?: string | null;
+    displaySegments?: string[];
+    displaySegmentGaps?: boolean[];
+    displaySegmentKinds?: PlateSegmentKind[];
+  };
 }
 
 export function CollectiblePreview({
@@ -44,6 +54,8 @@ export function CollectiblePreview({
   className,
   showCountry = true,
   showValue = true,
+  // TEMPORARY frontend-only visual override for video recording.
+  temporaryPlateOverride,
 }: Props) {
   const { lang } = useI18n();
   const reduced = useReducedMotion();
@@ -56,7 +68,7 @@ export function CollectiblePreview({
     <>
       {/* 1. The object. Everything else is smaller than this. */}
       <div className="flex w-full justify-center px-1">
-        <CollectibleVisual card={card} scale={scale} />
+        <CollectibleVisual card={card} scale={scale} temporaryPlateOverride={temporaryPlateOverride} />
       </div>
 
       {/* 2. Rarity + country, on one quiet line. */}
