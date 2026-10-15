@@ -1,9 +1,9 @@
 /** Typed HTTP client. All game authority lives on the server. */
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000';
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL as string | undefined
+)?.trim().replace(/\/+$/, '') ?? '';
 
-// Session storage key. Renamed with the NUMORA rebrand; an old key simply reads as
-// "no token", and the app re-authenticates silently from Telegram initData.
 const TOKEN_STORAGE_KEY = 'numora.token';
 
 export class ApiError extends Error {
@@ -11,7 +11,12 @@ export class ApiError extends Error {
   readonly status: number;
   readonly details: Record<string, unknown>;
 
-  constructor(code: string, message: string, status: number, details: Record<string, unknown> = {}) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    details: Record<string, unknown> = {},
+  ) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
@@ -22,7 +27,11 @@ export class ApiError extends Error {
 
 interface ErrorEnvelope {
   success: false;
-  error: { code: string; message: string; details?: Record<string, unknown> };
+  error: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  };
 }
 
 export function getToken(): string | null {
@@ -35,10 +44,13 @@ export function getToken(): string | null {
 
 export function setToken(token: string | null): void {
   try {
-    if (token) window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    if (token) {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
   } catch {
-    /* private mode - session only */
+    // Storage may be unavailable in private or restricted WebViews.
   }
 }
 
@@ -51,29 +63,69 @@ export interface RequestOptions {
   authenticated?: boolean;
 }
 
-function buildUrl(path: string, query?: RequestOptions['query']): string {
-  const url = `${API_BASE}${path}`;
+function buildUrl(
+  path: string,
+  query?: RequestOptions['query'],
+): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${API_BASE}${normalizedPath}`;
+
   if (!query) return url;
+
   const search = new URLSearchParams();
+
   for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined && value !== '') search.set(key, String(value));
+    if (value !== undefined && value !== '') {
+      search.set(key, String(value));
+    }
   }
-  const qs = search.toString();
-  return qs ? `${url}?${qs}` : url;
+
+  const queryString = search.toString();
+  return queryString ? `${url}?${queryString}` : url;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, query, idempotencyKey, signal, authenticated = true } = options;
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const {
+    method = 'GET',
+    body,
+    query,
+    idempotencyKey,
+    signal,
+    authenticated = true,
+  } = options;
 
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  if (!API_BASE) {
+    throw new ApiError(
+      'API_BASE_URL_MISSING',
+      'API server URL is not configured. Set VITE_API_BASE_URL and rebuild the frontend.',
+      0,
+    );
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (idempotencyKey) {
+    headers['Idempotency-Key'] = idempotencyKey;
+  }
+
   if (authenticated) {
     const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
   }
 
   let response: Response;
+
   try {
     response = await fetch(buildUrl(path, query), {
       method,
@@ -82,15 +134,28 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       signal,
     });
   } catch (error) {
-    throw new ApiError('NETWORK_ERROR', 'Network unavailable. Check your connection.', 0, {
-      cause: String(error),
-    });
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+
+    throw new ApiError(
+      'NETWORK_ERROR',
+      'Cannot reach the API server. Check the API URL, server status, and CORS configuration.',
+      0,
+      {
+        url: buildUrl(path, query),
+        cause: String(error),
+      },
+    );
   }
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) {
+    return undefined as T;
+  }
 
   let payload: unknown = null;
   const raw = await response.text();
+
   if (raw) {
     try {
       payload = JSON.parse(raw);
@@ -101,9 +166,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   if (!response.ok) {
     const envelope = payload as ErrorEnvelope | null;
-    const code = envelope?.error?.code ?? 'UNKNOWN_ERROR';
-    const message = envelope?.error?.message ?? 'Something went wrong.';
-    throw new ApiError(code, message, response.status, envelope?.error?.details ?? {});
+    // HTTP failures are reported with the server's own code and status - never as a
+    // network error, because the request did reach the API.
+    throw new ApiError(
+      envelope?.error?.code ?? 'HTTP_ERROR',
+      envelope?.error?.message ?? `Request failed with status ${response.status}.`,
+      response.status,
+      envelope?.error?.details ?? {},
+    );
   }
 
   return payload as T;
@@ -115,5 +185,6 @@ export function makeIdempotencyKey(prefix: string): string {
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
   return `${prefix}-${random}`;
 }

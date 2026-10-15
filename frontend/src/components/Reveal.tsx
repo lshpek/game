@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { createPortal } from 'react-dom';
@@ -114,6 +114,14 @@ export default function Reveal({
   const canSell = duplicates > 0 && typeof onSellDuplicates === 'function';
 
   const duration = revealDuration(card?.rarity);
+  /*
+   * With a reel, the final stage belongs to the reel: `SymbolReel` runs for
+   * `REEL_SECONDS` and calls `onSettled` when the last column locks. The rarity
+   * ladder is shorter than that, so settling on it would cut the reel off mid-spin
+   * (the readout would appear at 1.25-2.2s of a 4s run). The stage chain therefore
+   * stops at `lock` and the reel owns the transition to `settled`.
+   */
+  const hasReel = reel.length > 0;
 
   // Stage timing: one timer chain, fully cancelled on every change, so a fast sequence
   // of rolls can never leave a stale stage running against a new card.
@@ -133,17 +141,19 @@ export default function Reveal({
      * With a reel in front of it, the object only has to settle - the reel has already
      * done the anticipation, and running the full staged sequence behind it as well would
      * put two animations on the same object and make it stutter.
+     *
+     * The reel path deliberately has no `settled` mark: `SymbolReel` runs for
+     * `REEL_SECONDS` (4s), longer than any rarity duration, so a rarity-based settle
+     * would stop it early. The reel finishes on its own and calls `onSettled`.
      */
-    const marks: Array<[Stage, number]> =
-      reel.length > 0
-        ? [
+    const marks: Array<[Stage, number]> = hasReel
+      ? [
             ['dim', 120],
             ['enter', 420],
             ['decelerate', Math.round(duration * 0.55)],
             ['lock', Math.round(duration * 0.78)],
-            ['settled', duration],
           ]
-        : [
+      : [
             ['dim', 90],
             ['enter', 300],
             ['travel', 520],
@@ -153,7 +163,7 @@ export default function Reveal({
           ];
     const timers = marks.map(([next, at]) => window.setTimeout(() => setStage(next), at));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [card, duration, reduced, reel.length]);
+  }, [card, duration, hasReel, reduced]);
 
   // Haptics: roll on entry, one escalating cue at the lock. Never more than two per
   // reveal, so a legendary find feels different without feeling like a machine gun.
@@ -191,6 +201,21 @@ export default function Reveal({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [visible, onClose]);
+
+  /*
+   * The reel's finish line, stable on purpose.
+   *
+   * `SymbolReel` keeps `onSettled` in its own effect dependencies, so an inline arrow
+   * would give it a new identity on every render and restart the 4s sequence from zero -
+   * the reel would loop forever and never settle. `useCallback` pins the identity.
+   *
+   * The previous-value guard makes the transition idempotent: `setStage('settled')` is
+   * also reachable through `skip` and through the reduced-motion path, and settling
+   * twice must never fire duplicate haptics or analytics.
+   */
+  const settleFromReel = useCallback(() => {
+    setStage((previous) => (previous === 'settled' ? previous : 'settled'));
+  }, []);
 
   /*
    * The result's own entrance. With a reel in front of it, the object no longer needs a
@@ -266,7 +291,7 @@ export default function Reveal({
                 <SymbolReel
                   frames={reel}
                   settled={settled}
-                  onSettled={() => setStage('settled')}
+                  onSettled={settleFromReel}
                   finalLabel={card.plate_text}
                   kind={card.kind ?? 'VEHICLE_PLATE'}
                   visual={card.visual}
