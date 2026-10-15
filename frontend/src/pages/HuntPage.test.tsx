@@ -218,7 +218,14 @@ describe('HuntPage core loop', () => {
     installFetch({ '/api/garage': () => json(garage({ recent: simPlate() })) });
     renderWithQuery(<HuntPage />);
     await waitFor(() => expect(rollButton()).toBeEnabled());
-    await waitFor(() => expect(document.querySelector('.sim-body')).not.toBeNull());
+    await waitFor(() => expect(screen.getByTestId('collectible-preview')).toBeInTheDocument());
+
+    // With the temporary recording override always active on HuntPage, a SIM card
+    // recent find renders as the override plate, not as a SIM card.
+    const preview = screen.getByTestId('collectible-preview');
+    expect(preview.textContent).toContain('А777МР');
+    expect(preview.textContent).toContain('97');
+    expect(document.querySelector('.sim-body')).toBeNull();
   });
 
   it('disables the roll when the bank is empty and explains why', async () => {

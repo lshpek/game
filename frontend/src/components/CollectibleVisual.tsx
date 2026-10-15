@@ -59,7 +59,7 @@ export default function CollectibleVisual({
       data-theme={card.visual?.theme}
       style={{ '--rarity': color } as React.CSSProperties}
     >
-      {kind === 'SIM_CARD' ? (
+      {kind === 'SIM_CARD' && !temporaryPlateOverride ? (
         <SimCardVisual
           details={card.details}
           config={card.sim_config ?? null}

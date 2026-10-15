@@ -685,7 +685,7 @@
    * props after recording. Applies only to plates carrying the override prop,
    * leaving the surrounding UI untouched.
    */
-  .temp-recording-plate .plate-frame {
+  .temp-recording-plate.plate-frame {
     background: linear-gradient(
       170deg,
       #d9dde4 0%,
@@ -702,7 +702,7 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.5),
       inset 0 -1px 0 rgba(255, 255, 255, 0.5);
   }
-  .temp-recording-plate .plate-face {
+  .temp-recording-plate.plate-face {
     background: var(--plate-bg, #ffffff);
     border: var(--plate-border, 2px) solid var(--plate-border-color, #111111);
     border-radius: calc(var(--plate-radius, 4px) - 2px);
@@ -710,11 +710,11 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.7),
       inset 0 -2px 3px rgba(0, 0, 0, 0.18);
   }
-  .temp-recording-plate .plate-print,
-  .temp-recording-plate .plate-region-block {
+  .temp-recording-plate.plate-print,
+  .temp-recording-plate.plate-region-block {
     color: var(--plate-text, #0a0a0a);
   }
-  .temp-recording-plate .plate-region-block {
+  .temp-recording-plate.plate-region-block {
     background: var(--plate-bg, #ffffff);
     border-left: 3px solid var(--plate-border-color, #111111);
   }
