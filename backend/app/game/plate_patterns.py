@@ -582,6 +582,15 @@ class PlateAnalysis:
     digits: list[str]
     letters: list[str]
     numeric_core: str
+    traits: list[str]
+    scores: dict[str, int]
+    tags: list[str]
+    letter_pattern: str
+    reasons: list[str]
+    region_code: str | None
+    pattern: object | None = None
+
+
 # --- numeric detectors -----------------------------------------------------
 def detect_all_same(core: str) -> bool:
     digits = _digits_only(core)
