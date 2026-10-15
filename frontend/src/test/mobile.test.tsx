@@ -400,7 +400,9 @@ describe('In-app feedback', () => {
 
   it('sits clear of the header and the navigation', () => {
     wrap(<ToastHost />);
-    notify('hello');
+    // `notify` fans out to a module-level listener that updates React state, so the
+    // update has to happen inside act(...) for the test harness to observe it cleanly.
+    act(() => notify('hello'));
     // Rendered on the next tick by the listener, so read the host when it appears.
     const host = screen.queryByTestId('toast-host');
     if (host) expect(host.style.top).toContain('var(--tg-safe-top)');

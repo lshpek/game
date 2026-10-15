@@ -12,6 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "overrides": {
+    "tinypool": "2.1.2"
+  },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",
     "clsx": "^2.1.1",

@@ -115,9 +115,17 @@ export function CollectiblePreview({
   }
 
   return (
-    <motion.button
-      type="button"
+    <motion.div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(event) => {
+        // A pressable row must be reachable from the keyboard, which a div is not by
+        // default. `Enter` and `Space` are the two keys a native button would fire.
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        onOpen();
+      }}
       className={clsx(
         'stage flex min-w-0 w-full flex-col items-center px-3 py-4 transition',
         className,
@@ -129,7 +137,7 @@ export function CollectiblePreview({
       aria-label={`${card.plate_text}, ${card.rarity}`}
     >
       {body}
-    </motion.button>
+    </motion.div>
   );
 }
 
