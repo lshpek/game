@@ -286,7 +286,7 @@ export default function VehiclePlateVisual({
         visual.band_position === 'right'
           ? 'flex-end'
           : visual.band_position === 'left' || hasRegionCompartment
-            ? 'flex-start'
+            ? 'space-between'
             : 'center',
       paddingLeft:
         visual.band_position === 'left'
@@ -395,8 +395,8 @@ export default function VehiclePlateVisual({
           style={{
             fontSize,
             gap: visual.group_gap,
-            justifyContent: hasRegionCompartment ? 'flex-start' : undefined,
-            textAlign: hasRegionCompartment ? 'left' : undefined,
+            justifyContent: hasRegionCompartment ? 'space-between' : undefined,
+            textAlign: hasRegionCompartment ? 'center' : undefined,
             minWidth: 0,
             maxWidth: '100%',
           }}

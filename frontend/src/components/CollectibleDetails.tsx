@@ -78,7 +78,6 @@ export function CollectibleDetails({
           value={<PriceDisplay value={collectible.dealer_value} size="sm" />}
           accent="#c9a86b"
         />
-        <Fact label={t('details.rarity')} value={collectible.rarity} accent={accent} />
         <Fact
           label={t('details.collectorValue')}
           value={

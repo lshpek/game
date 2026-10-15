@@ -8,10 +8,10 @@ import { CollectiblePreview } from '@/components/CollectiblePreview';
 import { NextTargetLine, RollBalanceLine } from '@/components/RollEconomy';
 import RollButton from '@/components/RollButton';
 import { KindSelector } from '@/components/Selectors';
-import { useT } from '@/i18n';
+import { useI18n, useT } from '@/i18n';
 import { trackCollectionOpened, trackSellClicked } from '@/lib/analytics';
 import { ApiError, makeIdempotencyKey } from '@/lib/api';
-import { formatCoins } from '@/lib/format';
+import { formatCoins } from '@/lib/format';\nimport { resolveRuRegion } from '@/lib/regions';
 import { EASE, SPRING, useReducedMotion } from '@/lib/motion';
 import { hapticCue } from '@/lib/telegram';
 import { countries as countriesApi, game } from '@/services/api';
@@ -239,7 +239,7 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
     ? {
         plateText: 'А777МР',
         regionCode: '97',
-        regionName: null,
+        regionName: resolveRuRegion('97', lang),
         displaySegments: ['А777МР', '97'],
         displaySegmentGaps: [false, true],
         displaySegmentKinds: ['mixed', 'region'] as PlateSegmentKind[],
@@ -456,3 +456,5 @@ function profileToRollBalance(remaining: number | undefined): RollBalance | null
   };
 }
 export { HuntPage };
+
+

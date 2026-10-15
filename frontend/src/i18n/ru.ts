@@ -54,7 +54,7 @@ export const ru: Dict = {
   'roll.rolling': 'Крутим',
   'roll.rollingNow': 'Крутим…',
   'roll.one': 'ролл',
-  'roll.many': 'роллов',
+  'roll.many': 'ролл|ролла|роллов',
   'result.secretDiscovered': '🚨 Секрет открыт',
   'result.secretFound': '★ Найден секрет',
   'result.duplicate': 'Дубликат',
@@ -259,8 +259,8 @@ export const ru: Dict = {
   'hunt.nextRollIn': 'через',
   'hunt.in': 'через',
   'hunt.bonus': 'бонус',
-  'hunt.bonusRolls': 'бонусных роллов',
-  'hunt.rollsCount': 'роллов: {n}',
+  'hunt.bonusRolls': 'бонусный ролл|бонусных ролла|бонусных роллов',
+  'hunt.rollsCount': 'ролл: {n}|ролла: {n}|роллов: {n}',
   'hunt.noRolls': 'Прокрутки закончились. Следующая восстановится скоро.',
   'hunt.noRollsShort': 'ПРОКРУТОК НЕТ',
   // Пока банк грузится. Кнопка остаётся рабочей: неизвестный баланс — это не пустой
@@ -271,7 +271,7 @@ export const ru: Dict = {
   // --- Единственная следующая цель -----------------------------------------
   'goal.countrySet': 'Ещё {n} предм. категории «{section}», чтобы закрыть набор {country}',
   'goal.firstRegion': 'Откройте первый регион в {country}',
-  'goal.moreRegions': 'Ещё {n} регионов в {country}',
+  'goal.moreRegions': 'Ещё {n} регион|региона|регионов в {country}',
   'goal.operators': 'Соберите ещё {n} операторов SIM',
   'goal.mission': 'Ещё {n} прокруток до задания дня',
   'goal.album': 'Ещё {n} предметов до закрытия альбома',
@@ -328,7 +328,7 @@ export const ru: Dict = {
   // Одна цель за раз: бэкенд присылает ровно одну, и это осознанное решение.
   'hunt.objective': 'ДАЛЬШЕ',
   'hunt.alwaysOneObjective': 'Сделайте ролл, чтобы найти первый предмет.',
-  'hunt.targetMoreRegions': 'Найдите ещё {count} регионов',
+  'hunt.targetMoreRegions': 'Найдите ещё {count} регион|региона|регионов',
   'hunt.targetFirstDiscovery': 'Откройте для всех коллекцию из {country}',
   'hunt.targetAlbum': 'Закройте ещё один набор',
   'hunt.targetMissions': 'Выполните ещё одно задание',
@@ -350,3 +350,8 @@ export const ru: Dict = {
   'collection.kindPlates': 'НОМЕРА',
   'collection.kindSim': 'SIM',
 };
+
+
+
+
+
