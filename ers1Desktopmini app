@@ -1,0 +1,14 @@
+[33mcommit 8573f5b386031bfba22501ccc7ae9b3361b452ad[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: lshpek <konevkirill701@gmail.com>
+Date:   Fri Oct 16 00:15:41 2026 +0300
+
+    Fix vehicle plate region mapping and main screen UI
+
+ fix_i18n.py                                    | 33 [32m+++++++++++++++++++[m
+ frontend/src/components/CollectibleDetails.tsx |  1 [31m-[m
+ frontend/src/components/VehiclePlateVisual.tsx |  6 [32m++[m[31m--[m
+ frontend/src/i18n/index.tsx                    | 12 [32m+++++++[m
+ frontend/src/i18n/ru.ts                        | 15 [32m++++++[m[31m---[m
+ frontend/src/lib/regions.ts                    | 44 [32m++++++++++++++++++++++++++[m
+ frontend/src/pages/HuntPage.tsx                |  8 [32m+++[m[31m--[m
+ 7 files changed, 107 insertions(+), 12 deletions(-)

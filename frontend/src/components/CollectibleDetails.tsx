@@ -4,7 +4,6 @@ import clsx from 'clsx';
 import CollectibleVisual, { resolveKind } from '@/components/CollectibleVisual';
 import { RarityBadge, TraitChip } from '@/components/RarityBadge';
 import { useI18n, type DictKey } from '@/i18n';
-import { RARITY_COLORS } from '@/lib/format';
 import { PriceDisplay } from '@/components/PriceDisplay';
 import { DURATION, EASE, SPRING, useReducedMotion } from '@/lib/motion';
 import type { PlateCard } from '@/types';
@@ -33,7 +32,6 @@ export function CollectibleDetails({
 }: CollectibleDetailsProps) {
   const { t, lang } = useI18n();
   const kind = resolveKind(collectible);
-  const accent = RARITY_COLORS[collectible.rarity] ?? RARITY_COLORS.COMMON;
   const country = lang === 'ru' ? collectible.country.name_ru : collectible.country.name_en;
   const region = collectible.region
     ? lang === 'ru'

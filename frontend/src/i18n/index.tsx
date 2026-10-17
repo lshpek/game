@@ -39,7 +39,7 @@ function render(template: string, vars?: TranslateVars): string {
     let index = 2; // many
     if (n10 === 1 && n100 !== 11) index = 0; // one
     else if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 > 20)) index = 1; // few
-    template = forms[index] ?? forms[forms.length - 1];
+    template = forms[index] ?? forms[forms.length - 1] ?? template;
   }
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     name in vars ? String(vars[name]) : match,

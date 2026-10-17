@@ -11,7 +11,8 @@ import { KindSelector } from '@/components/Selectors';
 import { useI18n, useT } from '@/i18n';
 import { trackCollectionOpened, trackSellClicked } from '@/lib/analytics';
 import { ApiError, makeIdempotencyKey } from '@/lib/api';
-import { formatCoins } from '@/lib/format';\nimport { resolveRuRegion } from '@/lib/regions';
+import { formatCoins } from '@/lib/format';
+import { resolveRuRegion } from '@/lib/regions';
 import { EASE, SPRING, useReducedMotion } from '@/lib/motion';
 import { hapticCue } from '@/lib/telegram';
 import { countries as countriesApi, game } from '@/services/api';
@@ -71,6 +72,7 @@ const ROLL_COOLDOWN_MS = 400;
 
 export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   const t = useT();
+  const { lang } = useI18n();
   const reduced = useReducedMotion();
   const queryClient = useQueryClient();
   const applyProfile = useAuthStore((state) => state.applyProfile);
@@ -456,5 +458,6 @@ function profileToRollBalance(remaining: number | undefined): RollBalance | null
   };
 }
 export { HuntPage };
+
 
 
