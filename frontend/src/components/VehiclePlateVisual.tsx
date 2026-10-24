@@ -299,7 +299,7 @@ export default function VehiclePlateVisual({
       maxWidth: '100%',
       transform: tilt
         ? `perspective(900px) rotateX(${tilt.rx.toFixed(2)}deg) rotateY(${tilt.ry.toFixed(2)}deg) scale3d(1.015, 1.015, 1)`
-        : undefined,
+        : 'none',
     }),
     [recipeVars, visual.aspect, visual.width_mm, scale, tilt],
   );
