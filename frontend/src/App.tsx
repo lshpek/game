@@ -17,20 +17,6 @@ import { RankingPage } from '@/pages/RankingPage';
 import { useAuthStore } from '@/store/auth';
 import { I18nProvider, useI18n } from '@/i18n';
 
-/**
- * The app shell: the one place that owns vertical space.
- *
- * Mobile is the primary design and desktop is this scaled up, not the other way round.
- * That means a single column of content at a comfortable reading width, centred in the
- * viewport, with the header and the bottom navigation as fixed furniture either side of
- * it. There is no separate desktop layout to drift out of sync, and no screen can
- * overflow horizontally because no screen is ever wider than `--app-width`.
- *
- * The scroll container is `#root`, sized from `--app-height` (the measured Telegram
- * viewport). Screens never set their own bottom padding for the navigation: the shell
- * reserves it once, from the same variable the navigation is built from, so the two
- * cannot disagree.
- */
 function AppShell() {
   const status = useAuthStore((state) => state.status);
   const error = useAuthStore((state) => state.error);
@@ -55,14 +41,12 @@ function AppShell() {
   if (status === 'error') {
     return (
       <div
-        // Announced, not just shown: a session failure is the one error the player must
-        // not have to notice for themselves.
         role="alert"
         className="flex flex-col items-center justify-center gap-4 px-[var(--gutter)] text-center"
         style={{ minHeight: 'var(--app-height)', paddingTop: 'var(--tg-safe-top)' }}
       >
         <p className="t-h2 text-white">{t('app.signInFailed')}</p>
-        <p className="max-w-xs t-caption text-white/50">{error}</p>
+        <p className="max-w-xs t-caption text-white/55">{error}</p>
         <button type="button" className="btn-primary" onClick={() => void login()}>
           {t('app.retry')}
         </button>
@@ -74,38 +58,14 @@ function AppShell() {
     <div
       className={clsx(
         'app-shell relative mx-auto flex w-full flex-col overflow-hidden',
-        // The reading measure stops growing past `--content-max`: a longer line is not
-        // more usable, it is harder to read, and a plate stretched across a 4K monitor
-        // looks like a billboard rather than a physical object.
         'max-w-[var(--content-max)]',
       )}
-      // `min-h-0` again, one level up: the shell is itself the flex child of `#root`, and
-      // without it the shell refuses to be shorter than its content and the sticky header
-      // inside it stops sticking to the viewport.
       style={{ minHeight: 'var(--app-height)', maxHeight: 'var(--app-height)' }}
       data-testid="app-shell"
     >
       <MobileHeader />
-      {/*
-        The toast host sits next to the header, not at the end of the shell: it has to be
-        inside the app's layout so it is measured against the same safe area the header
-        is, instead of guessing at its own.
-      */}
       <ToastHost />
 
-      {/*
-        The single scroll container, and the reason it works.
-
-        `min-h-0` is load-bearing: this is a flex child, and a flex item's default
-        `min-height: auto` refuses to shrink below its content, so `overflow-y: auto`
-        would never engage and the whole shell would grow to the full page height instead
-        of scrolling. That single missing declaration is what produced "the page scrolls
-        but the header and the navigation do not stay put".
-
-        The padding below is the navigation height plus the system gesture inset plus one
-        gap - all measured from the same variables the navigation is built from, so the
-        two cannot disagree about how much room it takes.
-      */}
       <main
         className="min-h-0 flex-1 overflow-y-auto overflow-x-clip overscroll-y-contain px-[var(--gutter)]"
         style={{
@@ -118,8 +78,6 @@ function AppShell() {
       >
         <ScrollReset />
         <Routes>
-          {/* ROLL is the product now. Boxes is the legacy four-digit line and is
-              reachable from the profile, not from the primary navigation. */}
           <Route path="/" element={<HuntPage />} />
           <Route path="/world" element={<WorldPage />} />
           <Route path="/legacy" element={<BoxesPage />} />
@@ -135,14 +93,6 @@ function AppShell() {
   );
 }
 
-/**
- * Returning to the top on navigation.
- *
- * A route change must not leave the player halfway down a previous screen's list, which
- * is the "sudden position reset" artefact the old layout produced: the new screen
- * inherited the old scroll offset and then jumped. Resetting to the top explicitly, at
- * the container rather than the window, is deterministic on every platform.
- */
 function ScrollReset() {
   const location = useLocation();
   useEffect(() => {
@@ -152,7 +102,7 @@ function ScrollReset() {
   return null;
 }
 
-/** Keeps the profile fresh when the tab regains focus inside Telegram. */
+/** Keeps the profile and roll bank fresh when the tab regains focus without triggering a full-app refetch storm. */
 function ProfileSync() {
   const status = useAuthStore((state) => state.status);
   const refreshProfile = useAuthStore((state) => state.refreshProfile);
@@ -163,7 +113,8 @@ function ProfileSync() {
     void refreshProfile();
     const onFocus = () => {
       void refreshProfile();
-      void queryClient.invalidateQueries();
+      void queryClient.invalidateQueries({ queryKey: ['garage'] });
+      void queryClient.invalidateQueries({ queryKey: ['daily'] });
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -172,17 +123,6 @@ function ProfileSync() {
   return null;
 }
 
-/**
- * The query cache.
- *
- * A module-level singleton rather than a component-local instance: it has to outlive
- * re-renders and remounts, or every route change would throw away the cache and the player
- * would see a spinner for data they already had.
- *
- * `refetchOnWindowFocus: false` matters inside a Mini App specifically - Telegram fires
- * focus/blur on every chat switch, and a default that refetches on focus turns opening a
- * message into a burst of requests against the roll and collection endpoints.
- */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

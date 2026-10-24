@@ -1,7 +1,7 @@
-
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { formatCoins } from '../lib/format';
+import { useReducedMotion } from '../lib/motion';
 import type { PlateCard, PlateVisual, PlateSegmentKind } from '../types';
 
 interface Props {
@@ -12,14 +12,13 @@ interface Props {
   displaySegmentKinds?: PlateSegmentKind[];
   regionName?: string | null;
   regionCode?: string | null;
+  rarity?: string;
   scale?: number;
   className?: string;
   ariaLabel?: string;
   decorative?: boolean;
   sweep?: boolean;
-  // TEMPORARY frontend-only visual override for video recording.
-  // Replaces the plate text/region without touching the API, backend,
-  // inventory or shared data. Remove after recording.
+  interactiveTilt?: boolean;
   temporaryPlateOverride?: {
     plateText: string;
     regionCode?: string | null;
@@ -43,8 +42,10 @@ const SEGMENT_CLASS: Record<PlateSegmentKind, string> = {
   digit: '',
   region: '',
   mixed: '',
-  mark: 'opacity-60',
+  mark: 'opacity-65',
 };
+
+const HOLO_RARITIES = new Set(['EPIC', 'LEGENDARY', 'MYTHIC', 'SECRET']);
 
 function inferKind(value: string): PlateSegmentKind {
   const text = value.trim();
@@ -123,7 +124,6 @@ function buildSegments(
   const lastIndex = result.length - 1;
   const last = result[lastIndex];
 
-  // TypeScript: protect against an absent last element.
   if (!last) {
     return result;
   }
@@ -159,8 +159,6 @@ function buildSegments(
     ];
   }
 
-  // Older payloads may include the region code in plateText
-  // without providing a separate region segment.
   const normalizedText = plateText.trimEnd();
 
   if (normalizedText.endsWith(regionCode)) {
@@ -186,15 +184,20 @@ export default function VehiclePlateVisual({
   displaySegmentKinds,
   regionName,
   regionCode,
+  rarity,
   scale = 1,
   className = '',
   ariaLabel,
   decorative = false,
   sweep = false,
+  interactiveTilt = true,
   temporaryPlateOverride,
 }: Props) {
-  // TEMPORARY frontend-only visual override for video recording.
-  // Applies to this plate instance only; nothing is saved or shared.
+  const reducedMotion = useReducedMotion();
+  const [tilt, setTilt] = useState<{ rx: number; ry: number; gx: number; gy: number } | null>(
+    null,
+  );
+
   const override = temporaryPlateOverride;
 
   const effectivePlateText = override?.plateText ?? plateText;
@@ -207,6 +210,8 @@ export default function VehiclePlateVisual({
     override?.displaySegmentKinds ?? displaySegmentKinds;
 
   const code = effectiveRegionCode;
+  const normalizedRarity = (rarity ?? '').toUpperCase();
+  const isHolo = HOLO_RARITIES.has(normalizedRarity);
 
   const hasRegionCompartment =
     visual.region_position === 'right' && Boolean(code);
@@ -238,6 +243,27 @@ export default function VehiclePlateVisual({
     ? segments.filter((segment) => segment.kind !== 'region')
     : segments;
 
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!interactiveTilt || reducedMotion || decorative) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const px = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+      const py = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+      setTilt({
+        rx: (0.5 - py) * 14,
+        ry: (px - 0.5) * 16,
+        gx: Math.round(px * 100),
+        gy: Math.round(py * 100),
+      });
+    },
+    [interactiveTilt, reducedMotion, decorative],
+  );
+
+  const handlePointerLeave = useCallback(() => {
+    if (tilt !== null) setTilt(null);
+  }, [tilt]);
+
   const recipeVars = useMemo<StyleVars>(
     () => ({
       '--plate-radius': visual.radius,
@@ -246,7 +272,7 @@ export default function VehiclePlateVisual({
       '--plate-bg': visual.background,
       '--plate-bg-alt': visual.background_alt,
       '--plate-text': visual.text,
-      '--plate-font': visual.font_stack,
+      '--plate-font': `"Oswald", "Roboto Condensed", ${visual.font_stack || '"Arial Narrow", sans-serif'}`,
       '--plate-letter-spacing': visual.letter_spacing,
       '--plate-gap': visual.group_gap,
       '--plate-digit-weight': visual.digit_weight,
@@ -254,13 +280,15 @@ export default function VehiclePlateVisual({
       '--plate-band-text-color': visual.band_text_color,
       '--plate-header-color': visual.header_color || visual.muted,
       '--plate-sheen': String(
-        visual.gloss ? clamp(visual.sheen, 0, 1) : 0.08,
+        visual.gloss ? clamp(visual.sheen, 0, 1) : 0.14,
       ),
-      '--plate-rail': `${Math.max(2, Math.round(3 * scale))}px`,
-      '--plate-raise': String(clamp(visual.relief ?? 0.35, 0, 1)),
-      '--plate-grain': String(clamp(visual.grain ?? 0.16, 0, 1)),
+      '--plate-rail': `${Math.max(2, Math.round(3.5 * scale))}px`,
+      '--plate-raise': String(clamp(visual.relief ?? 0.42, 0, 1)),
+      '--plate-grain': String(clamp(visual.grain ?? 0.18, 0, 1)),
+      '--glare-x': `${tilt?.gx ?? 30}%`,
+      '--glare-y': `${tilt?.gy ?? 20}%`,
     }),
-    [visual, scale],
+    [visual, scale, tilt],
   );
 
   const frameVars = useMemo<StyleVars>(
@@ -269,8 +297,11 @@ export default function VehiclePlateVisual({
       aspectRatio: `${visual.aspect}`,
       width: `${Math.round(visual.width_mm * scale)}px`,
       maxWidth: '100%',
+      transform: tilt
+        ? `perspective(900px) rotateX(${tilt.rx.toFixed(2)}deg) rotateY(${tilt.ry.toFixed(2)}deg) scale3d(1.015, 1.015, 1)`
+        : undefined,
     }),
-    [recipeVars, visual.aspect, visual.width_mm, scale],
+    [recipeVars, visual.aspect, visual.width_mm, scale, tilt],
   );
 
   const faceVars = useMemo<StyleVars>(
@@ -348,6 +379,8 @@ export default function VehiclePlateVisual({
       style={
         { ...frameVars, containerType: 'inline-size' } as React.CSSProperties
       }
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
       role={decorative ? 'presentation' : 'img'}
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : (ariaLabel ?? plateText)}
@@ -355,8 +388,11 @@ export default function VehiclePlateVisual({
       data-plate-theme={visual.theme}
       data-plate-family={visual.plate_family}
       data-plate-mount={visual.mount}
+      data-rarity={normalizedRarity || undefined}
     >
       <div className="plate-face" style={faceVars as React.CSSProperties}>
+        <span className="plate-bolts" aria-hidden="true" />
+
         {hasBand && visual.band_position === 'left' && (
           <PlateBand visual={visual} width={bandWidth} />
         )}
@@ -471,6 +507,8 @@ export default function VehiclePlateVisual({
         {hasBand && visual.band_position === 'right' && (
           <PlateBand visual={visual} width={bandWidth} />
         )}
+
+        {isHolo && <span className="plate-holo" aria-hidden="true" />}
 
         {sweep && (
           <span
@@ -606,6 +644,7 @@ export function PlateObject({
         displaySegmentKinds={card.display_segment_kinds}
         regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
         regionCode={card.region?.code ?? null}
+        rarity={card.rarity}
         scale={scale}
       />
 

@@ -4,30 +4,7 @@ import clsx from 'clsx';
 
 import { useI18n } from '@/i18n';
 import { SPRING, useReducedMotion } from '@/lib/motion';
-
-/**
- * Bottom navigation: ROLL · WORLD · COLLECTION · RANK · PROFILE.
- *
- * This is the app's only permanent furniture besides the header, so it is built from the
- * layout variables rather than from magic numbers:
- *
- * * the system gesture inset is applied *below* the bar, not as padding on it, so the
- *   icons stay optically aligned whether or not there is a home indicator;
- * * when the keyboard is open the bar moves out of the way entirely, because a
- *   navigation bar under a keyboard is unusable.
- *
- * ### Icons
- *
- * Drawn as SVG, all from one 24x24 grid with one 1.8px stroke. The previous set mixed
- * emoji with typographic characters - a globe emoji, `◎`, `▲`, `☺` - which rendered at
- * different sizes per platform, coloured themselves inconsistently, and read as
- * placeholder text rather than as an icon set. One grid and one weight is what makes the
- * bar look designed instead of assembled.
- *
- * ROLL leads because it is the action the player came for: a taller target and a filled
- * marker, but not a different colour scheme. A red casino tab would read as a gambling
- * app, which is exactly what this is not.
- */
+import { playTap } from '@/lib/sound';
 
 function Icon({ name }: { name: ItemName }) {
   const common = {
@@ -36,18 +13,17 @@ function Icon({ name }: { name: ItemName }) {
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke: 'currentColor',
-    strokeWidth: 1.8,
+    strokeWidth: 1.85,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
     'aria-hidden': true,
   };
   switch (name) {
     case 'roll':
-      // A ring with a solid core: the collectible itself, not a target.
       return (
         <svg {...common}>
           <circle cx="12" cy="12" r="8.2" />
-          <circle cx="12" cy="12" r="3.1" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" />
         </svg>
       );
     case 'world':
@@ -59,7 +35,6 @@ function Icon({ name }: { name: ItemName }) {
         </svg>
       );
     case 'collection':
-      // A plate in a frame: the atlas is a grid of physical objects.
       return (
         <svg {...common}>
           <rect x="3.4" y="6" width="17.2" height="12" rx="2.6" />
@@ -87,10 +62,6 @@ function Icon({ name }: { name: ItemName }) {
 
 type ItemName = 'roll' | 'world' | 'collection' | 'ranking' | 'profile';
 
-/*
- * The primary flag is kept for labelling and ordering only. It deliberately does *not*
- * affect width, height or icon size: ROLL is where players start, not a bigger tab.
- */
 const ITEMS: Array<{
   to: string;
   key: 'nav.roll' | 'nav.world' | 'nav.collection' | 'nav.ranking' | 'nav.profile';
@@ -104,21 +75,6 @@ const ITEMS: Array<{
   { to: '/profile', key: 'nav.profile', icon: 'profile', primary: false },
 ];
 
-/**
- * Exactly five equal destinations.
- *
- * A CSS grid of five `1fr` columns, not a flex row with a wider primary. Every
- * destination therefore has *identical* width, height, touch area and vertical alignment
- * by construction - there is no per-item styling left to get out of sync, and ROLL cannot
- * take more room than the others even though it is the screen players came for.
- *
- * The active item is distinguished by treatment alone: a filled pill behind it, brighter
- * strokes on the icon, bolder text. Nothing about it changes the grid geometry, so
- * switching tabs cannot shift the bar.
- *
- * The bar is pinned to the shell rather than the window, so on desktop it sits on the
- * framed surface's bottom edge instead of floating across a 1920px screen.
- */
 export function BottomNav() {
   const location = useLocation();
   const { t } = useI18n();
@@ -128,16 +84,16 @@ export function BottomNav() {
     <nav
       className={clsx(
         'bottom-nav fixed inset-x-0 bottom-0 z-40 mx-auto w-full',
-        'border-t border-white/[0.08] bg-ink-950/92 backdrop-blur-xl',
+        'border-t border-white/[0.1] bg-ink-950/95 backdrop-blur-xl',
       )}
       style={{
         maxWidth: 'var(--content-max)',
         paddingBottom: 'var(--tg-safe-bottom)',
+        boxShadow: '0 -12px 32px -12px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(212, 175, 106, 0.12)',
       }}
       aria-label={t('app.navigation')}
       data-testid="bottom-nav"
     >
-      {/* Five equal columns. `1fr` each, no exceptions. */}
       <ul
         className="grid grid-cols-5"
         style={{ height: 'var(--bottom-nav-height)' }}
@@ -150,25 +106,34 @@ export function BottomNav() {
             <li key={item.to} className="relative min-w-0">
               <NavLink
                 to={item.to}
+                onClick={() => {
+                  if (!active) playTap();
+                }}
                 className="relative flex h-full min-h-[48px] flex-col items-center justify-center gap-1 px-1 transition active:scale-95"
-                style={{ color: active ? '#ffffff' : 'rgba(255,255,255,0.45)' }}
+                style={{ color: active ? '#ffffff' : 'rgba(255,255,255,0.48)' }}
                 aria-current={active ? 'page' : undefined}
                 data-testid={`nav-${item.to === '/' ? 'roll' : item.to.slice(1)}`}
               >
                 {active && !reduced ? (
                   <motion.span
                     layoutId="nav-indicator"
-                    // The pill is inset *within* the column, so it cannot widen the item.
-                    className="absolute inset-x-1 inset-y-1.5 -z-10 rounded-xl bg-white/[0.08]"
+                    className="absolute inset-x-1.5 inset-y-1.5 -z-10 rounded-2xl border border-brass/30 bg-gradient-to-b from-brass/20 via-white/[0.08] to-white/[0.03]"
+                    style={{
+                      boxShadow:
+                        'inset 0 1px 0 rgba(255,255,255,0.2), 0 4px 14px -4px rgba(212, 175, 106, 0.35)',
+                    }}
                     transition={SPRING.settle}
                   />
                 ) : active ? (
-                  <span className="absolute inset-x-1 inset-y-1.5 -z-10 rounded-xl bg-white/[0.08]" />
+                  <span className="absolute inset-x-1.5 inset-y-1.5 -z-10 rounded-2xl border border-brass/30 bg-white/[0.1]" />
                 ) : null}
 
-                {/* One icon size for every destination. The primary is not enlarged: a
-                    bigger icon is a wider-feeling tab, and equal means equal. */}
-                <span className="grid h-[22px] w-[22px] shrink-0 place-items-center">
+                <span
+                  className={clsx(
+                    'grid h-[22px] w-[22px] shrink-0 place-items-center transition-transform',
+                    active && 'scale-105 text-brass-soft',
+                  )}
+                >
                   <Icon name={item.icon} />
                 </span>
                 <span

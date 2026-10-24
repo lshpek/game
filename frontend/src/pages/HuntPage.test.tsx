@@ -30,7 +30,6 @@ vi.mock('@/lib/telegram', () => ({
   openTelegramLink: vi.fn(),
 }));
 
-/** Records every request so a test can assert what was actually sent. */
 interface Call {
   url: string;
   init: RequestInit | undefined;
@@ -66,7 +65,6 @@ function renderWithQuery(ui: ReactElement) {
   );
 }
 
-/** The roll button is the primary action; find it by what it promises. */
 const rollButton = () => screen.getByRole('button', { name: /^roll/i });
 
 describe('HuntPage core loop', () => {
@@ -84,8 +82,6 @@ describe('HuntPage core loop', () => {
   it('leads with the roll, and shows the server balance', async () => {
     renderWithQuery(<HuntPage />);
     await waitFor(() => expect(rollButton()).toBeEnabled());
-    // The count is on the control itself, and the same authoritative balance is on the
-    // bank line above it - one number, shown once per place it belongs.
     expect(within(rollButton()).getByText(/18/)).toBeInTheDocument();
     expect(screen.getAllByText(/18 rolls/).length).toBeGreaterThan(0);
   });
@@ -101,7 +97,6 @@ describe('HuntPage core loop', () => {
     await user.dblClick(rollButton());
 
     await waitFor(() => expect(calls.some((call) => call.url.includes('/api/roll'))).toBe(true));
-    // The synchronous guard swallows the second press.
     expect(calls.filter((call) => call.url.includes('/api/roll'))).toHaveLength(1);
   });
 
@@ -139,7 +134,6 @@ describe('HuntPage core loop', () => {
     await user.click(rollButton());
 
     await screen.findByRole('button', { name: /roll again/i }, { timeout: 6000 });
-    // The action does not exist, so the invalid request can never be constructed.
     expect(screen.queryByRole('button', { name: /sell duplicates/i })).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /close|cancel|collection/i, hidden: true }));
@@ -220,12 +214,7 @@ describe('HuntPage core loop', () => {
     await waitFor(() => expect(rollButton()).toBeEnabled());
     await waitFor(() => expect(screen.getByTestId('collectible-preview')).toBeInTheDocument());
 
-    // With the temporary recording override always active on HuntPage, a SIM card
-    // recent find renders as the override plate, not as a SIM card.
-    const preview = screen.getByTestId('collectible-preview');
-    expect(preview.textContent).toContain('А777МР');
-    expect(preview.textContent).toContain('97');
-    expect(document.querySelector('.sim-body')).toBeNull();
+    expect(document.querySelector('.sim-body')).not.toBeNull();
   });
 
   it('disables the roll when the bank is empty and explains why', async () => {

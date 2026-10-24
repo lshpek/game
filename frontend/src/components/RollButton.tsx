@@ -3,48 +3,10 @@ import clsx from 'clsx';
 
 import { useI18n } from '../i18n';
 import { EASE, SPRING, useReducedMotion } from '../lib/motion';
+import { playRollStart } from '../lib/sound';
 import { hapticCue } from '../lib/telegram';
 import { CountdownPill } from './RollEconomy';
 import type { RollBalance } from '../types';
-
-/**
- * ROLL: the primary action in NUMORA.
- *
- * The states are the contract, and there are exactly five:
- *
- * ```
- * unknown → КРУТИТЬ → КРУТИМ… → (result) → КРУТИТЬ СНОВА
- *                     ↘ 0 rolls → countdown, not a dead button
- * ```
- *
- * ### Why it looked unclickable
- *
- * `rolls === null` means the bank has not loaded *yet*. It does not mean the player has
- * zero rolls. The old control computed `empty = rolls_remaining <= 0` and then
- * `disabled = empty`, which meant the button was **dead for the whole time the bank was
- * loading** - and permanently dead if that request ever failed, because the screen would
- * sit there refusing taps forever with no explanation.
- *
- * So absence of data is now absence of an opinion: `unknown` disables nothing. The
- * server is authoritative anyway, and it will refuse a roll it cannot honour with a real
- * error the player can act on.
- *
- * ### Nothing sticks out
- *
- * Every element - the label, the count, the countdown, the fill - lives inside the
- * button's own bounds. There is no absolutely-positioned badge hanging off the top edge:
- * on a screen whose whole premise is a *physical object*, a number floating off the
- * control is exactly the kind of thing that makes the interface feel unfinished.
- *
- * ### Double-tap protection
- *
- * Two layers, because either alone has a gap: the synchronous ref on the hunt screen
- * swallows a second press inside one frame, and the server's idempotency key is the
- * backstop. `locked` carries the first layer into the control's own disabled state, so
- * the button never looks pressable while a roll is already in flight.
- *
- * It is a real `<button>`, so it is keyboard reachable and announces its state.
- */
 
 interface Props {
   /** The authoritative bank, or `null` while it is still loading. */
@@ -70,15 +32,6 @@ export default function RollButton({
   const { t } = useI18n();
   const reduced = useReducedMotion();
 
-  /*
-   * Three states, not two.
-   *
-   * `unknown` - the bank has not arrived. The button works; we simply do not claim to
-   * know how many rolls there are.
-   * `empty`  - the server said zero. The button is disabled *and says why*, with the
-   *            countdown that will change it.
-   * `ready`  - the normal case.
-   */
   const unknown = rolls === null;
   const total = rolls?.rolls_remaining ?? 0;
   const cap = rolls?.bank_cap ?? 0;
@@ -88,6 +41,7 @@ export default function RollButton({
   const handleClick = () => {
     if (blocked) return;
     hapticCue('tap');
+    playRollStart();
     onRoll();
   };
 
@@ -107,26 +61,18 @@ export default function RollButton({
       ? t('hunt.rollUnavailable')
       : t('hunt.rollWithCount', { n: total });
 
-  /*
-   * The line under the label.
-   *
-   * The count, and - when the server said when the next roll arrives - the countdown to
-   * it. At zero rolls the countdown *replaces* the count, because "0 rolls" tells the
-   * player nothing while "next in 4:05" tells them everything. A full bank cannot be
-   * waiting on a refill, so nothing is lost by showing both in the normal case.
-   */
   const statusLine = (
-    <span className="flex items-center justify-center gap-1.5 text-[11px] font-medium leading-tight tabular-nums text-ink-950/55">
+    <span className="flex items-center justify-center gap-1.5 text-[11px] font-semibold leading-tight tabular-nums text-ink-950/65">
       {empty ? (
         <>
-          <CountdownPill rolls={rolls} className="font-medium tracking-normal" />
+          <CountdownPill rolls={rolls} className="font-semibold tracking-normal" />
           <span className="truncate">{t('hunt.rollUnavailable')}</span>
         </>
       ) : (
         <>
           <span>{unknown ? t('hunt.rollBankLoading') : t('hunt.rollsCount', { n: total })}</span>
           {!unknown ? (
-            <CountdownPill rolls={rolls} className="font-medium tracking-normal" />
+            <CountdownPill rolls={rolls} className="font-semibold tracking-normal" />
           ) : null}
         </>
       )}
@@ -135,25 +81,36 @@ export default function RollButton({
 
   return (
     <motion.div
-      className={clsx('w-full select-none', className)}
+      className={clsx('relative w-full select-none', className)}
       animate={reduced || !rolling ? { scale: 1 } : { scale: [1, 0.978, 1] }}
-      transition={rolling ? { duration: 0.7, repeat: Infinity, ease: EASE.continuous } : SPRING.tap}
+      transition={rolling ? { duration: 0.65, repeat: Infinity, ease: EASE.continuous } : SPRING.tap}
     >
+      {/* Ambient brass aura behind the button when ready */}
+      {!blocked && !reduced && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-1 -z-10 rounded-[24px] opacity-60 blur-lg transition-opacity"
+          style={{
+            background:
+              'linear-gradient(90deg, rgba(125,162,255,0.28), rgba(212,175,106,0.45), rgba(125,162,255,0.28))',
+          }}
+        />
+      )}
+
       <button
         type="button"
         className={clsx(
-          // `overflow-hidden` plus `isolate`: the fill, the label and the countdown are
-          // all inside these bounds, and nothing can paint outside them.
-          'relative isolate block w-full overflow-hidden rounded-[20px] font-display font-bold',
-          'bg-gradient-to-b from-[#f4f1ea] to-[#dcd5c8] text-ink-950',
-          'transition duration-150 active:scale-[0.985] disabled:cursor-not-allowed',
-          size === 'lg' ? 'min-h-[68px]' : 'min-h-[54px]',
-          blocked && !rolling && 'opacity-55 saturate-[0.6]',
+          'relative isolate block w-full overflow-hidden rounded-[22px] font-display font-bold',
+          'border border-white/80 bg-gradient-to-b from-[#fffdf8] via-[#f3ecdd] to-[#dbcdb4] text-ink-950',
+          'transition duration-150 active:translate-y-[2px] active:scale-[0.99] disabled:cursor-not-allowed',
+          size === 'lg' ? 'min-h-[72px]' : 'min-h-[56px]',
+          blocked && !rolling && 'opacity-55 saturate-[0.55]',
         )}
         style={{
-          boxShadow: blocked && !rolling
-            ? 'inset 0 1px 0 rgba(255,255,255,0.5), inset 0 -1px 0 rgba(0,0,0,0.2)'
-            : 'inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -1px 0 rgba(0,0,0,0.22), 0 14px 28px -16px rgba(0,0,0,0.95)',
+          boxShadow:
+            blocked && !rolling
+              ? 'inset 0 1px 0 rgba(255,255,255,0.5), inset 0 -1px 0 rgba(0,0,0,0.2), 0 2px 0 #6e5b38'
+              : 'inset 0 1.5px 0 rgba(255,255,255,0.95), inset 0 -2px 0 rgba(140,115,70,0.35), 0 4px 0 #8a7042, 0 18px 34px -12px rgba(0,0,0,0.95)',
         }}
         onClick={handleClick}
         disabled={blocked}
@@ -162,14 +119,11 @@ export default function RollButton({
         data-testid="roll-button"
         data-state={rolling ? 'rolling' : empty ? 'empty' : unknown ? 'unknown' : 'ready'}
       >
-        {/*
-          The bank fill. A quiet, continuous read of how much is left, drawn from the
-          server's own cap so it can never claim a proportion the economy does not have.
-        */}
+        {/* Continuous roll-bank fuel bar inside the pedal */}
         {!empty && cap > 0 && (
           <span
             aria-hidden
-            className="absolute inset-y-0 left-0 -z-10 bg-ink-950/[0.07]"
+            className="absolute inset-y-0 left-0 -z-10 bg-gradient-to-r from-amber-500/[0.14] to-amber-600/[0.06]"
             style={{
               width: `${fill * 100}%`,
               transition: 'width 500ms cubic-bezier(0.16,0.84,0.28,1)',
@@ -177,15 +131,25 @@ export default function RollButton({
           />
         )}
 
-        {/* The count sits *inside* the control, on its own line under the label. */}
+        {/* Specular metallic shimmer pass */}
+        {!blocked && !reduced && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/55 to-transparent animate-shimmer"
+          />
+        )}
+
         <span className="relative flex h-full w-full flex-col items-center justify-center gap-0.5 px-4">
           <span
             className={clsx(
-              'leading-tight',
-              rolling ? 'text-[17px] tracking-[0.1em]' : 'text-[19px] tracking-[0.12em]',
+              'flex items-center gap-2 leading-tight',
+              rolling ? 'text-[17px] tracking-[0.1em]' : 'text-[20px] tracking-[0.14em]',
             )}
           >
-            {label}
+            <span aria-hidden="true" className="text-[15px] text-amber-700">
+              {rolling ? '◎' : empty ? '⏳' : '⚡'}
+            </span>
+            <span>{label}</span>
           </span>
           {statusLine}
         </span>

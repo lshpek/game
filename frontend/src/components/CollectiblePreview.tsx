@@ -1,32 +1,17 @@
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 
-import { rarityColor } from '@/lib/format';
+import { rarityColor, RARITY_COLORS } from '@/lib/format';
 import { PriceDisplay } from '@/components/PriceDisplay';
-import { RARITY_COLORS } from '@/lib/format';
 import { SPRING, useReducedMotion } from '@/lib/motion';
 import { useI18n } from '@/i18n';
-import CollectibleVisual from './CollectibleVisual';
+import CollectibleVisual, { resolveKind } from './CollectibleVisual';
 import { RarityBadge } from './RarityBadge';
-import { resolveKind } from './CollectibleVisual';
 import type { PlateCard, PlateSegmentKind } from '@/types';
 
-/**
- * The collectible, shown as a collectible.
- *
- * Used wherever a *single* find is shown outside the reveal: the hunt screen's last
- * discovery, and the collection's detail sheet. The rule it enforces is the one the old
- * layout broke everywhere: **the object is the largest thing in the block**, and the
- * metadata supports it rather than replacing it.
- *
- * The previous version of this was a `MYTHIC` label above a phone number in a big card -
- * rarity and value in front, a piece of text pretending to be a collectible behind. Here
- * the physical plate or SIM card leads, the rarity rides beside it as a quiet badge, and
- * the values sit on one line underneath.
- */
 interface Props {
   card: PlateCard;
-  /** Object size. 1 is hero size; the hunt screen uses ~0.72, a detail sheet ~0.9. */
+  /** Object size. 1 is hero size; the hunt screen uses ~0.82, a detail sheet ~0.9. */
   scale?: number;
   /** Tapping the object opens something. Omit for a non-interactive preview. */
   onOpen?: () => void;
@@ -35,8 +20,6 @@ interface Props {
   showCountry?: boolean;
   /** Shows the dealer value under the object. On by default. */
   showValue?: boolean;
-  /** TEMPORARY frontend-only visual override for video recording.
-   * Removed after recording; nothing is saved or shared. */
   temporaryPlateOverride?: {
     plateText: string;
     regionCode?: string | null;
@@ -49,12 +32,11 @@ interface Props {
 
 export function CollectiblePreview({
   card,
-  scale = 0.72,
+  scale = 0.82,
   onOpen,
   className,
   showCountry = true,
   showValue = true,
-  // TEMPORARY frontend-only visual override for video recording.
   temporaryPlateOverride,
 }: Props) {
   const { lang } = useI18n();
@@ -66,58 +48,81 @@ export function CollectiblePreview({
 
   const body = (
     <>
-      {/* 1. The object. Everything else is smaller than this. */}
-      <div className="flex w-full justify-center px-1">
-        <CollectibleVisual card={card} scale={scale} temporaryPlateOverride={temporaryPlateOverride} />
+      {/* Overhead showroom spotlight beam tinted by rarity */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 -top-10 h-32 opacity-40 blur-2xl"
+        style={{
+          background: `radial-gradient(ellipse at 50% 0%, ${color}, transparent 72%)`,
+        }}
+      />
+
+      {/* 1. The physical object on the illuminated showroom pedestal */}
+      <div className="relative z-10 flex w-full flex-col items-center justify-center px-1 pt-1">
+        <CollectibleVisual
+          card={card}
+          scale={scale}
+          temporaryPlateOverride={temporaryPlateOverride}
+        />
+        {/* Floor contact shadow / showroom reflection under the collectible */}
+        <div
+          aria-hidden="true"
+          className="mt-2.5 h-2 w-3/5 rounded-full opacity-55 blur-md"
+          style={{
+            background: `radial-gradient(ellipse at center, ${color}55 0%, rgba(0,0,0,0.85) 70%, transparent 100%)`,
+          }}
+        />
       </div>
 
-      {/* 2. Rarity + country, on one quiet line. */}
-      <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
-        <RarityBadge rarity={card.rarity} size="sm" />
+      {/* 2. Rarity + country + region metadata bar */}
+      <div className="relative z-10 mt-2.5 flex flex-wrap items-center justify-center gap-2">
+        <RarityBadge rarity={card.rarity} size="sm" pulse />
         {showCountry ? (
-          <span className="t-micro truncate text-white/45">
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-0.5 t-micro truncate text-white/75">
             <span aria-hidden>{card.country.flag}</span> {country}
-            {region ? ` · ${region}` : ''}
+            {region ? <span className="text-white/45">· {region}</span> : ''}
           </span>
         ) : null}
       </div>
 
-      {/* 3. The values, subordinate and side by side. */}
+      {/* 3. Dual economy valuation bar */}
       {showValue ? (
-        <div className="mt-1.5 flex items-baseline justify-center gap-2">
+        <div className="relative z-10 mt-2 flex items-baseline justify-center gap-2.5 rounded-xl border border-white/[0.06] bg-black/25 px-3 py-1">
           <PriceDisplay value={card.dealer_value} prefix="+" size="sm" />
-          {/*
-            The collector figure is a separate, fictional country-local number. It is shown
-            beside the authoritative price and never added to it, because presenting them
-            as one figure would imply a rate of exchange the game does not have.
-          */}
+          <span className="text-[10px] text-white/20">•</span>
           <PriceDisplay
             value={card.collector_value}
             size="sm"
             readOnly
-            tone="rgba(255,255,255,0.3)"
+            tone="rgba(255,255,255,0.45)"
           />
         </div>
       ) : null}
 
-      {/* 4. SIM-only: the operator is the thing a collector compares. */}
+      {/* 4. SIM-only operator chip */}
       {kind === 'SIM_CARD' && card.details ? (
-        <div className="mt-1.5 flex items-center justify-center gap-1.5">
+        <div className="relative z-10 mt-1.5 flex items-center justify-center gap-1.5">
           <span
             aria-hidden
             className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
             style={{ background: card.details.operator_accent }}
           />
-          <span className="t-micro truncate text-white/40">{card.details.operator}</span>
+          <span className="t-micro truncate text-white/50">{card.details.operator}</span>
         </div>
       ) : null}
     </>
   );
 
+  const stageStyle = {
+    borderColor: `${color}38`,
+    '--stage-glow': `${color}33`,
+  } as React.CSSProperties;
+
   if (!onOpen) {
     return (
       <div
-        className={clsx('stage flex min-w-0 flex-col items-center px-3 py-4', className)}
+        className={clsx('stage flex min-w-0 flex-col items-center px-3.5 py-4', className)}
+        style={stageStyle}
         data-testid="collectible-preview"
         data-kind={kind}
       >
@@ -132,17 +137,15 @@ export function CollectiblePreview({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(event) => {
-        // A pressable row must be reachable from the keyboard, which a div is not by
-        // default. `Enter` and `Space` are the two keys a native button would fire.
         if (event.key !== 'Enter' && event.key !== ' ') return;
         event.preventDefault();
         onOpen();
       }}
       className={clsx(
-        'stage flex min-w-0 w-full flex-col items-center px-3 py-4 transition',
+        'stage group flex min-w-0 w-full cursor-pointer flex-col items-center px-3.5 py-4 transition hover:border-white/25',
         className,
       )}
-      style={{ borderColor: `${color}22` }}
+      style={stageStyle}
       whileTap={reduced ? undefined : { scale: 0.985 }}
       data-testid="collectible-preview"
       data-kind={kind}
@@ -153,14 +156,6 @@ export function CollectiblePreview({
   );
 }
 
-/**
- * A compact one-line identity for a collectible, used in lists and rows.
- *
- * Deliberately *not* the preview: a row needs to show many items at once, so the object
- * shrinks to a thumbnail and the identity is carried by the text. Keeping the two
- * visually distinct is what stops a screenful of collectibles from turning into a wall of
- * identical cards.
- */
 export function CollectibleRow({
   card,
   onOpen,
@@ -176,10 +171,10 @@ export function CollectibleRow({
   return (
     <div
       className={clsx('glass flex items-center gap-3 p-2.5', className)}
-      style={{ borderColor: `${color}1f` }}
+      style={{ borderColor: `${color}28` }}
     >
-      <span className="w-[104px] shrink-0">
-        <CollectibleVisual card={card} scale={0.4} />
+      <span className="w-[108px] shrink-0">
+        <CollectibleVisual card={card} scale={0.4} interactiveTilt={false} />
       </span>
       <button
         type="button"
@@ -188,12 +183,12 @@ export function CollectibleRow({
         aria-label={t('collection.ariaPlate', { plate: card.plate_text })}
       >
         <RarityBadge rarity={card.rarity} size="sm" />
-        <span className="mt-1 block w-full truncate t-caption font-semibold text-white/80">
+        <span className="mt-1 block w-full truncate t-caption font-semibold text-white/85">
           <span aria-hidden>{card.country.flag}</span>{' '}
           {lang === 'ru' ? card.country.name_ru : card.country.name_en}
         </span>
         {card.region ? (
-          <span className="block w-full truncate text-[11px] text-white/35">
+          <span className="block w-full truncate text-[11px] text-white/45">
             {lang === 'ru' ? card.region.name_ru : card.region.name_en}
           </span>
         ) : null}
@@ -204,15 +199,12 @@ export function CollectibleRow({
           value={card.collector_value}
           size="sm"
           readOnly
-          tone="rgba(255,255,255,0.4)"
+          tone="rgba(255,255,255,0.45)"
         />
       </span>
     </div>
   );
 }
 
-/** The rarity colour, for callers that need it without importing format twice. */
 export const rarityAccent = RARITY_COLORS;
-
-/** Kept so the spring vocabulary stays in one place for row entrances. */
 export const ROW_SPRING = SPRING.settle;

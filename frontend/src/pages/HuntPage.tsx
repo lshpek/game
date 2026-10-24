@@ -8,12 +8,12 @@ import { CollectiblePreview } from '@/components/CollectiblePreview';
 import { NextTargetLine, RollBalanceLine } from '@/components/RollEconomy';
 import RollButton from '@/components/RollButton';
 import { KindSelector } from '@/components/Selectors';
-import { useI18n, useT } from '@/i18n';
+import { useT } from '@/i18n';
 import { trackCollectionOpened, trackSellClicked } from '@/lib/analytics';
 import { ApiError, makeIdempotencyKey } from '@/lib/api';
 import { formatCoins } from '@/lib/format';
-import { resolveRuRegion } from '@/lib/regions';
 import { EASE, SPRING, useReducedMotion } from '@/lib/motion';
+import { playCoinJingle } from '@/lib/sound';
 import { hapticCue } from '@/lib/telegram';
 import { countries as countriesApi, game } from '@/services/api';
 import { useActiveCountry } from '@/store/activeCountry';
@@ -24,55 +24,18 @@ import type {
   CountrySummary,
   PlateCard,
   PlateRollResult,
-  PlateSegmentKind,
   RollBalance,
 } from '@/types';
-
-/**
- * The hunt screen: the core loop, and the reason the app exists.
- *
- * The reading order *is* the loop:
- *
- * ```
- * COUNTRY → WHAT TO HUNT → ROLL → REVEAL → KEEP / SHARE / SELL → ROLL AGAIN
- * ```
- *
- * ### Visual hierarchy
- *
- * The screen has exactly one primary action, and everything else is deliberately quieter:
- *
- * 1. **Where you are** - the country, one row, one tap.
- * 2. **What you are hunting** - three segments, not a settings list.
- * 3. **The button** - the brightest surface in the app, with the bank directly above it.
- * 4. **The last find** - the physical object, at a size you recognise instantly.
- * 5. **Progress** - one bar, with the count.
- * 6. Nothing else. There is no ranking teaser, no mission block, no social prompt.
- *
- * That last point is the change from the previous layout, which put six equally-weighted
- * cards on one screen and made the roll button one of many things to look at.
- *
- * ### Invariants this screen owns
- *
- * * **One roll per press.** A double tap is swallowed by a synchronous ref *and* by the
- *   server's idempotency key, so the two layers together make a double roll impossible.
- * * **One result experience.** The reveal is the shared `Reveal` component, and the
- *   result screen can start the next roll without ever being closed first.
- */
 
 interface Props {
   onOpenCollection?: () => void;
   onOpenCountry?: (code: string) => void;
 }
 
-/**
- * Two windows. A press on the roll button is a *deliberate* action; this stops one
- * enthusiastic double tap from being read as two rolls.
- */
 const ROLL_COOLDOWN_MS = 400;
 
 export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   const t = useT();
-  const { lang } = useI18n();
   const reduced = useReducedMotion();
   const queryClient = useQueryClient();
   const applyProfile = useAuthStore((state) => state.applyProfile);
@@ -82,12 +45,9 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   const [kind, setKind] = useState<CollectibleKind | null>(null);
   const [result, setResult] = useState<PlateRollResult | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  // A synchronous guard: `isPending` only flips after a re-render, so two taps inside
-  // one frame would both pass a state-based check.
   const rollingRef = useRef(false);
   const lastRollRef = useRef(0);
 
-  // The atlas is cached hard: 250 countries do not change during a session.
   const countryList = useQuery({
     queryKey: ['countries', 'selector'],
     queryFn: () => countriesApi.list({ limit: 250 }),
@@ -98,8 +58,6 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
     queryFn: countriesApi.active,
     staleTime: 60_000,
   });
-  // One request for the hero: the recent find as a *physical object*, the next
-  // objective and the authoritative roll economy all come from `/garage`.
   const garage = useQuery({
     queryKey: ['garage'],
     queryFn: () => game.garage(),
@@ -123,7 +81,6 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
     },
     onError: (error) => {
       hapticCue('error');
-      // Never leave the sheet on a country the backend refused.
       if (error instanceof ApiError) {
         void queryClient.invalidateQueries({ queryKey: ['countries', 'active'] });
       }
@@ -137,8 +94,6 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   }, [queryClient]);
 
   const roll = useMutation({
-    // No country is sent: the server uses the country it stored for this player, so the
-    // client can never point a roll at a country the backend has not validated.
     mutationFn: (key: string) => game.roll(key, { kind }),
     onSuccess: (data) => {
       rollingRef.current = false;
@@ -157,25 +112,14 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   });
 
   const handleRoll = useCallback(() => {
-    // Two layers guard the economy, because either alone has a gap: the synchronous ref
-    // swallows a second press *inside one frame*, and the cooldown swallows a fast
-    // double tap that lands after the first roll has already resolved. The server's
-    // idempotency key is the third layer.
     const now = Date.now();
     if (rollingRef.current || now - lastRollRef.current < ROLL_COOLDOWN_MS) return;
     lastRollRef.current = now;
     rollingRef.current = true;
     setNotice(null);
     roll.mutate(makeIdempotencyKey('roll'));
-  }, [roll, t]);
+  }, [roll]);
 
-  /**
-   * Sell duplicates from the reveal.
-   *
-   * Only ever called when `duplicate_count > 0` - the action does not exist otherwise,
-   * so the client cannot construct the invalid `sell(..., max(1, 0))` request that used to
-   * be sent on every single-copy find.
-   */
   const handleSell = useCallback(async () => {
     const card = result?.plate;
     if (!card) return;
@@ -198,10 +142,10 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
           : current,
       );
       setNotice({ tone: 'ok', text: t('sell.success', { n: sale.numora_gained }) });
+      playCoinJingle();
       hapticCue('success');
       invalidate();
     } catch (error) {
-      // A failed sale must be visible and actionable, never a silent no-op.
       hapticCue('error');
       setNotice({ tone: 'error', text: errorMessage(error, t('sell.failed')) });
     }
@@ -232,21 +176,6 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
   }, [onOpenCollection]);
 
   const recentCard: PlateCard | null = garage.data?.recent ?? null;
-
-  // TEMPORARY frontend-only visual override for video recording.
-  // Displays a fixed Russian plate on the main-screen preview. Nothing is saved,
-  // sent to the API, or shared. Remove this block and the CollectiblePreview prop
-  // after recording to revert.
-  const TEMP_RECORDING_PLATE_OVERRIDE = recentCard
-    ? {
-        plateText: 'А777МР',
-        regionCode: '97',
-        regionName: resolveRuRegion('97', lang),
-        displaySegments: ['А777МР', '97'],
-        displaySegmentGaps: [false, true],
-        displaySegmentKinds: ['mixed', 'region'] as PlateSegmentKind[],
-      }
-    : undefined;
   const rolls: RollBalance | null =
     result?.rolls ?? garage.data?.rolls ?? profileToRollBalance(profile?.rolls_remaining);
   const nextTarget = result?.next_target ?? garage.data?.next_target ?? null;
@@ -268,9 +197,6 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
       <Reveal
         card={result?.plate ?? null}
         loading={busy}
-        // Synthetic previews the reel scrolls through. Generated and returned by the
-        // backend in the same response as the real result, and never persisted - the
-        // reel settles on `plate`, which was committed before these existed.
         reel={result?.reel ?? []}
         isFirstDiscovery={Boolean(result?.is_first_discovery)}
         onClose={() => setResult(null)}
@@ -287,22 +213,29 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         }}
       />
 
-      {/* 1. WHERE. */}
-      <section className="flex flex-col gap-2" aria-label={t('hunt.aria')}>
+      {/* 1. COCKPIT CONTROLS: WHERE & WHAT TO HUNT */}
+      <section className="flex flex-col gap-2.5" aria-label={t('hunt.aria')}>
         <div className="flex items-center justify-between">
-          <h2 className="eyebrow">{t('hunt.title')}</h2>
+          <h2 className="eyebrow flex items-center gap-1.5">
+            <span aria-hidden="true" className="text-brass">
+              ◆
+            </span>
+            {t('hunt.title')}
+          </h2>
           {activeCode ? (
             <button
               type="button"
-              className="t-micro text-white/40 transition active:scale-95"
+              className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 t-micro text-white/65 transition hover:border-white/20 active:scale-95"
               onClick={() => onOpenCountry?.(activeCode)}
             >
-              {activeCountryName?.flag} {activeCode}
+              <span>{activeCountryName?.flag}</span>
+              <span>{activeCode}</span>
             </button>
           ) : null}
         </div>
+
         {countryList.isLoading ? (
-          <div className="h-[62px] animate-pulse rounded-[18px] bg-white/[0.04]" />
+          <div className="h-[62px] animate-pulse rounded-[20px] bg-white/[0.04]" />
         ) : (
           <CountrySelector
             value={activeCode}
@@ -311,19 +244,18 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
             disabled={busy || switchCountry.isPending}
           />
         )}
+
+        <div aria-label={t('category.aria')}>
+          <KindSelector value={kind} onChange={setKind} disabled={busy} />
+        </div>
+
+        {completion ? <CountryProgressStrip completion={completion} /> : null}
       </section>
 
-      {/* 2. WHAT TO HUNT. */}
-      <section aria-label={t('category.aria')}>
-        <KindSelector value={kind} onChange={setKind} disabled={busy} />
-      </section>
-
-      {/* Errors are always visible and actionable. A silent failure here is worse than
-          the error itself: the button would simply stop working. */}
       {(switchCountry.isError || notice?.tone === 'error') && (
         <p
           role="alert"
-          className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 t-caption text-rose-200"
+          className="rounded-xl border border-rose-400/30 bg-rose-500/15 px-3.5 py-2.5 t-caption font-medium text-rose-200 shadow-lift"
         >
           {notice?.tone === 'error'
             ? notice.text
@@ -331,18 +263,43 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         </p>
       )}
 
-      {/* 3. THE BUTTON. Bank and count on one line, then the control. */}
-      {/*
-        The one primary action, sized from the space available rather than from a fixed
-        width: full-bleed on a phone, capped on a tablet, and never so large on a desktop
-        that it becomes a slab. The plate above it is scaled to whatever the viewport
-        leaves, which is why the same screen reads correctly at 360x800 and at 1920x1080.
-      */}
+      {/* 2. SHOWROOM PEDESTAL: THE LAST FIND (Elevated to Center Stage) */}
+      <section className="flex flex-col gap-2" aria-label={t('hunt.recentFind')}>
+        <div className="flex items-center justify-between">
+          <h2 className="eyebrow">{t('hunt.recentFind')}</h2>
+          {recentCard ? (
+            <span className="t-micro text-white/35">3D · Tap to inspect</span>
+          ) : null}
+        </div>
+        {garage.isLoading ? (
+          <div className="h-44 animate-pulse rounded-[24px] bg-white/[0.04]" />
+        ) : recentCard ? (
+          <motion.div
+            initial={reduced ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ ...SPRING.settle, duration: 0.4 }}
+          >
+            <CollectiblePreview card={recentCard} scale={0.82} onOpen={openCollection} />
+          </motion.div>
+        ) : (
+          <div className="stage flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+            <span aria-hidden="true" className="text-2xl opacity-60">
+              🚘 · 💳
+            </span>
+            <p className="t-caption text-white/50">{t('hunt.empty')}</p>
+          </div>
+        )}
+      </section>
+
+      {/* 3. PRIMARY IGNITION CONSOLE: WALLET, ROLL PEDAL & RADAR TARGET */}
       <section className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-2.5">
-        <div className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-3.5 py-2.5">
+        <div className="glass flex w-full items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex min-w-0 flex-col">
             <span className="eyebrow">{t('hunt.wallet')}</span>
-            <span className="number-display truncate text-[clamp(15px,4.4vw,17px)] font-bold text-white">
+            <span className="number-display flex items-center gap-1.5 truncate text-[clamp(16px,4.5vw,18px)] font-bold text-brass-soft">
+              <span aria-hidden="true" className="text-[14px]">
+                🪙
+              </span>
               {formatCoins(coins)}
             </span>
           </div>
@@ -360,12 +317,11 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         <NextTargetLine target={nextTarget} />
       </section>
 
-      {/* SUCCESS FEEDBACK. A sale must be acknowledged where the player is looking. */}
       <AnimatePresence>
         {notice?.tone === 'ok' && (
           <motion.p
             role="status"
-            className="rounded-xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2 text-center t-caption text-emerald-200"
+            className="rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-3.5 py-2.5 text-center t-caption font-medium text-emerald-200 shadow-lift"
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
@@ -376,49 +332,27 @@ export default function HuntPage({ onOpenCollection, onOpenCountry }: Props) {
         )}
       </AnimatePresence>
 
-      {/* 4. THE LAST FIND. The physical object, because that is what they just got. */}
-      <section className="flex flex-col gap-2" aria-label={t('hunt.recentFind')}>
-        <h2 className="eyebrow">{t('hunt.recentFind')}</h2>
-        {garage.isLoading ? (
-          <div className="h-44 animate-pulse rounded-[22px] bg-white/[0.04]" />
-        ) : recentCard ? (
-          <motion.div
-            initial={reduced ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...SPRING.settle, duration: 0.4 }}
-          >
-            <CollectiblePreview card={recentCard} scale={0.62} onOpen={openCollection} temporaryPlateOverride={TEMP_RECORDING_PLATE_OVERRIDE} />
-          </motion.div>
-        ) : (
-          <p className="stage px-4 py-8 text-center t-caption text-white/35">{t('hunt.empty')}</p>
-        )}
-      </section>
-
-      {/* 5. PROGRESS. One bar, one count. */}
-      {completion ? <CountryProgressStrip completion={completion} /> : null}
-
-      <p className="text-center text-[11px] leading-relaxed text-white/25">
+      <p className="text-center text-[11px] leading-relaxed text-white/30">
         {t('hunt.syntheticNote')}
       </p>
     </div>
   );
 }
 
-/** Country completion, as a quiet progress bar with the count that matters. */
 function CountryProgressStrip({ completion }: { completion: CountryCompletion }) {
   const t = useT();
   const percent = Math.round(completion.progress * 100);
   return (
-    <div className="flex w-full items-center gap-3">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+    <div className="flex w-full items-center gap-3 px-1">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
         <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-accent/70 to-brass/70"
+          className="h-full rounded-full bg-gradient-to-r from-accent via-brass to-amber-300"
           initial={false}
           animate={{ width: `${percent}%` }}
           transition={{ ...SPRING.settle, duration: 0.5 }}
         />
       </div>
-      <span className="shrink-0 text-[11px] tabular-nums text-white/40">
+      <span className="shrink-0 font-mono text-[11px] font-bold tabular-nums text-white/55">
         {completion.collected} / {completion.total}
       </span>
       <span className="sr-only-number">
@@ -428,21 +362,12 @@ function CountryProgressStrip({ completion }: { completion: CountryCompletion })
   );
 }
 
-/**
- * Turn a failed request into something the player can act on.
- */
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error && error.message) return error.message;
   return fallback;
 }
 
-/**
- * A roll balance for a session that has not loaded `/garage` yet.
- *
- * Only the count is known, so the cap is left unset and no countdown is invented: a
- * missing piece of server data is shown as absent rather than guessed at.
- */
 function profileToRollBalance(remaining: number | undefined): RollBalance | null {
   if (remaining === undefined) return null;
   return {
@@ -458,6 +383,3 @@ function profileToRollBalance(remaining: number | undefined): RollBalance | null
   };
 }
 export { HuntPage };
-
-
-

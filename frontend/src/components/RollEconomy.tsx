@@ -4,26 +4,6 @@ import { useT } from '@/i18n';
 import { DURATION, EASE, SPRING, formatCountdown, useReducedMotion } from '@/lib/motion';
 import type { NextTarget, RollBalance } from '@/types';
 
-/**
- * The bank, rendered from the server's authoritative state.
- *
- * The contract is simple and strict: this component only ever *displays* the bank the
- * backend returned. It does not compute a refill time, does not decrement a counter on a
- * timer, and does not guess how many rolls the player has. If the server says there are
- * 18 rolls, this shows 18; if it says the next arrives at `next_roll_at`, this counts down
- * to that instant and nothing else.
- *
- * That distinction is the whole point. A locally invented refill time means the number on
- * the hunt screen can disagree with the number the next request would honour - the kind of
- * discrepancy a player notices immediately and reads as a bug in the economy.
- */
-
-/**
- * Seconds until the next roll, from the server's own timestamp.
- *
- * Derived from `next_roll_at` rather than from a local interval, so a player who leaves
- * the app open and comes back sees the number the server would quote.
- */
 function secondsUntil(rolls: RollBalance | null): number | null {
   if (!rolls?.next_roll_at) return null;
   const target = new Date(rolls.next_roll_at).getTime();
@@ -32,12 +12,6 @@ function secondsUntil(rolls: RollBalance | null): number | null {
   return delta > 0 ? delta : 0;
 }
 
-/**
- * A live countdown to the next passive roll.
- *
- * Ticks once a second through a single interval and writes to state only when the
- * displayed string actually changes - so 59 seconds of ticking cost 60 renders, not 3000.
- */
 export function useRefillCountdown(rolls: RollBalance | null): string | null {
   const [display, setDisplay] = useState<string | null>(null);
 
@@ -53,7 +27,6 @@ export function useRefillCountdown(rolls: RollBalance | null): string | null {
       if (next === null) return;
       setDisplay((current) => {
         const formatted = formatCountdown(next);
-        // No re-render for an unchanged string.
         return formatted === current ? current : formatted;
       });
     }, 1000);
@@ -63,7 +36,6 @@ export function useRefillCountdown(rolls: RollBalance | null): string | null {
   return display;
 }
 
-/** A one-line read of the bank: how many rolls, and when the next one arrives. */
 export function RollBalanceLine({
   rolls,
   compact = false,
@@ -75,7 +47,6 @@ export function RollBalanceLine({
   const countdown = useRefillCountdown(rolls);
 
   if (!rolls) {
-    // Absent data reads as absent, never as zero.
     return (
       <p className="t-micro text-white/30" data-testid="roll-balance">
         —
@@ -88,22 +59,16 @@ export function RollBalanceLine({
       className={`flex min-w-0 flex-col ${compact ? 'items-end gap-0.5' : 'items-start gap-1.5'}`}
       data-testid="roll-balance"
     >
-      {/* The count, in words, so it reads as "18 rolls" rather than a bare numeral. */}
-      {/*
-        Truncated rather than allowed to push the layout. This line sits beside the wallet
-        in a two-item row, and an unbounded count in a narrow language is exactly the kind
-        of thing that turns a row into a wrap.
-      */}
       <span className="number-display max-w-full truncate text-[15px] font-bold text-white">
-        {t('hunt.rollsCount', { n: rolls.rolls_remaining })}
+        ⚡ {t('hunt.rollsCount', { n: rolls.rolls_remaining })}
       </span>
-      {/* A bonus bank is a distinct thing from the normal one, so it is labelled rather
-          than silently merged into the main number. */}
       {rolls.bonus_rolls > 0 ? (
-        <span className="t-micro text-brass">+{rolls.bonus_rolls} {t('hunt.bonusRolls')}</span>
+        <span className="rounded-md border border-brass/30 bg-brass/10 px-1.5 py-0.5 t-micro text-brass-soft">
+          +{rolls.bonus_rolls} {t('hunt.bonusRolls')}
+        </span>
       ) : null}
       {countdown ? (
-        <span className="t-micro tabular-nums text-white/30" data-testid="roll-countdown">
+        <span className="t-micro tabular-nums text-white/45" data-testid="roll-countdown">
           {t('hunt.nextRollIn')} {countdown}
         </span>
       ) : null}
@@ -111,13 +76,13 @@ export function RollBalanceLine({
   );
 }
 
-/**
- * The countdown, for use inside a control.
- *
- * Rendered only when the server actually said when the next roll arrives. Inventing a
- * refill time would put a number on screen the economy does not honour.
- */
-export function CountdownPill({ rolls, className = '' }: { rolls: RollBalance | null; className?: string }) {
+export function CountdownPill({
+  rolls,
+  className = '',
+}: {
+  rolls: RollBalance | null;
+  className?: string;
+}) {
   const countdown = useRefillCountdown(rolls);
   if (!countdown) return null;
   return (
@@ -127,13 +92,6 @@ export function CountdownPill({ rolls, className = '' }: { rolls: RollBalance | 
   );
 }
 
-/**
- * The single next objective.
- *
- * A goal, a count and a progress bar - one line, always. The backend sends one objective
- * at a time on purpose: a screenful of missions is a to-do list, and the hunt screen needs
- * one thing to pull towards.
- */
 export function NextTargetLine({ target }: { target: NextTarget | null }) {
   const t = useT();
   const reduced = useReducedMotion();
@@ -161,24 +119,28 @@ export function NextTargetLine({ target }: { target: NextTarget | null }) {
   const progress = Math.max(0, Math.min(1, target?.progress ?? 0));
 
   return (
-    <div className="flex w-full flex-col gap-1.5" data-testid="next-target">
-      <div className="flex items-center gap-2">
-        <span className="eyebrow">{t('hunt.objective')}</span>
+    <div
+      className="glass flex w-full flex-col gap-1.5 px-3.5 py-2.5"
+      data-testid="next-target"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="eyebrow flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-brass" />
+          {t('hunt.objective')}
+        </span>
         {target?.current !== undefined ? (
-          <span className="number-display text-[11px] tabular-nums text-white/40">
+          <span className="number-display rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-brass-soft">
             {target.current}/{target.target}
           </span>
         ) : null}
       </div>
-      <p className="t-caption text-white/60">{message}</p>
-      <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
+      <p className="t-caption font-medium text-white/80">{message}</p>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-accent/60 to-brass/60"
+          className="h-full rounded-full bg-gradient-to-r from-accent via-brass to-amber-300"
           style={{
-            width: `${Math.max(progress * 100, 2)}%`,
-            transition: reduced
-              ? 'none'
-              : `width ${DURATION.slide}s ${EASE.out}`,
+            width: `${Math.max(progress * 100, 4)}%`,
+            transition: reduced ? 'none' : `width ${DURATION.slide}s ${EASE.out}`,
           }}
         />
       </div>
@@ -187,6 +149,4 @@ export function NextTargetLine({ target }: { target: NextTarget | null }) {
 }
 
 export { formatCountdown };
-
-/** Kept so the spring vocabulary for the objective bar stays in one place. */
 export const OBJECTIVE_SPRING = SPRING.settle;

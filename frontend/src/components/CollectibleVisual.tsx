@@ -6,37 +6,19 @@ import SimCardVisual from './SimCardVisual';
 import VehiclePlateVisual from './VehiclePlateVisual';
 import type { PlateCard, PlateSegmentKind } from '../types';
 
-/**
- * Renders a collectible as the *right physical object*.
- *
- * The kind comes from the server (`VEHICLE_PLATE` or `SIM_CARD`), never from a template
- * code and never from the shape of the text. A plate looks like a plate; a SIM card looks
- * like a card. Branching on an authoritative kind here is what keeps a SIM from being
- * rendered as a long white rectangle with a phone number on it - which is what happened
- * before, because a SIM collectible was treated as "a plate whose text happens to be a
- * number".
- *
- * `scale` multiplies the object's natural size, so the same object is a hero on the hunt
- * screen and a thumbnail in a list without two renderings that could disagree about how a
- * country's plate looks.
- *
- * Note there is **no `PHONE_NUMBER` branch**: a phone number is printed on a SIM card, not
- * a separate collectible. An unrecognised kind resolves to a vehicle plate, which is the
- * safe direction - a historic plate can never be mis-rendered as a card.
- */
 export default function CollectibleVisual({
   card,
   scale = 1,
   className = '',
   showValue = false,
-  // TEMPORARY frontend-only visual override for video recording.
-  // Removed after recording; nothing is saved or shared.
+  interactiveTilt = true,
   temporaryPlateOverride,
 }: {
   card: PlateCard;
   scale?: number;
   className?: string;
   showValue?: boolean;
+  interactiveTilt?: boolean;
   temporaryPlateOverride?: {
     plateText: string;
     regionCode?: string | null;
@@ -65,6 +47,7 @@ export default function CollectibleVisual({
           config={card.sim_config ?? null}
           rarity={card.rarity}
           scale={scale}
+          interactiveTilt={interactiveTilt}
         />
       ) : (
         <VehiclePlateVisual
@@ -75,23 +58,20 @@ export default function CollectibleVisual({
           displaySegmentKinds={card.display_segment_kinds}
           regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
           regionCode={card.region?.code ?? null}
+          rarity={card.rarity}
           scale={scale}
+          interactiveTilt={interactiveTilt}
           temporaryPlateOverride={temporaryPlateOverride}
         />
       )}
 
       {showValue ? (
-        <span className="mt-1.5 t-caption font-bold tabular-nums text-white/70">
+        <span className="mt-1.5 t-caption font-bold tabular-nums text-white/75">
           {card.currency_symbol}
           {formatCoins(card.collector_value)}
         </span>
       ) : null}
 
-      {/*
-        One line of context for assistive tech, kept out of the visual design. Combined
-        with the object's own `role="img"` label it describes the whole collectible: what
-        it is, and where it is from.
-      */}
       <span className="sr-only-number">
         {country} · {t(`rarity.${card.rarity}` as never)}
       </span>
@@ -99,13 +79,6 @@ export default function CollectibleVisual({
   );
 }
 
-/**
- * Which physical object a collectible is.
- *
- * `kind` is the server's own field. The fallbacks exist only for payloads predating it:
- * `plate_type` is a long-standing stored column, and `PHONE` is a historical value that
- * migration 0005 folds into SIM cards. Anything unknown resolves to a vehicle plate.
- */
 export function resolveKind(card: Pick<PlateCard, 'kind' | 'plate_type'>): 'SIM_CARD' | 'VEHICLE_PLATE' {
   if (card.kind === 'SIM_CARD' || card.kind === 'VEHICLE_PLATE') return card.kind;
   const type = String(card.plate_type ?? '').toUpperCase();

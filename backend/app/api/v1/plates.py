@@ -397,7 +397,12 @@ def collection(
 
     total_dealer = int(
         db.execute(
-            select(func.coalesce(func.sum(Plate.dealer_value), 0))
+            select(
+                func.coalesce(
+                    func.sum(Plate.dealer_value * (1 + UserPlate.duplicate_count)),
+                    0,
+                )
+            )
             .join(UserPlate, UserPlate.plate_id == Plate.id)
             .where(UserPlate.user_id == user.id)
         ).scalar_one()
@@ -419,7 +424,7 @@ def collection(
         progress=float(overview["progress"]),
         target=int(overview["total_plates"]),
         duplicates_count=duplicates_count,
-        total_dealer_value=total_dealer + duplicate_copies,
+        total_dealer_value=total_dealer,
         # Echoed so the UI can label the screen without a second request.
         country_code=effective_country,
     )

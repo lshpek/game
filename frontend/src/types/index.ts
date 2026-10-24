@@ -198,6 +198,7 @@ export interface PlateCard {
   traits: string[];
   tags: string[];
   story: string;
+  story_ru?: string;
   collector_bio: CollectorBio | null;
   /** Server-owned symbol sets used only for the roll animation. */
   reel_alphabets: { letters: string; digits: string };

@@ -307,6 +307,7 @@ class PlateCard(BaseModel):
     traits: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     story: str = ""
+    story_ru: str = ""
     collector_bio: CollectorBio | None = None
     is_secret: bool = False
     season_code: str | None = None

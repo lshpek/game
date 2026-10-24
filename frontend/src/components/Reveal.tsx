@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-
 import { createPortal } from 'react-dom';
 
 import { useI18n } from '../i18n';
 import { trackRevealShown, trackRevealSkipped, trackRollAgain } from '../lib/analytics';
+import { rarityColor } from '../lib/format';
 import { DURATION, EASE, SPRING, revealDuration, useReducedMotion } from '../lib/motion';
+import { playRevealFanfare } from '../lib/sound';
 import { hapticCue } from '../lib/telegram';
 import type { PlateCard, ReelFrame } from '../types';
 import RarityBadge from './RarityBadge';
@@ -15,65 +16,25 @@ import SymbolReel from './SymbolReel';
 import CollectorBioPanel from './CollectorBioPanel';
 import VehiclePlateVisual from './VehiclePlateVisual';
 
-/**
- * The one authoritative result experience.
- *
- * There is a single reveal in NUMORA and this is it. Every screen that shows a result
- * shows it through this component, so a roll looks and behaves identically whether it
- * was started from the hunt screen, a deep link or a challenge.
- *
- * **This component never decides anything.** The backend has already drawn the
- * collectible, its rarity, its value and its rewards before this mounts. It presents
- * them and nothing else. Specifically, there is:
- *
- * * no fake probability and no RNG;
- * * no cycling through plausible numbers;
- * * no "almost had it" flicker or near-miss;
- * * no result that changes while the animation plays;
- * * no decorative particles that could be mistaken for a result.
- *
- * ### The staging
- *
- * ```
- * PRESS → DIM → ENTER → TRAVEL → DECELERATE → LOCK → SETTLE → RARITY → VALUE → ACTIONS
- * ```
- *
- * Each stage is a separate, timed transition rather than one long keyframe animation.
- * That is what makes the motion read as a physical object rather than as a video: a
- * rotation that accelerates on a symmetric curve and then bleeds off on a long ease-out,
- * a single spring to the lock, and a two-frame settle instead of a bounce.
- *
- * The whole sequence lives on one DOM node that is never remounted, which is what removes
- * the popping that a remount-based reveal produces inside a Telegram WebView.
- *
- * ### Performance
- *
- * Only compositor-friendly properties animate. `transform` and `opacity` everywhere; the
- * specular pass across the plate is a CSS animation on its own layer. There is no
- * animated `filter: blur()` over the object and no full-screen `backdrop-filter`, both of
- * which are the usual causes of a reveal dropping frames on a mid-range Android phone.
- *
- * Timing scales with rarity (`revealDuration`) and is always skippable.
- */
-
 type Stage = 'press' | 'dim' | 'enter' | 'travel' | 'decelerate' | 'lock' | 'settled';
 
-/** Rarity tiers that get the heavier, more cinematic staging. */
 const CINEMATIC = new Set(['EPIC', 'LEGENDARY', 'MYTHIC', 'SECRET']);
+const HIGH_RARITY = new Set(['RARE', 'EPIC', 'LEGENDARY', 'MYTHIC', 'SECRET']);
+
+const SPARK_OFFSETS = [
+  { x: -115, y: -55, delay: 0.02, size: 6 },
+  { x: 120, y: -48, delay: 0.08, size: 5 },
+  { x: -95, y: 52, delay: 0.12, size: 4 },
+  { x: 108, y: 58, delay: 0.05, size: 6 },
+  { x: -35, y: -76, delay: 0.15, size: 5 },
+  { x: 42, y: 74, delay: 0.1, size: 4 },
+];
 
 interface Props {
-  /** The already-decided collectible. `null` while a roll is in flight. */
   card: PlateCard | null;
   loading: boolean;
-  /**
-   * Synthetic frames for the reel, generated server-side and never persisted.
-   *
-   * The reel scrolls through these and settles on `card`. Nothing here decides anything:
-   * the backend has already committed the result before these exist.
-   */
   reel?: ReelFrame[];
   onClose: () => void;
-  /** Start the next roll without closing the result: roll, reveal, roll again. */
   onRollAgain?: () => void;
   canRollAgain?: boolean;
   rolling?: boolean;
@@ -81,9 +42,7 @@ interface Props {
   onShare?: () => void;
   onSellDuplicates?: () => void;
   onOpenCollection?: () => void;
-  /** Called when the player taps the object itself. */
   onPlateClick?: () => void;
-  /** First discovery is a property of the roll, not of the card. */
   isFirstDiscovery?: boolean;
 }
 
@@ -106,71 +65,59 @@ export default function Reveal({
   const reduced = useReducedMotion();
   const [stage, setStage] = useState<Stage>('press');
   const lockedRef = useRef(false);
+  const fanfareRef = useRef(false);
 
   const rarity = (card?.rarity ?? 'COMMON').toUpperCase();
+  const tierColor = rarityColor(rarity);
   const isCinematic = CINEMATIC.has(rarity);
+  const isHighRarity = HIGH_RARITY.has(rarity);
   const duplicates = card?.duplicate_count ?? 0;
-  /** The sale action only exists when there is genuinely something to sell. */
   const canSell = duplicates > 0 && typeof onSellDuplicates === 'function';
 
   const duration = revealDuration(card?.rarity);
-  /*
-   * With a reel, the final stage belongs to the reel: `SymbolReel` runs for
-   * `REEL_SECONDS` and calls `onSettled` when the last column locks. The rarity
-   * ladder is shorter than that, so settling on it would cut the reel off mid-spin
-   * (the readout would appear at 1.25-2.2s of a 4s run). The stage chain therefore
-   * stops at `lock` and the reel owns the transition to `settled`.
-   */
   const hasReel = reel.length > 0;
 
-  // Stage timing: one timer chain, fully cancelled on every change, so a fast sequence
-  // of rolls can never leave a stale stage running against a new card.
   useEffect(() => {
     lockedRef.current = false;
+    fanfareRef.current = false;
     if (!card) {
       setStage('press');
       return;
     }
     if (reduced) {
-      // Reduced motion keeps the whole read-out order, just without the travel.
       setStage('settled');
       return;
     }
     setStage('press');
-    /*
-     * With a reel in front of it, the object only has to settle - the reel has already
-     * done the anticipation, and running the full staged sequence behind it as well would
-     * put two animations on the same object and make it stutter.
-     *
-     * The reel path deliberately has no `settled` mark: `SymbolReel` runs for
-     * `REEL_SECONDS` (4s), longer than any rarity duration, so a rarity-based settle
-     * would stop it early. The reel finishes on its own and calls `onSettled`.
-     */
     const marks: Array<[Stage, number]> = hasReel
       ? [
-            ['dim', 120],
-            ['enter', 420],
-            ['decelerate', Math.round(duration * 0.55)],
-            ['lock', Math.round(duration * 0.78)],
-          ]
+          ['dim', 120],
+          ['enter', 420],
+          ['decelerate', Math.round(duration * 0.55)],
+          ['lock', Math.round(duration * 0.78)],
+        ]
       : [
-            ['dim', 90],
-            ['enter', 300],
-            ['travel', 520],
-            ['decelerate', Math.round(duration * 0.55)],
-            ['lock', Math.round(duration * 0.78)],
-            ['settled', duration],
-          ];
+          ['dim', 90],
+          ['enter', 300],
+          ['travel', 520],
+          ['decelerate', Math.round(duration * 0.55)],
+          ['lock', Math.round(duration * 0.78)],
+          ['settled', duration],
+        ];
     const timers = marks.map(([next, at]) => window.setTimeout(() => setStage(next), at));
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [card, duration, hasReel, reduced]);
 
-  // Haptics: roll on entry, one escalating cue at the lock. Never more than two per
-  // reveal, so a legendary find feels different without feeling like a machine gun.
   useEffect(() => {
     if (!card) return;
     if (stage === 'enter') hapticCue('roll');
-    if (stage === 'settled') trackRevealShown(card.id, rarity);
+    if (stage === 'settled') {
+      trackRevealShown(card.id, rarity);
+      if (!fanfareRef.current) {
+        fanfareRef.current = true;
+        playRevealFanfare(rarity);
+      }
+    }
     if (stage === 'lock' && !lockedRef.current) {
       lockedRef.current = true;
       if (isCinematic) hapticCue('legendary');
@@ -186,13 +133,8 @@ export default function Reveal({
 
   const settled = stage === 'settled' || reduced;
   const visible = Boolean(card) || loading;
-  /*
-   * The readout waits for the reel. Showing a rarity while numbers are still scrolling
-   * past would tell the player the answer before the reel landed on it.
-   */
   const showReadout = settled && (reel.length === 0 || stage === 'settled');
 
-  // Escape closes. A dialog the player cannot leave is a dead end in a Mini App.
   useEffect(() => {
     if (!visible) return undefined;
     const onKey = (event: KeyboardEvent) => {
@@ -202,26 +144,10 @@ export default function Reveal({
     return () => document.removeEventListener('keydown', onKey);
   }, [visible, onClose]);
 
-  /*
-   * The reel's finish line, stable on purpose.
-   *
-   * `SymbolReel` keeps `onSettled` in its own effect dependencies, so an inline arrow
-   * would give it a new identity on every render and restart the 4s sequence from zero -
-   * the reel would loop forever and never settle. `useCallback` pins the identity.
-   *
-   * The previous-value guard makes the transition idempotent: `setStage('settled')` is
-   * also reachable through `skip` and through the reduced-motion path, and settling
-   * twice must never fire duplicate haptics or analytics.
-   */
   const settleFromReel = useCallback(() => {
     setStage((previous) => (previous === 'settled' ? previous : 'settled'));
   }, []);
 
-  /*
-   * The result's own entrance. With a reel in front of it, the object no longer needs a
-   * long staged sequence - the reel *is* the anticipation - so this only runs the last
-   * part: the reel has landed, and now the answer settles into place.
-   */
   const focus = stage === 'dim' ? 4 : 0;
   const lift = reel.length > 0 ? 0 : stage === 'enter' ? 26 : 8;
 
@@ -242,16 +168,16 @@ export default function Reveal({
           aria-label={t('reveal.dialogLabel')}
           data-testid="reveal"
         >
-          {/*
-            The dim. A plain scrim with no backdrop-filter: blurring a full-screen layer
-            behind an animating 3D object is the single most expensive thing this UI could
-            do, and it is invisible at this opacity anyway. The focus effect is applied to
-            the object below instead, where it is visible.
-          */}
+          {/* Ambient theatre scrim + rarity spotlight cone */}
           <motion.div
             className="absolute inset-0 bg-ink-950"
+            style={{
+              backgroundImage: settled
+                ? `radial-gradient(85% 55% at 50% 28%, ${tierColor}33 0%, transparent 68%)`
+                : 'radial-gradient(70% 45% at 50% 30%, rgba(125,162,255,0.14) 0%, transparent 65%)',
+            }}
             initial={{ opacity: 0 }}
-            animate={{ opacity: card ? 0.96 : 0.72 }}
+            animate={{ opacity: card ? 0.96 : 0.78 }}
             exit={{ opacity: 0 }}
             transition={{ duration: DURATION.slide, ease: EASE.out }}
             onClick={onClose}
@@ -267,9 +193,12 @@ export default function Reveal({
             onClick={(event) => event.stopPropagation()}
           >
             {loading && !card && (
-              <div className="flex flex-col items-center gap-3">
-                <div className="h-7 w-7 animate-spin rounded-full border-2 border-white/15 border-t-white/70" />
-                <span className="t-micro text-white/40">{t('reveal.searching')}</span>
+              <div className="flex flex-col items-center gap-3.5 py-12">
+                <div className="relative grid h-14 w-14 place-items-center">
+                  <div className="absolute inset-0 animate-ping rounded-full border border-brass/30" />
+                  <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/15 border-t-brass" />
+                </div>
+                <span className="eyebrow text-brass-soft">{t('reveal.searching')}</span>
               </div>
             )}
 
@@ -280,90 +209,128 @@ export default function Reveal({
                 animate={{ opacity: 1 }}
                 transition={{ duration: DURATION.fade, ease: EASE.out }}
               >
-                {/*
-                  The object - or, before it, the reel.
-
-                  The flow is exactly: the physical object appears, its printed number
-                  area spins symbol by symbol, each position locks in turn left to right,
-                  and the result is the real backend collectible. The object never leaves
-                  the screen during the spin - the reels live inside its printed area.
-                */}
-                <SymbolReel
-                  frames={reel}
-                  settled={settled}
-                  onSettled={settleFromReel}
-                  finalLabel={card.plate_text}
-                  kind={card.kind ?? 'VEHICLE_PLATE'}
-                  visual={card.visual}
-                  plateText={card.plate_text}
-                  displaySegments={card.display_segments}
-                  displaySegmentGaps={card.display_segment_gaps}
-                  displaySegmentKinds={card.display_segment_kinds}
-                  countryCode={card.country.code}
-                  letterAlphabet={card.reel_alphabets?.letters}
-                  digitAlphabet={card.reel_alphabets?.digits}
-                  final={
+                <div className="relative flex w-full flex-col items-center justify-center py-2">
+                  {/* Expanding rarity shockwave & halo on settlement */}
+                  {settled && !reduced && isHighRarity && (
                     <motion.div
-                      className="w-full"
-                      initial={{ opacity: 0, rotateX: 40, y: lift, scale: 0.92 }}
-                      animate={{
-                        opacity: 1,
-                        rotateX: 0,
-                        y: 0,
-                        scale: 1,
-                        // Focus is a brightness falloff, not a blur: blurring this element
-                        // would repaint the whole plate every frame of the entrance.
-                        filter: focus ? `brightness(${1 - focus / 100})` : 'none',
+                      aria-hidden="true"
+                      className="pointer-events-none absolute h-44 w-72 rounded-full blur-2xl"
+                      style={{
+                        background: `radial-gradient(circle, ${tierColor}66 0%, ${tierColor}18 55%, transparent 75%)`,
                       }}
-                      transition={
-                        settled
-                          ? { ...SPRING.settle, duration: DURATION.lock }
-                          : {
-                              rotateX: { duration: 0.42, ease: EASE.out },
-                              y: { duration: 0.4, ease: EASE.out },
-                              scale: { duration: 0.42, ease: EASE.out },
-                              opacity: { duration: DURATION.fade, ease: EASE.out },
-                              filter: { duration: 0.3, ease: EASE.out },
-                            }
-                      }
-                      style={{ perspective: 1100, transformStyle: 'preserve-3d' }}
-                    >
-                      <motion.button
-                        type="button"
-                        className="block w-full"
-                        onClick={onPlateClick}
-                        aria-label={card.plate_text}
-                        animate={
-                          settled && isCinematic && !reduced
-                            ? { scaleY: [1, 0.968, 1], scaleX: [1, 1.01, 1] }
-                            : { scaleY: 1, scaleX: 1 }
+                      initial={{ scale: 0.65, opacity: 0 }}
+                      animate={{ scale: [0.85, 1.18, 1.04], opacity: [0, 0.9, 0.6] }}
+                      transition={{ duration: 0.75, ease: EASE.out }}
+                    />
+                  )}
+
+                  {/* Luminous spark burst on EPIC / LEGENDARY / MYTHIC / SECRET */}
+                  {settled && !reduced && isCinematic && (
+                    <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      {SPARK_OFFSETS.map((spark, index) => (
+                        <motion.span
+                          key={index}
+                          className="absolute rounded-full"
+                          style={{
+                            width: spark.size,
+                            height: spark.size,
+                            background: tierColor,
+                            boxShadow: `0 0 10px ${tierColor}`,
+                          }}
+                          initial={{ x: 0, y: 0, scale: 0, opacity: 1 }}
+                          animate={{
+                            x: spark.x,
+                            y: spark.y,
+                            scale: [0, 1.35, 0],
+                            opacity: [1, 1, 0],
+                          }}
+                          transition={{
+                            duration: 0.85,
+                            delay: spark.delay,
+                            ease: EASE.out,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <SymbolReel
+                    frames={reel}
+                    settled={settled}
+                    onSettled={settleFromReel}
+                    finalLabel={card.plate_text}
+                    kind={card.kind ?? 'VEHICLE_PLATE'}
+                    visual={card.visual}
+                    plateText={card.plate_text}
+                    displaySegments={card.display_segments}
+                    displaySegmentGaps={card.display_segment_gaps}
+                    displaySegmentKinds={card.display_segment_kinds}
+                    countryCode={card.country.code}
+                    letterAlphabet={card.reel_alphabets?.letters}
+                    digitAlphabet={card.reel_alphabets?.digits}
+                    final={
+                      <motion.div
+                        className="w-full"
+                        initial={{ opacity: 0, rotateX: 40, y: lift, scale: 0.92 }}
+                        animate={{
+                          opacity: 1,
+                          rotateX: 0,
+                          y: 0,
+                          scale: 1,
+                          filter: focus ? `brightness(${1 - focus / 100})` : 'none',
+                        }}
+                        transition={
+                          settled
+                            ? { ...SPRING.settle, duration: DURATION.lock }
+                            : {
+                                rotateX: { duration: 0.42, ease: EASE.out },
+                                y: { duration: 0.4, ease: EASE.out },
+                                scale: { duration: 0.42, ease: EASE.out },
+                                opacity: { duration: DURATION.fade, ease: EASE.out },
+                                filter: { duration: 0.3, ease: EASE.out },
+                              }
                         }
-                        transition={{ duration: 0.44, ease: EASE.lock, times: [0, 0.4, 1] }}
+                        style={{ perspective: 1100, transformStyle: 'preserve-3d' }}
                       >
-                        {card.kind === 'SIM_CARD' ? (
-                          <SimCardVisual
-                            details={card.details}
-                            config={card.sim_config ?? null}
-                            rarity={rarity}
-                            className="mx-auto"
-                          />
-                        ) : (
-                          <VehiclePlateVisual
-                            visual={card.visual}
-                            plateText={card.plate_text}
-                            displaySegments={card.display_segments}
-                            displaySegmentGaps={card.display_segment_gaps}
-                            displaySegmentKinds={card.display_segment_kinds}
-                            regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
-                            regionCode={card.region?.code ?? null}
-                            className="mx-auto"
-                            sweep={!settled && !reduced}
-                          />
-                        )}
-                      </motion.button>
-                    </motion.div>
-                  }
-                />
+                        <motion.button
+                          type="button"
+                          className="block w-full"
+                          onClick={onPlateClick}
+                          aria-label={card.plate_text}
+                          animate={
+                            settled && isCinematic && !reduced
+                              ? { scaleY: [1, 0.962, 1], scaleX: [1, 1.018, 1] }
+                              : { scaleY: 1, scaleX: 1 }
+                          }
+                          transition={{ duration: 0.44, ease: EASE.lock, times: [0, 0.4, 1] }}
+                        >
+                          {card.kind === 'SIM_CARD' ? (
+                            <SimCardVisual
+                              details={card.details}
+                              config={card.sim_config ?? null}
+                              rarity={rarity}
+                              animate={settled}
+                              className="mx-auto"
+                            />
+                          ) : (
+                            <VehiclePlateVisual
+                              visual={card.visual}
+                              plateText={card.plate_text}
+                              displaySegments={card.display_segments}
+                              displaySegmentGaps={card.display_segment_gaps}
+                              displaySegmentKinds={card.display_segment_kinds}
+                              regionName={card.region?.name_en ?? card.region?.name_ru ?? null}
+                              regionCode={card.region?.code ?? null}
+                              rarity={rarity}
+                              className="mx-auto"
+                              sweep={! reduced}
+                            />
+                          )}
+                        </motion.button>
+                      </motion.div>
+                    }
+                  />
+                </div>
 
                 <AnimatePresence>
                   {showReadout && (
@@ -378,54 +345,42 @@ export default function Reveal({
                       {/* 1. Rarity */}
                       <RarityBadge rarity={rarity} size="lg" pulse={isCinematic && !reduced} />
 
-                      {/* 2. Country, then the specific thing it is */}
+                      {/* 2. Country & region/operator */}
                       <div className="space-y-0.5">
-                        <div className="t-body font-semibold text-white/80">
+                        <div className="t-body font-bold text-white/90">
                           <span aria-hidden>{card.country.flag}</span>{' '}
-                          {/* The player's language, never the catalogue's. */}
                           {lang === 'ru' ? card.country.name_ru : card.country.name_en}
                         </div>
-                        <div className="t-micro text-white/40">
+                        <div className="t-micro text-white/50">
                           {card.kind === 'SIM_CARD'
-                            ? (card.details
-                                ? lang === 'ru' && card.details.operator_local
-                                  ? card.details.operator_local
-                                  : card.details.operator
-                                : t('category.sim'))
-                            : // A plate prints its own country's name on itself, so for a
-                              // vehicle the *printed* region name is what belongs here -
-                              // but only when the plate has one at all.
-                              (card.region
-                                ? lang === 'ru'
-                                  ? card.region.name_ru
-                                  : card.region.name_en
-                                : card.plate_type)}
+                            ? card.details
+                              ? lang === 'ru' && card.details.operator_local
+                                ? card.details.operator_local
+                                : card.details.operator
+                              : t('category.sim')
+                            : card.region
+                              ? lang === 'ru'
+                                ? card.region.name_ru
+                                : card.region.name_en
+                              : card.plate_type}
                         </div>
                       </div>
 
-                      {/* 3. One main value. Everything secondary belongs in Details, so
-                          the reveal never dumps competing prices on the player. */}
-                      {/*
-                        One main value, in the player's chosen display currency. The
-                        canonical figure is NUMORA; the picker changes only how it is
-                        printed, never what is stored or what the roll is worth.
-                      */}
-                      <div className="flex flex-col items-center gap-0.5">
+                      {/* 3. Main NUMORA value */}
+                      <div className="glass flex flex-col items-center gap-0.5 px-5 py-2.5">
                         <PriceDisplay value={card.dealer_value} prefix="+" size="lg" />
-                        <span className="t-micro text-white/35">
-                          {t('reveal.result.numora')}
-                        </span>
+                        <span className="t-micro text-white/45">{t('reveal.result.numora')}</span>
                       </div>
 
-                      {/* 4. One or two traits: why this one is worth anything. */}
+                      {/* 4. Trait chips */}
                       {card.reason_labels?.length ? (
                         <div className="flex flex-wrap items-center justify-center gap-1.5">
-                          {card.reason_labels.slice(0, 2).map((label) => (
+                          {card.reason_labels.slice(0, 3).map((label) => (
                             <span
                               key={label}
-                              className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/60"
+                              className="rounded-full border border-brass/30 bg-brass/10 px-3 py-1 text-[11px] font-semibold text-brass-soft"
                             >
-                              {label}
+                              ✦ {label}
                             </span>
                           ))}
                         </div>
@@ -433,15 +388,18 @@ export default function Reveal({
 
                       <CollectorBioPanel bio={card.collector_bio} />
 
-                      {/* 5. First discovery: a status on the card, never a feed. */}
+                      {/* 5. First discovery golden seal */}
                       {isFirstDiscovery && (
                         <motion.div
-                          className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-2"
-                          initial={{ opacity: 0, scale: 0.96 }}
+                          className="flex items-center gap-2 rounded-2xl border border-amber-300/40 bg-gradient-to-r from-amber-400/20 via-amber-300/10 to-amber-400/20 px-4 py-2 shadow-brass"
+                          initial={{ opacity: 0, scale: 0.94 }}
                           animate={{ opacity: 1, scale: 1 }}
                           transition={{ duration: DURATION.slide, ease: EASE.lock }}
                         >
-                          <span className="t-micro text-amber-200">
+                          <span aria-hidden="true" className="text-sm">
+                            🏆
+                          </span>
+                          <span className="t-micro font-bold text-amber-200">
                             {t('reveal.firstDiscovery')}
                           </span>
                         </motion.div>
@@ -486,7 +444,7 @@ export default function Reveal({
                       {canSell && (
                         <button
                           type="button"
-                          className="btn-ghost col-span-2 t-body"
+                          className="btn-ghost col-span-2 border-brass/30 bg-brass/10 t-body text-brass-soft hover:border-brass/50"
                           onClick={onSellDuplicates}
                         >
                           {t('reveal.sellDuplicates')}
@@ -494,7 +452,7 @@ export default function Reveal({
                             value={card.sale_value}
                             prefix="+"
                             size="sm"
-                            tone="#c9a86b"
+                            tone="#d4af6a"
                             readOnly
                           />
                         </button>
@@ -510,10 +468,8 @@ export default function Reveal({
                       )}
                     </div>
 
-                    {/* When there is nothing to sell, say why instead of showing a
-                        button that would be refused. */}
                     {duplicates === 0 && (
-                      <p className="pt-1 text-center text-[11px] text-white/30">
+                      <p className="pt-1 text-center text-[11px] text-white/35">
                         {t('reveal.noDuplicates')}
                       </p>
                     )}
@@ -522,16 +478,15 @@ export default function Reveal({
               </motion.div>
             )}
 
-            {/* Skip: present, reachable, deliberately quiet. */}
             {card && !settled && (
               <motion.button
                 type="button"
-                className="absolute right-4 t-micro text-white/35 transition active:scale-95"
+                className="absolute right-4 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1 t-micro text-white/60 transition hover:text-white active:scale-95"
                 style={{ top: 'calc(var(--tg-safe-top) + 14px)' }}
                 onClick={skip}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: DURATION.fade, ease: EASE.out, delay: 0.5 }}
+                transition={{ duration: DURATION.fade, ease: EASE.out, delay: 0.4 }}
               >
                 {t('reveal.skip')}
               </motion.button>
